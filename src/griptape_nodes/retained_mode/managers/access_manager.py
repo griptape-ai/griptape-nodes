@@ -74,7 +74,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointAttribute,
     CheckpointSubjectType,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -83,6 +83,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 class _NodeLookupError(Exception):
@@ -129,28 +130,32 @@ class AccessManager(EngineScoped):
             result_details=f"Evaluated {len(verdicts)} candidate model(s).",
         )
 
-    @handles(QueryModelAccessForNodeRequest, scope=RequestScope.WORKFLOW)
-    def on_query_model_access_for_node_request(self, request: QueryModelAccessForNodeRequest) -> ResultPayload:
+    @handles(QueryModelAccessForNodeRequest)
+    def on_query_model_access_for_node_request(
+        self, request: QueryModelAccessForNodeRequest, workflow: WorkflowRuntime
+    ) -> ResultPayload:
         """Node-attributed. Engine derives candidates from declarations unless caller overrides."""
-        try:
-            resolution = self._resolve_node_library(request.node_type, request.specific_library_name)
-        except _NodeLookupError as exc:
-            return QueryModelAccessForNodeResultFailure(result_details=str(exc))
+        # Resolving a node's library and asking the authorization hook read the bound workflow.
+        with self.engine.bind_workflow(workflow):
+            try:
+                resolution = self._resolve_node_library(request.node_type, request.specific_library_name)
+            except _NodeLookupError as exc:
+                return QueryModelAccessForNodeResultFailure(result_details=str(exc))
 
-        if request.candidate_model_ids is None:
-            candidates = self._declared_model_ids(
-                node_declarations=resolution.node_declarations,
-                catalog=resolution.catalog,
+            if request.candidate_model_ids is None:
+                candidates = self._declared_model_ids(
+                    node_declarations=resolution.node_declarations,
+                    catalog=resolution.catalog,
+                )
+            else:
+                candidates = list(request.candidate_model_ids)
+
+            verdicts = self._evaluate(
+                candidate_model_ids=candidates,
+                node_type=request.node_type,
+                resolved_by_id=resolution.resolved_by_id,
+                event_manager=self.engine.event_manager,
             )
-        else:
-            candidates = list(request.candidate_model_ids)
-
-        verdicts = self._evaluate(
-            candidate_model_ids=candidates,
-            node_type=request.node_type,
-            resolved_by_id=resolution.resolved_by_id,
-            event_manager=self.engine.event_manager,
-        )
         return QueryModelAccessForNodeResultSuccess(
             verdicts=verdicts,
             result_details=f"Evaluated {len(verdicts)} model(s) for '{request.node_type}'.",

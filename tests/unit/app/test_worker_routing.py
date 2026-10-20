@@ -169,11 +169,11 @@ class TestInstallRemoteHandlersSwap:
         originals: dict[type[RequestPayload], Any] = {}
         for request_type in (CreateNodeRequest, AddParameterToNodeRequest, SetParameterValueRequest):
 
-            async def original(_request: RequestPayload) -> _StubResult:
+            async def original(_request: RequestPayload, workflow: WorkflowRuntime) -> _StubResult:  # noqa: ARG001
                 return _StubResult(result_details="ok")
 
             originals[request_type] = original
-            event_manager.assign_manager_to_request_type(request_type, original, scope=RequestScope.WORKFLOW)
+            event_manager.assign_manager_to_request_type(request_type, original)
 
         register_remote_handlers(event_manager)
 
@@ -249,15 +249,26 @@ class TestInstallRemoteHandlersSwap:
             GetSituationRequest: RequestScope.OPTIONAL_WORKFLOW,
             GetExecutionDeviceRequest: RequestScope.HOST,
         }
+
+        async def workflow_handler(_request: RequestPayload, workflow: WorkflowRuntime) -> _StubResult:  # noqa: ARG001
+            return _StubResult(result_details="ok")
+
+        async def optional_workflow_handler(
+            _request: RequestPayload,
+            workflow: WorkflowRuntime | None = None,  # noqa: ARG001
+        ) -> _StubResult:
+            return _StubResult(result_details="ok")
+
+        async def host_handler(_request: RequestPayload) -> _StubResult:
+            return _StubResult(result_details="ok")
+
+        handlers = {
+            RequestScope.WORKFLOW: workflow_handler,
+            RequestScope.OPTIONAL_WORKFLOW: optional_workflow_handler,
+            RequestScope.HOST: host_handler,
+        }
         for request_type, scope in scopes.items():
-
-            async def original(_request: RequestPayload) -> _StubResult:
-                return _StubResult(result_details="ok")
-
-            declared = None
-            if scope is not RequestScope.HOST:
-                declared = scope
-            event_manager.assign_manager_to_request_type(request_type, original, scope=declared)
+            event_manager.assign_manager_to_request_type(request_type, handlers[scope])
 
         register_remote_handlers(event_manager)
 
@@ -315,7 +326,7 @@ class TestInstallRemoteHandlersSwap:
         async def original(_request: RequestPayload) -> _StubResult:
             return _StubResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(CreateNodeRequest, original, scope=RequestScope.WORKFLOW)
+        event_manager.assign_manager_to_request_type(CreateNodeRequest, original)
 
         register_remote_handlers(event_manager)
 
@@ -333,13 +344,11 @@ class TestInstallRemoteHandlersSwap:
 
         local_calls: list[AddParameterToNodeRequest] = []
 
-        async def local_add_parameter(request: AddParameterToNodeRequest) -> _StubResult:
+        async def local_add_parameter(request: AddParameterToNodeRequest, workflow: WorkflowRuntime) -> _StubResult:  # noqa: ARG001
             local_calls.append(request)
             return _StubResult(result_details="local")
 
-        event_manager.assign_manager_to_request_type(
-            AddParameterToNodeRequest, local_add_parameter, scope=RequestScope.WORKFLOW
-        )
+        event_manager.assign_manager_to_request_type(AddParameterToNodeRequest, local_add_parameter)
 
         register_remote_handlers(event_manager)
 

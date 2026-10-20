@@ -3,9 +3,9 @@ from dataclasses import dataclass
 import pytest
 
 from griptape_nodes.app.worker_routing import RemoteHandler
-from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
+from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles, scope_from_signature
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
@@ -65,23 +65,7 @@ class _Static:
         pass
 
 
-class _MixedScopes:
-    @handles(_PingRequest, scope=RequestScope.WORKFLOW)
-    def on_ping(self, request: _PingRequest) -> None:
-        pass
-
-    @handles(_PongRequest)
-    def on_pong(self, request: _PongRequest) -> None:
-        pass
-
-
-class _OnlyHandlerScopes:
-    @handles(_PingRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    def on_ping(self, request: _PingRequest) -> None:
-        pass
-
-
-class _NoScope:
+class _TakesNoWorkflow:
     @handles(_PingRequest)
     def on_ping(self, request: _PingRequest) -> None:
         pass
@@ -97,21 +81,15 @@ class _TakesWorkflow:
         pass
 
 
-class _HostScope:
-    @handles(_PingRequest, scope=RequestScope.HOST)
-    def on_ping(self, request: _PingRequest) -> None:
-        pass
-
-
-class _ScopeRepeatsSignature:
-    @handles(_PingRequest, scope=RequestScope.WORKFLOW)
-    def on_ping(self, request: _PingRequest, workflow: WorkflowRuntime) -> None:
-        pass
-
-
-class _OptionalWithoutDefault:
+class _OptionalAnnotationWithoutDefault:
     @handles(_PingRequest)
     def on_ping(self, request: _PingRequest, workflow: WorkflowRuntime | None) -> None:
+        pass
+
+
+class _NonNoneDefault:
+    @handles(_PingRequest)
+    def on_ping(self, request: _PingRequest, workflow: WorkflowRuntime = "main") -> None:  # type: ignore[assignment]
         pass
 
 
@@ -137,15 +115,6 @@ class TestHandles:
                 @handles(_PingRequest)
                 @staticmethod
                 def on_ping(request: _PingRequest) -> None:
-                    pass
-
-    def test_two_different_scopes_on_one_handler_raise(self) -> None:
-        with pytest.raises(TypeError, match="two different scopes"):
-
-            class _Conflicting:
-                @handles(_PingRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-                @handles(_PongRequest, scope=RequestScope.WORKFLOW)
-                def on_either(self, request: RequestPayload) -> None:
                     pass
 
 
@@ -201,35 +170,12 @@ class TestRegisterRequestHandlers:
         with pytest.raises(ValueError, match="already assigned"):
             event_manager.register_request_handlers(_Base())
 
-    def test_a_handles_scope_stands_in_for_a_workflow_the_handler_does_not_take(self) -> None:
-        event_manager = EventManager()
-
-        event_manager.register_request_handlers(_MixedScopes())
-
-        assert event_manager.scope_for(_PingRequest) is RequestScope.WORKFLOW
-        assert event_manager.scope_for(_PongRequest) is RequestScope.HOST
-
-    def test_a_handles_scope_can_be_optional(self) -> None:
-        event_manager = EventManager()
-
-        event_manager.register_request_handlers(_OnlyHandlerScopes())
-
-        assert event_manager.scope_for(_PingRequest) is RequestScope.OPTIONAL_WORKFLOW
-
     def test_a_handler_that_takes_no_workflow_is_host(self) -> None:
         event_manager = EventManager()
 
-        event_manager.register_request_handlers(_NoScope())
+        event_manager.register_request_handlers(_TakesNoWorkflow())
 
         assert event_manager.scope_for(_PingRequest) is RequestScope.HOST
-
-    def test_a_host_scope_on_handles_raises(self) -> None:
-        event_manager = EventManager()
-
-        with pytest.raises(TypeError, match="already a host handler"):
-            event_manager.register_request_handlers(_HostScope())
-
-        assert event_manager.get_manager_for_request_type(_PingRequest) is None
 
     def test_scope_for_an_unhandled_type_raises(self) -> None:
         event_manager = EventManager()
@@ -256,61 +202,24 @@ class TestWorkflowParameter:
         assert event_manager.scope_for(_PingRequest) is RequestScope.WORKFLOW
         assert event_manager.scope_for(_PongRequest) is RequestScope.OPTIONAL_WORKFLOW
 
-    def test_a_handles_scope_that_repeats_the_signature_raises(self) -> None:
+    def test_the_default_decides_not_the_annotation(self) -> None:
         event_manager = EventManager()
 
-        with pytest.raises(TypeError, match="already makes it workflow"):
-            event_manager.register_request_handlers(_ScopeRepeatsSignature())
+        event_manager.register_request_handlers(_OptionalAnnotationWithoutDefault())
 
-    def test_an_optional_workflow_without_a_default_raises(self) -> None:
+        assert event_manager.scope_for(_PingRequest) is RequestScope.WORKFLOW
+
+    def test_a_default_other_than_none_raises(self) -> None:
         event_manager = EventManager()
 
-        with pytest.raises(TypeError, match="may be None but has no default"):
-            event_manager.register_request_handlers(_OptionalWithoutDefault())
-
-    @pytest.mark.parametrize(
-        "annotation",
-        [
-            "WorkflowRuntime | None",
-            "None | WorkflowRuntime",
-            "Optional[WorkflowRuntime]",
-            "typing.Optional[WorkflowRuntime]",
-            "Union[WorkflowRuntime, None]",
-            "'WorkflowRuntime | None'",
-        ],
-    )
-    def test_a_string_annotation_admitting_none_needs_a_default(self, annotation: str) -> None:
-        def handle(_request: _PingRequest, workflow) -> None:  # noqa: ANN001, ARG001, annotated below as a string
-            raise AssertionError
-
-        handle.__annotations__["workflow"] = annotation
-
-        with pytest.raises(TypeError, match="may be None but has no default"):
-            scope_from_signature(handle)
-
-    @pytest.mark.parametrize("annotation", ["WorkflowRuntime", "NoneWorkflow", "Union[WorkflowRuntime, Other]"])
-    def test_a_string_annotation_not_admitting_none_is_a_workflow(self, annotation: str) -> None:
-        def handle(_request: _PingRequest, workflow) -> None:  # noqa: ANN001, ARG001, annotated below as a string
-            raise AssertionError
-
-        handle.__annotations__["workflow"] = annotation
-
-        assert scope_from_signature(handle) is RequestScope.WORKFLOW
+        with pytest.raises(TypeError, match="defaults to 'main'"):
+            event_manager.register_request_handlers(_NonNoneDefault())
 
     def test_a_handler_that_hides_its_signature_raises(self) -> None:
         event_manager = EventManager()
 
         with pytest.raises(TypeError, match=r"accepts \*\*kwargs"):
             event_manager.register_request_handlers(_HidesItsSignature())
-
-    def test_assigning_a_workflow_handler_as_host_raises(self) -> None:
-        event_manager = EventManager()
-
-        def handle(_request: _PingRequest, workflow: WorkflowRuntime) -> ResultPayload:  # noqa: ARG001, the name is what dispatch reads
-            raise AssertionError
-
-        with pytest.raises(TypeError, match="already a host handler"):
-            event_manager.assign_manager_to_request_type(_PingRequest, handle, scope=RequestScope.HOST)
 
     def test_replacing_a_handler_keeps_its_scope(self) -> None:
         event_manager = EventManager()

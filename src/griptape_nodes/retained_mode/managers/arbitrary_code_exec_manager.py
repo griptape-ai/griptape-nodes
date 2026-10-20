@@ -5,16 +5,19 @@ import re
 from contextlib import redirect_stdout
 from typing import TYPE_CHECKING, Any
 
+from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.arbitrary_python_events import (
     RunArbitraryPythonStringRequest,
     RunArbitraryPythonStringResultFailure,
     RunArbitraryPythonStringResultSuccess,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
@@ -31,16 +34,19 @@ def strip_ansi_codes(text: str) -> str:
     return ANSI_ESCAPE_RE.sub("", text)
 
 
-class ArbitraryCodeExecManager:
-    def __init__(self, event_manager: EventManager) -> None:
+class ArbitraryCodeExecManager(EngineScoped):
+    def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
+        super().__init__(engine)
         event_manager.register_request_handlers(self)
 
-    @handles(RunArbitraryPythonStringRequest, scope=RequestScope.WORKFLOW)
-    def on_run_arbitrary_python_string_request(self, request: RunArbitraryPythonStringRequest) -> ResultPayload:
-
+    @handles(RunArbitraryPythonStringRequest)
+    def on_run_arbitrary_python_string_request(
+        self, request: RunArbitraryPythonStringRequest, workflow: WorkflowRuntime
+    ) -> ResultPayload:
         try:
             string_buffer = io.StringIO()
-            with redirect_stdout(string_buffer):
+            # The code runs against the workflow it was sent to: whatever it asks of the engine, it asks as that workflow.
+            with self.engine.bind_workflow(workflow), redirect_stdout(string_buffer):
                 # Use a shared namespace for both globals and locals in exec() to make some behavior possible and more intuitive:
                 #
                 # 1. RECURSION: Without this namespace, recursive functions defined inside exec() fail with

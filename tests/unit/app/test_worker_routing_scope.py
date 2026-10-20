@@ -28,10 +28,10 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.request_handlers import RequestScope
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import ResultContext
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 def _forwarded_sample() -> tuple[type, ...]:
@@ -183,14 +183,14 @@ class TestRemoteHandlerRouting:
         # asserts on has to be registered first. Stub it plus a couple of representatives.
         for request_type in (ListConnectionsForNodeRequest, *_forwarded_sample()):
 
-            async def stub(_request: RequestPayload) -> ResultPayloadSuccess:
+            async def stub(_request: RequestPayload, workflow: WorkflowRuntime) -> ResultPayloadSuccess:  # noqa: ARG001
                 return ListConnectionsForNodeResultSuccess(
                     incoming_connections=[],
                     outgoing_connections=[],
                     result_details="local",
                 )
 
-            event_manager.assign_manager_to_request_type(request_type, stub, scope=RequestScope.WORKFLOW)
+            event_manager.assign_manager_to_request_type(request_type, stub)
 
         register_remote_handlers(event_manager)
 

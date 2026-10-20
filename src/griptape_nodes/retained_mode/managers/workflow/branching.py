@@ -31,12 +31,14 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ResetWorkflowBranchResultFailure,
     ResetWorkflowBranchResultSuccess,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.runtime.binding import NO_WORKFLOW
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -59,10 +61,10 @@ class WorkflowBranching(EngineScoped):
         super().__init__(engine)
         event_manager.register_request_handlers(self)
 
-    # The new file's sidecar is placed through the File API, which resolves `{workflow_dir}` against the
-    # bound workflow, so the request depends on the workflow it is addressed to without taking it.
-    @handles(BranchWorkflowRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    def on_branch_workflow_request(self, request: BranchWorkflowRequest) -> ResultPayload:  # noqa: PLR0911
+    @handles(BranchWorkflowRequest)
+    def on_branch_workflow_request(  # noqa: PLR0911
+        self, request: BranchWorkflowRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
         """Create a branch (copy) of an existing workflow with branch tracking."""
         try:
             # Validate source workflow exists
@@ -149,7 +151,9 @@ class WorkflowBranching(EngineScoped):
             # Write the branch file to disk BEFORE registering it (the registry requires the
             # file to exist), through the save_workflow situation so a branch lands where the
             # project puts workflows rather than at the workspace root.
-            created = self.engine.workflow_manager.saver.create_workflow_file(branch_name, branch_content)
+            # The File API places it, and resolves `{workflow_dir}` against the bound workflow.
+            with self.engine.bind_workflow(workflow if workflow is not None else NO_WORKFLOW):
+                created = self.engine.workflow_manager.saver.create_workflow_file(branch_name, branch_content)
             if not created.success:
                 details = f"Failed to branch workflow '{request.workflow_name}': {created.error_details}"
                 return BranchWorkflowResultFailure(result_details=details)
@@ -177,9 +181,10 @@ class WorkflowBranching(EngineScoped):
             traceback.print_exc()
             return BranchWorkflowResultFailure(result_details=details)
 
-    # Placed like a branch: see BranchWorkflowRequest.
-    @handles(CreateWorkflowFromTemplateRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    def on_create_workflow_from_template_request(self, request: CreateWorkflowFromTemplateRequest) -> ResultPayload:  # noqa: PLR0911
+    @handles(CreateWorkflowFromTemplateRequest)
+    def on_create_workflow_from_template_request(  # noqa: PLR0911
+        self, request: CreateWorkflowFromTemplateRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
         """Create a new workflow file from a template (Griptape-provided or user-provided)."""
         try:
             template_workflow = self.engine.workflow_registry.get_workflow_by_name(request.template_name)
@@ -213,8 +218,10 @@ class WorkflowBranching(EngineScoped):
             )
             return CreateWorkflowFromTemplateResultFailure(result_details=details)
 
+        # The File API places the new file, and resolves `{workflow_dir}` against the bound workflow.
         base_name = request.file_name or Path(template_file_path_rel).stem
-        new_file_name = self.engine.workflow_manager.saver.generate_unique_filename(base_name)
+        with self.engine.bind_workflow(workflow if workflow is not None else NO_WORKFLOW):
+            new_file_name = self.engine.workflow_manager.saver.generate_unique_filename(base_name)
 
         new_metadata = WorkflowMetadata(
             name=new_file_name,
@@ -245,7 +252,8 @@ class WorkflowBranching(EngineScoped):
             )
             return CreateWorkflowFromTemplateResultFailure(result_details=details)
 
-        created = self.engine.workflow_manager.saver.create_workflow_file(new_file_name, new_content)
+        with self.engine.bind_workflow(workflow if workflow is not None else NO_WORKFLOW):
+            created = self.engine.workflow_manager.saver.create_workflow_file(new_file_name, new_content)
         if not created.success:
             details = f"Attempted to create workflow from template '{request.template_name}'. {created.error_details}"
             return CreateWorkflowFromTemplateResultFailure(result_details=details)

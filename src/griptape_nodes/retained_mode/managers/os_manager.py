@@ -154,7 +154,7 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.resource_types.compute_resource import ComputeBackend, ComputeResourceType
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
 from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.runtime.binding import NO_WORKFLOW, WorkflowNotNamedError, bound_workflow
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime, workflow_id_of
 
@@ -1721,9 +1721,16 @@ class OSManager(EngineScoped):
             mime_type = "text/plain"
         return mime_type
 
-    @handles(ListDirectoryRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    @handles(ListDirectoryRequest)
+    def on_list_directory_request(
+        self, request: ListDirectoryRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
         """Handle a request to list directory contents."""
+        # Resolving the directory goes through the File API, which reads the bound workflow.
+        with self.engine.bind_workflow(workflow if workflow is not None else NO_WORKFLOW):
+            return self._list_directory(request)
+
+    def _list_directory(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         try:
             # Resolve path: strings support macro syntax like "{project_dir}".
             # File handles the string → MacroPath conversion and project-aware resolution.
@@ -1945,12 +1952,13 @@ class OSManager(EngineScoped):
             msg = f"Unexpected error in list_directory: {type(e).__name__}: {e}"
             return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
 
-    @handles(ListDirectorySequencesRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
-    def on_list_directory_sequences_request(self, request: ListDirectorySequencesRequest) -> ResultPayload:
+    @handles(ListDirectorySequencesRequest)
+    def on_list_directory_sequences_request(
+        self, request: ListDirectorySequencesRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
         """Handle a request to list only file sequences in a directory.
 
-        Delegates to `on_list_directory_request` with `group_sequences=True` and
-        re-wraps the result to expose only the detected sequences.
+        Lists with `group_sequences=True` and re-wraps the result to expose only the detected sequences.
         """
         inner = ListDirectoryRequest(
             directory_path=request.directory_path,
@@ -1964,7 +1972,9 @@ class OSManager(EngineScoped):
             group_sequences=True,
             sequence_options=request.sequence_options,
         )
-        result = self.on_list_directory_request(inner)
+        # The listing resolves the directory through the File API, which reads the bound workflow.
+        with self.engine.bind_workflow(workflow if workflow is not None else NO_WORKFLOW):
+            result = self._list_directory(inner)
         if isinstance(result, ListDirectoryResultSuccess):
             return ListDirectorySequencesResultSuccess(
                 sequences=result.sequences,
@@ -1980,7 +1990,7 @@ class OSManager(EngineScoped):
             )
         return ListDirectorySequencesResultFailure(
             failure_reason=FileIOFailureReason.UNKNOWN,
-            result_details="Unexpected result type from on_list_directory_request.",
+            result_details="Unexpected result type from listing the directory.",
         )
 
     @handles(DeduceSequencesFromFileListRequest)

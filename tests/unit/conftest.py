@@ -174,7 +174,7 @@ def fail_on_host_workflow_reads() -> Generator[list[HostWorkflowRead], None, Non
     """Fail a test whose host request read the current workflow while one was open.
 
     A host request a client sends acts on no workflow, so such a read gets none: its handler depends on a
-    workflow it should take, or declare with `@handles(scope=...)`. See `RequestScope`.
+    workflow it should take and bind. See `RequestScope`.
     """
     recorder = HostWorkflowReadRecorder()
     previous = install_workflow_read_observer(recorder)

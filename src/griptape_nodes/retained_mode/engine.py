@@ -271,7 +271,7 @@ class Engine:
         self._access_manager = AccessManager(self._event_manager, engine=self)
         self._workflow_manager = WorkflowManager(self._event_manager, engine=self)
         self._workflow_variables_manager = VariablesManager(self._event_manager, engine=self)
-        self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
+        self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager, engine=self)
         self._operation_depth_manager = OperationDepthManager(self._config_manager)
         self._static_files_manager = StaticFilesManager(
             self._config_manager, self._secrets_manager, self._event_manager, engine=self

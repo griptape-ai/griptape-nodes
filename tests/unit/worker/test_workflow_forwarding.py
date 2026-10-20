@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -33,6 +33,9 @@ from griptape_nodes.retained_mode.request_handlers import RequestScope
 from griptape_nodes.retained_mode.runtime.binding import WorkflowNotOpenError
 from griptape_nodes.retained_mode.runtime.workflow_runtime import RuntimeKind
 from tests.unit.worker.harness import InProcessWorkerHarness
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 @dataclass(kw_only=True)
@@ -85,20 +88,18 @@ class TestWorkerForwarding:
         seen_by_worker: list[str] = []
         callback = _CallbackProbe()
 
-        def on_callback(_request: _CallbackProbe) -> _ProbeResult:
+        def on_callback(_request: _CallbackProbe, workflow: WorkflowRuntime) -> _ProbeResult:  # noqa: ARG001
             seen_by_orchestrator.append(orchestrator.current_workflow.workflow_id)
             return _ProbeResult(result_details="ok")
 
-        async def run_node(_request: _RunNodeProbe) -> _ProbeResult:
+        async def run_node(_request: _RunNodeProbe, workflow: WorkflowRuntime) -> _ProbeResult:  # noqa: ARG001
             seen_by_worker.append(worker.current_workflow.workflow_id)
             with worker.event_manager.node_execution_scope():
                 await worker.ahandle_request(callback)
             return _ProbeResult(result_details="ok")
 
-        orchestrator.event_manager.assign_manager_to_request_type(
-            _CallbackProbe, on_callback, scope=RequestScope.WORKFLOW
-        )
-        worker.event_manager.assign_manager_to_request_type(_RunNodeProbe, run_node, scope=RequestScope.WORKFLOW)
+        orchestrator.event_manager.assign_manager_to_request_type(_CallbackProbe, on_callback)
+        worker.event_manager.assign_manager_to_request_type(_RunNodeProbe, run_node)
         harness.install_remote_handler(_CallbackProbe)
 
         await harness.start()
@@ -118,11 +119,11 @@ class TestWorkerForwarding:
         worker.library_manager._is_worker = True
         seen: list[object] = []
 
-        def run_node(_request: _RunNodeProbe) -> _ProbeResult:
+        def run_node(_request: _RunNodeProbe, workflow: WorkflowRuntime) -> _ProbeResult:  # noqa: ARG001
             seen.append(worker.current_workflow)
             return _ProbeResult(result_details="ok")
 
-        worker.event_manager.assign_manager_to_request_type(_RunNodeProbe, run_node, scope=RequestScope.WORKFLOW)
+        worker.event_manager.assign_manager_to_request_type(_RunNodeProbe, run_node)
 
         await worker.ahandle_request(_RunNodeProbe(node_name="probe"), workflow_id="workflow-a")
         await worker.ahandle_request(_RunNodeProbe(node_name="probe"), workflow_id="workflow-b")
@@ -141,9 +142,11 @@ class TestWorkerRuntimeCreation:
     async def test_a_request_naming_an_unknown_workflow_fails_and_makes_no_namespace(self) -> None:
         worker = Engine()
         worker.library_manager._is_worker = True
-        worker.event_manager.assign_manager_to_request_type(
-            _CallbackProbe, lambda _request: _ProbeResult(result_details="ok"), scope=RequestScope.WORKFLOW
-        )
+
+        def callback(_request: _CallbackProbe, workflow: WorkflowRuntime) -> _ProbeResult:  # noqa: ARG001
+            return _ProbeResult(result_details="ok")
+
+        worker.event_manager.assign_manager_to_request_type(_CallbackProbe, callback)
 
         with pytest.raises(WorkflowNotOpenError, match="_CallbackProbe"):
             worker.runtime_for_request(_CallbackProbe(), RequestScope.WORKFLOW, "gone")
@@ -160,11 +163,11 @@ class TestWorkerRuntimeCreation:
         held = worker.worker_namespace("workflow-a")
         seen: list[object] = []
 
-        def callback(_request: _CallbackProbe) -> _ProbeResult:
+        def callback(_request: _CallbackProbe, workflow: WorkflowRuntime) -> _ProbeResult:  # noqa: ARG001
             seen.append(worker.current_workflow)
             return _ProbeResult(result_details="ok")
 
-        worker.event_manager.assign_manager_to_request_type(_CallbackProbe, callback, scope=RequestScope.WORKFLOW)
+        worker.event_manager.assign_manager_to_request_type(_CallbackProbe, callback)
 
         result = await worker.ahandle_request(_CallbackProbe(), workflow_id="workflow-a")
 

@@ -42,9 +42,8 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
 from griptape_nodes.retained_mode.request_handlers import (
     RequestScope,
     handled_request_types,
-    handler_scope,
     handler_takes_workflow,
-    resolve_handler_scope,
+    scope_from_signature,
 )
 from griptape_nodes.retained_mode.run_scheduler import current_run
 from griptape_nodes.retained_mode.runtime.binding import (
@@ -848,26 +847,25 @@ class EventManager(EngineScoped):
         self,
         request_type: type[RP],
         callback: Callable[..., ResultPayload] | Callable[..., Awaitable[ResultPayload]],
-        *,
-        scope: RequestScope | None = None,
     ) -> None:
         """Assign a manager to handle a request.
 
         Args:
             request_type: The type of request to assign the manager to
             callback: Called with the request, and with the workflow dispatch resolved as `workflow` when it
-                takes that parameter. Its signature declares the scope (see `resolve_handler_scope`).
-            scope: Only for a callback that depends on a workflow without taking one.
+                takes that parameter. Its `workflow` parameter declares the scope (see `RequestScope`).
 
         Raises:
             ValueError: `request_type` already has a handler.
-            TypeError: The scope is contradictory or can't be read (see `resolve_handler_scope`).
+            TypeError: The scope can't be read (see `scope_from_signature`).
         """
         existing_manager = self._request_type_to_manager.get(request_type)
         if existing_manager is not None:
             msg = f"Attempted to assign an event of type {request_type} to manager {callback.__name__}, but that request is already assigned to manager {existing_manager.__name__}."
             raise ValueError(msg)
-        resolved_scope = resolve_handler_scope(callback, scope)
+        resolved_scope = scope_from_signature(callback)
+        if resolved_scope is None:
+            resolved_scope = RequestScope.HOST
         self._assign(request_type, callback, resolved_scope)
 
     def replace_manager_for_request_type(
@@ -901,25 +899,25 @@ class EventManager(EngineScoped):
     def register_request_handlers(self, owner: object) -> None:
         """Assign each `@handles` method on `owner`. An unmarked override keeps its parent's marks.
 
-        Each handler's signature declares its scope (see `resolve_handler_scope`).
+        Each handler's `workflow` parameter declares its scope (see `RequestScope`).
 
         Raises:
-            TypeError: A handler's scope is contradictory or can't be read.
+            TypeError: A handler's scope can't be read (see `scope_from_signature`).
         """
-        marks: dict[str, tuple[tuple[type[RequestPayload], ...], RequestScope | None]] = {}
+        marks: dict[str, tuple[type[RequestPayload], ...]] = {}
         for klass in reversed(type(owner).__mro__):
             for name, attr in vars(klass).items():
                 request_types = handled_request_types(attr)
                 if request_types:
-                    marks[name] = (request_types, handler_scope(attr))
+                    marks[name] = request_types
 
         # Checked before anything is assigned, so a bad declaration leaves nothing half-registered.
-        for name, (_, declared) in marks.items():
-            resolve_handler_scope(getattr(owner, name), declared)
+        for name in marks:
+            scope_from_signature(getattr(owner, name))
 
-        for name, (request_types, declared) in marks.items():
+        for name, request_types in marks.items():
             for request_type in request_types:
-                self.assign_manager_to_request_type(request_type, getattr(owner, name), scope=declared)
+                self.assign_manager_to_request_type(request_type, getattr(owner, name))
 
     def configure_worker_forwarding(
         self,
