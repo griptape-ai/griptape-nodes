@@ -21,15 +21,16 @@ from griptape_nodes.exe_types.core_types import (
     NodeMessageResult,
     Parameter,
     ParameterContainer,
-    ParameterDictionary,
     ParameterGroup,
     ParameterList,
     ParameterMessage,
     ParameterMode,
     ParameterTypeBuiltin,
 )
+from griptape_nodes.exe_types.list_rows import ListRows, handle_container_parameter
 from griptape_nodes.exe_types.local_objects import LocalObjectScope
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
+from griptape_nodes.exe_types.parameter_mutation import _sanctioned_mutation
 from griptape_nodes.exe_types.variable_resolver import VariableResolver
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
@@ -110,18 +111,12 @@ class TransformedParameterValue(NamedTuple):
 AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
-PRIVATE_EXECUTION = "Private Execution"
+ISOLATED_EXECUTION = "Isolated Execution"
+# What Isolated Execution was called before it was renamed. Workflows saved before then hold this
+# value, so a group's execution_environment reads it as ISOLATED_EXECUTION.
+LEGACY_PRIVATE_EXECUTION = "Private Execution"
 CONTROL_INPUT_PARAMETER = "Control Input Selection"
 
-
-# Per-task flag: when set, parameter mutations on a node are explicitly
-# sanctioned by a request handler (AddParameterToNodeRequest /
-# RemoveParameterFromNodeRequest) and the parameter-mutation-during-aprocess
-# detector should not fire. The handler-side path is the legitimate way to
-# mutate parameters because it propagates the change back to the orchestrator
-# via the request bus; direct add_parameter / remove_parameter_element calls
-# from inside aprocess do not, and that is what the rule catches.
-_sanctioned_mutation: ContextVar[bool] = ContextVar("_node_types_sanctioned_mutation", default=False)
 
 # Per-task flag: True only while ``await node.aprocess()`` is on the stack.
 # The detector uses this to distinguish actual aprocess execution from the
@@ -172,21 +167,6 @@ def _differs(raw_value: Any, output_value: Any) -> bool:
         return bool(raw_value != output_value)
     except Exception:
         return False
-
-
-@contextmanager
-def sanctioned_parameter_mutation() -> Iterator[None]:
-    """Mark the enclosed block as a request-driven parameter mutation.
-
-    Wraps add_parameter / remove_parameter_element calls inside
-    AddParameterToNodeRequest and RemoveParameterFromNodeRequest handlers
-    so the parameter-mutation-during-aprocess detector skips them.
-    """
-    token = _sanctioned_mutation.set(True)
-    try:
-        yield
-    finally:
-        _sanctioned_mutation.reset(token)
 
 
 @contextmanager
@@ -323,8 +303,8 @@ def get_library_names_with_publish_handlers(engine: Engine) -> list[str]:
 
     event_handlers = engine.library_manager.get_registered_event_handlers(PublishWorkflowRequest)
 
-    # Always include "local" and "private" as the first options
-    library_names = [LOCAL_EXECUTION, PRIVATE_EXECUTION]
+    # Always include Local and Isolated Execution as the first options
+    library_names = [LOCAL_EXECUTION, ISOLATED_EXECUTION]
 
     # Add all registered library names that can handle PublishWorkflowRequest
     library_names.extend(sorted(event_handlers.keys()))
@@ -348,6 +328,9 @@ class BaseNode(ABC):
     root_ui_element: BaseNodeElement
     _state: NodeResolutionState
     _tracked_parameters: list[BaseNodeElement]
+    # Set by the ObjectManager while this node is registered, so a node with queued changes is
+    # flushed without the manager scanning every object after each request.
+    _on_change_queued: Callable[[BaseNode], None] | None = None
     _entry_control_parameter: Parameter | None = (
         None  # The control input parameter used to enter this node during execution
     )
@@ -434,6 +417,7 @@ class BaseNode(ABC):
         # its own prior objects.
         self.local_object_source = f"{name}@{uuid.uuid4().hex[:8]}"
         self.parameter_values = {}
+        self._list_rows = ListRows(self)
         self.parameter_output_values = TrackedParameterOutputValues(self)
         self._local_objects = None
         self.root_ui_element = BaseNodeElement()
@@ -560,6 +544,20 @@ class BaseNode(ABC):
     def clear_cancellation(self) -> None:
         """Clear the cancellation request flag."""
         self._cancellation_requested.clear()
+
+    def set_change_listener(self, listener: Callable[[BaseNode], None] | None) -> None:
+        """Call ``listener`` whenever this node queues a change, and now if one is already queued."""
+        self._on_change_queued = listener
+        if listener is not None and self._tracked_parameters:
+            listener(self)
+
+    def queue_element_change(self, element: BaseNodeElement) -> None:
+        """Queue an element for the next batched UI update, once per flush."""
+        if element in self._tracked_parameters:
+            return
+        self._tracked_parameters.append(element)
+        if self._on_change_queued is not None:
+            self._on_change_queued(self)
 
     def emit_parameter_changes(self) -> None:
         if self._tracked_parameters:
@@ -1128,13 +1126,15 @@ class BaseNode(ABC):
         if parameter is None:
             err = f"Attempted to set value for Parameter '{param_name}' but no such Parameter could be found."
             raise KeyError(err)
+        if self._list_rows.write_from_node(
+            parameter, value, initial_setup=initial_setup, running=_running_node.get() is self
+        ):
+            return
         # Perform any conversions to the value based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
         # cause a calling object to alter its assumptions/behavior. The value requested
         # to be assigned will NOT be set.
-        candidate_value = value
-        for converter in parameter.converters:
-            candidate_value = converter(candidate_value)
+        candidate_value = self._convert_value(parameter, value)
 
         # Validate the values next, based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
@@ -1146,38 +1146,37 @@ class BaseNode(ABC):
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
         if not initial_setup:
-            if skip_before_value_set:
-                final_value = candidate_value
-            else:
-                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
-            # ACTUALLY SET THE NEW VALUE
-            self.parameter_values[param_name] = final_value
-            self._also_record_as_result(parameter, final_value)
+            # A row's hooks run while it is being set, so they mustn't replace its list's rows.
+            with self._list_rows.hooks_running(parameter.parent_container_name):
+                if skip_before_value_set:
+                    final_value = candidate_value
+                else:
+                    final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+                # ACTUALLY SET THE NEW VALUE
+                self.parameter_values[param_name] = final_value
+                self._also_record_as_result(parameter, final_value)
 
-            # If a parameter value has been set at the top level of a container, wipe all children.
-            # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-            self.after_value_set(parameter=parameter, value=final_value)
+                # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
+                self.after_value_set(parameter=parameter, value=final_value)
             if emit_change:
                 self._emit_parameter_lifecycle_event(parameter)
         else:
             self.parameter_values[param_name] = candidate_value
             self._also_record_as_result(parameter, candidate_value)
-        # handle with container parameters
         if parameter.parent_container_name is not None:
-            # Does it have a parent container
-            parent_parameter = self.get_parameter_by_name(parameter.parent_container_name)
-            # Does the parent container exist
-            if parent_parameter is not None:
-                # Get it's new value dependent on it's children
-                new_parent_value = handle_container_parameter(self, parent_parameter)
-                if new_parent_value is not None:
-                    # set that new value if it exists.
-                    self.set_parameter_value(
-                        parameter.parent_container_name,
-                        new_parent_value,
-                        initial_setup=initial_setup,
-                        emit_change=False,
-                    )
+            container = self.get_parameter_by_name(parameter.parent_container_name)
+            if isinstance(container, ParameterContainer):
+                self._list_rows.rows_changed(container, initial_setup=initial_setup)
+
+    @staticmethod
+    def _convert_value(parameter: Parameter, value: Any) -> Any:
+        """Run the parameter's converters on `value`, and a list's item converters on each of its items first."""
+        candidate_value = value
+        if isinstance(parameter, ParameterList):
+            candidate_value = parameter.convert_items(candidate_value)
+        for converter in parameter.converters:
+            candidate_value = converter(candidate_value)
+        return candidate_value
 
     def _also_record_as_result(self, parameter: Parameter, value: Any) -> None:
         """Additionally record `value` in `parameter_output_values` if it is something this run produced.
@@ -1266,9 +1265,7 @@ class BaseNode(ABC):
         if isinstance(param, ParameterList) and self._has_connected_whole_list_value(param):
             return self.parameter_values[param_name]
         if isinstance(param, ParameterContainer):
-            value = handle_container_parameter(self, param)
-            if value is not None:
-                return value
+            return handle_container_parameter(self, param)
         if param_name in self.parameter_values:
             value = self.parameter_values[param_name]
         else:
@@ -1308,21 +1305,14 @@ class BaseNode(ABC):
         if parameter is None:
             err = f"Attempted to remove value for Parameter '{param_name}' but parameter doesn't exist."
             raise KeyError(err)
-        if param_name in self.parameter_values:
+        if isinstance(parameter, ParameterContainer):
+            # Drops a value a connection handed the list, and leaves its rows as they are.
+            self.parameter_values.pop(param_name, None)
+        elif param_name in self.parameter_values:
             # Reset the parameter to default.
             default_val = parameter.default_value
+            # A row's set also tells its list.
             self.set_parameter_value(param_name, default_val)
-
-            # special handling if it's in a container.
-            if parameter.parent_container_name and parameter.parent_container_name in self.parameter_values:
-                del self.parameter_values[parameter.parent_container_name]
-                # Raw: this copies the remaining rows along rather than reading them for use. Resolving
-                # here would raise on a key whose object sits in a worker, out of a connection delete and
-                # out of the run's finally, and would write live objects back into parameter_values.
-                new_val = self._get_raw_parameter_value(parameter.parent_container_name)
-                if new_val is not None:
-                    # Don't set the container to None (that would make it empty)
-                    self.set_parameter_value(parameter.parent_container_name, new_val)
         else:
             err = f"Attempted to remove value for Parameter '{param_name}' but no value was set."
             raise KeyError(err)
@@ -1886,9 +1876,7 @@ class BaseNode(ABC):
     def _has_connected_whole_list_value(self, parameter_list: ParameterList) -> bool:
         """Whether a ParameterList was handed an entire list through a connection to the list itself.
 
-        Requiring the connection is what makes this safe to read: `parameter_values[list_name]` is a
-        write-through cache of the child rows that is NOT cleared when a row is removed, so a stale
-        entry can outlive its rows. Gating on the connection keeps that stale entry unreachable.
+        Without that connection the list has no stored value, and is read from its rows.
 
         Warns when the incoming list overrides manually-set rows or overruns `max_items`, since both
         are silent data loss otherwise.
@@ -2935,37 +2923,3 @@ class Connection:
 
     def get_source_node(self) -> BaseNode:
         return self.source_node
-
-
-def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> Any:
-    """Process container parameters and build appropriate data structures.
-
-    This function handles ParameterContainer objects by collecting values from their child
-    parameters and constructing either a list or dictionary based on the container type.
-
-    Args:
-        current_node: The node containing parameter values
-        parameter: The parameter to process, which may be a container
-
-    Returns:
-        A list of parameter values if parameter is a ParameterContainer,
-        or None if the parameter is not a container
-    """
-    # if it's a container and it's value isn't already set.
-    if isinstance(parameter, ParameterContainer):
-        children = parameter.find_elements_by_type(Parameter, find_recursively=False)
-        if isinstance(parameter, ParameterList):
-            build_parameter_value = []
-        elif isinstance(parameter, ParameterDictionary):
-            build_parameter_value = {}
-        build_parameter_value = []
-        for child in children:
-            # Raw, because what this builds is cached into the container's own entry in
-            # `parameter_values`, and that dict is the payload of an ExecuteNodeRequest. Translating here
-            # would put a live object in it and send it to a worker as JSON. The node still sees objects:
-            # its read resolves the whole list on the way out.
-            value = current_node._get_raw_parameter_value(child.name)
-            if value is not None:
-                build_parameter_value.append(value)
-        return build_parameter_value
-    return None

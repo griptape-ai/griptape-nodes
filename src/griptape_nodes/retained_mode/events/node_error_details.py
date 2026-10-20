@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,6 +26,13 @@ ALLOWED_LINK_SCHEMES = ("http://", "https://")
 # A link starting with "#" opens a place in the editor, such as "#settings-secrets?filter=MY_KEY".
 EDITOR_LINK_PREFIX = "#"
 RESPONSE_DROPPED_FIELD = "response_dropped"
+# A string longer than this is cut when the response is over the cap, so one long value does not
+# hide the rest of it.
+MAX_RESPONSE_STRING_CHARS = 2000
+# A response nested deeper than this is dropped before it is serialized or shrunk, so neither can
+# overflow the stack. Provider responses are a few levels deep.
+MAX_RESPONSE_DEPTH = 100
+_DATA_URI = re.compile(r"^(data:[^;,]+;base64,)(.+)$", re.DOTALL)
 
 
 @dataclass
@@ -87,7 +95,7 @@ def build_engine_error_details(node_name: str, message: str, cause: BaseExceptio
 def sanitize_attachments(fields: Any, response: Any, links: Any) -> ErrorAttachments:
     """Keep what can be shown and serialized. Drop the rest with a debug log, never stringify it.
 
-    A response dropped for its size leaves ``RESPONSE_DROPPED_FIELD`` in ``fields`` so the reader
+    A response still over the size cap after shrinking leaves ``RESPONSE_DROPPED_FIELD`` in ``fields`` so the reader
     knows there was one.
     """
     clean_fields = _sanitize_fields(fields)
@@ -180,22 +188,78 @@ def _sanitize_fields(value: Any) -> dict[str, str]:
 
 
 def _sanitize_response(value: Any) -> dict[str, Any] | None:
-    """Return the response if it is a JSON-serializable dict under the size cap, otherwise None."""
+    """Return the response if it is a JSON-serializable dict under the size cap, otherwise None.
+
+    A response over the cap is shrunk first: base64 data becomes its length and long strings are
+    cut. It is dropped only if it is still over.
+    """
     if not isinstance(value, dict):
         logger.debug("Dropped node error response of type %s; expected a dict", type(value).__name__)
         return None
+    if _deeper_than(value, MAX_RESPONSE_DEPTH):
+        logger.debug("Dropped node error response nested deeper than %d levels", MAX_RESPONSE_DEPTH)
+        return None
+    serialized_size = _serialized_size(value)
+    if serialized_size is None:
+        return None
+    if serialized_size <= MAX_RESPONSE_BYTES:
+        return value
+    shrunk = _shrink(value)
+    shrunk_size = _serialized_size(shrunk)
+    if shrunk_size is None or shrunk_size > MAX_RESPONSE_BYTES:
+        logger.debug("Dropped node error response over the %d byte cap", MAX_RESPONSE_BYTES)
+        return None
+    return shrunk
+
+
+def _serialized_size(value: dict[str, Any]) -> int | None:
+    """The response's size in bytes as JSON, or None if it can't be serialized."""
     try:
         # allow_nan=False because NaN and Infinity are not JSON: the editor's JSON.parse would
         # reject the whole event, not just the response.
         serialized = json.dumps(value, allow_nan=False)
-    # RecursionError from a deeply nested response. This runs while reporting a failure, so
-    # letting it escape would replace the node's error with an engine crash.
-    except (TypeError, ValueError, RecursionError):
+    except (TypeError, ValueError):
         logger.debug("Dropped node error response that is not JSON-serializable", exc_info=True)
         return None
-    if len(serialized.encode("utf-8")) > MAX_RESPONSE_BYTES:
-        logger.debug("Dropped node error response over the %d byte cap", MAX_RESPONSE_BYTES)
-        return None
+    return len(serialized.encode("utf-8"))
+
+
+def _deeper_than(value: Any, limit: int) -> bool:
+    """Whether dicts and lists in the value nest more than `limit` levels. A loop, not recursion."""
+    pending: list[tuple[Any, int]] = [(value, 1)]
+    while pending:
+        item, depth = pending.pop()
+        # Only dicts and lists are levels. A plain value inside the deepest one adds none.
+        if isinstance(item, dict):
+            children = item.values()
+        elif isinstance(item, list | tuple):
+            children = item
+        else:
+            continue
+        if depth > limit:
+            return True
+        pending.extend((child, depth + 1) for child in children)
+    return False
+
+
+def _shrink(value: Any) -> Any:
+    """Make an oversized response fit the cap while keeping its structure.
+
+    Base64 data becomes its length and strings over MAX_RESPONSE_STRING_CHARS are cut, so one image
+    or log in a response doesn't push out the status and message beside it. Libraries attach the
+    provider's body as it is, and this keeps it readable instead of dropping it whole.
+    """
+    if isinstance(value, dict):
+        return {key: _shrink(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_shrink(item) for item in value]
+    if isinstance(value, str):
+        match = _DATA_URI.match(value)
+        if match:
+            prefix, data = match.groups()
+            return f"{prefix}[{len(data)} chars]"
+        if len(value) > MAX_RESPONSE_STRING_CHARS:
+            return f"{value[:MAX_RESPONSE_STRING_CHARS]}... [{len(value)} chars total]"
     return value
 
 

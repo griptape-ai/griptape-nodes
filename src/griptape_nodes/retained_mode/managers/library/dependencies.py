@@ -248,9 +248,7 @@ class LibraryDependencies(EngineScoped):
 
         # Load library metadata from file
         metadata_request = LoadLibraryMetadataFromFileRequest(file_path=library_file_path)
-        metadata_result = self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
-            metadata_request
-        )
+        metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(metadata_request)
 
         if not isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
             details = f"Attempted to read the library configuration at {library_file_path}. Failed due to: {metadata_result.result_details}"
@@ -501,7 +499,7 @@ class LibraryDependencies(EngineScoped):
         info = self.engine.library_manager.get_library_info_by_library_name(library_name)
         if info is None:
             return None
-        metadata_result = self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
+        metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
             LoadLibraryMetadataFromFileRequest(file_path=info.library_path)
         )
         if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
@@ -557,7 +555,12 @@ class LibraryDependencies(EngineScoped):
         `_this_process_owns_the_edit_venv`, which claims it only when nothing has built it yet.
         What it never gets is this worker's execution environment, which belongs to the library
         this worker was spawned for and reaches it as PYTHONPATH.
+
+        A general-purpose worker loads every library but was spawned for none of them, so every
+        library it loads takes the nested-registration path above.
         """
+        if self.engine.library_manager.is_general_purpose_worker:
+            return False
         if self.engine.library_manager._target_library_names is None:
             return True
         return library_name in self.engine.library_manager._target_library_names

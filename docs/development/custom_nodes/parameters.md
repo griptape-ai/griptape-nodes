@@ -574,6 +574,36 @@ for tool in tools:
 **Important behavior note:** `get_parameter_list_value()` flattens nested iterables and **drops falsey items**
 (e.g. `0`, `False`, `""`, empty dicts/lists). If you need to preserve falsey values, use `get_parameter_value()` and handle flattening yourself.
 
+**Converting each item:** pass `item_converters` to change one item at a time, such as turning a file path into an
+artifact. They run on each item whether it is set in its own row or arrives in a whole list over a connection.
+`converters` run on each row, and on a whole list a connection hands the list, but not on a value built from rows.
+
+```python
+from functools import partial
+
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
+
+ParameterList(
+    name="images",
+    input_types=["ImageUrlArtifact", "list[ImageUrlArtifact]"],
+    tooltip="Images to combine",
+    allowed_modes={ParameterMode.INPUT},
+    item_converters=[
+        partial(normalize_artifact_input, artifact_type=ImageUrlArtifact, accepted_types=(ImageArtifact,))
+    ],
+)
+```
+
+**Setting a whole list:** a list nothing is connected to holds its items in rows, one per item, and has no value of
+its own: reading it builds it from the rows. Setting a whole list, with `SetParameterValueRequest` or with
+`self.set_parameter_value("images", [...])`, replaces the rows with one row per item. Three writes leave the rows
+alone: one made while the node is running (it is recorded as the node's result), one made while a workflow loads,
+and one made from `before_value_set` or `after_value_set` on the list or one of its rows, which logs a warning.
+Don't rewrite a list from those hooks to convert its items: use `item_converters`. A list fed by a connection to the list itself holds the whole list it was
+handed.
+
 ## Common Parameter Patterns
 
 ### Search Input with Placeholder

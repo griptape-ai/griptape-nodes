@@ -94,7 +94,7 @@ class TestWriteFileRequest:
         file_path = temp_dir / "test.txt"
         request = WriteFileRequest(file_path=str(file_path), content="Hello, World!")
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         # Compare resolved paths to handle symlinks (e.g., /var -> /private/var on macOS)
@@ -109,7 +109,7 @@ class TestWriteFileRequest:
         content = b"\x00\x01\x02\x03"
         request = WriteFileRequest(file_path=str(file_path), content=content)
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         # Compare resolved paths to handle symlinks (e.g., /var -> /private/var on macOS)
@@ -124,7 +124,7 @@ class TestWriteFileRequest:
         file_path.write_text("Initial content\n")
 
         request = WriteFileRequest(file_path=str(file_path), content="Appended content\n", append=True)
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert file_path.read_text() == "Initial content\nAppended content\n"
@@ -138,7 +138,7 @@ class TestWriteFileRequest:
         request = WriteFileRequest(
             file_path=str(file_path), content="New content", existing_file_policy=ExistingFilePolicy.OVERWRITE
         )
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert file_path.read_text() == "New content"
@@ -152,7 +152,7 @@ class TestWriteFileRequest:
         request = WriteFileRequest(
             file_path=str(file_path), content="New content", existing_file_policy=ExistingFilePolicy.FAIL
         )
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.POLICY_NO_OVERWRITE
@@ -166,7 +166,7 @@ class TestWriteFileRequest:
         file_path = temp_dir / "subdir" / "nested" / "test.txt"
         request = WriteFileRequest(file_path=str(file_path), content="Content", create_parents=True)
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         assert file_path.exists()
@@ -178,7 +178,7 @@ class TestWriteFileRequest:
         file_path = temp_dir / "nonexistent" / "test.txt"
         request = WriteFileRequest(file_path=str(file_path), content="Content", create_parents=False)
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS
@@ -192,7 +192,7 @@ class TestWriteFileRequest:
 
         request = WriteFileRequest(file_path=str(dir_path), content="Content")
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         # Attempting to write to a directory path should fail
@@ -215,7 +215,7 @@ class TestWriteFileRequest:
             "griptape_nodes.retained_mode.managers.os_manager.atomic_write_bytes",
             side_effect=PermissionError("Permission denied"),
         ):
-            result = os_manager.on_write_file_request(request)
+            result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED
@@ -1343,7 +1343,7 @@ class TestWindowsLongPathHandling:
         file_path = subdir / "test.txt"
 
         request = WriteFileRequest(file_path=str(file_path), content="Content", create_parents=True)
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         # The returned path should not contain \\?\ prefix
@@ -1845,7 +1845,7 @@ class TestCreateNewFilePolicy:
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
         # First file should use requested name (test.txt) since it's available
@@ -1864,7 +1864,7 @@ class TestCreateNewFilePolicy:
             content="File 1",
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
-        result1 = os_manager.on_write_file_request(request1)
+        result1 = os_manager.engine.handle_request(request1)
         assert isinstance(result1, WriteFileResultSuccess)
         assert (temp_dir / "output.txt").exists()
 
@@ -1874,7 +1874,7 @@ class TestCreateNewFilePolicy:
             content="File 2",
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
-        result2 = os_manager.on_write_file_request(request2)
+        result2 = os_manager.engine.handle_request(request2)
         assert isinstance(result2, WriteFileResultSuccess)
         assert (temp_dir / "output_1.txt").exists()
 
@@ -1884,7 +1884,7 @@ class TestCreateNewFilePolicy:
             content="File 3",
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
-        result3 = os_manager.on_write_file_request(request3)
+        result3 = os_manager.engine.handle_request(request3)
         assert isinstance(result3, WriteFileResultSuccess)
         assert (temp_dir / "output_2.txt").exists()
 
@@ -1904,7 +1904,7 @@ class TestCreateNewFilePolicy:
             content="File 2",
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
         assert isinstance(result, WriteFileResultSuccess)
         expected_path = temp_dir / "render_2.png"
         assert Path(result.final_file_path).resolve() == expected_path.resolve()
@@ -1940,7 +1940,7 @@ class TestCreateNewFilePolicy:
             existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         )
 
-        result = os_manager.on_write_file_request(request)
+        result = os_manager.engine.handle_request(request)
 
         # EXPECTED: Should succeed and create render_1.png
         # ACTUAL: Currently fails with WriteFileResultFailure
