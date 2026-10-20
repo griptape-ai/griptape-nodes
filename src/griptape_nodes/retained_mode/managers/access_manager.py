@@ -41,7 +41,7 @@ fires from `ModelManager`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.node_library.library_declarations import (
     ModelProviderUsageNodeProperty,
@@ -109,8 +109,6 @@ class _NodeResolution:
 
 class AccessManager(EngineScoped):
     """Answers per-candidate authorization queries via the `OFFER_MODEL` checkpoint."""
-
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(self, event_manager: EventManager | None = None, *, engine: Engine | None = None) -> None:
         super().__init__(engine)

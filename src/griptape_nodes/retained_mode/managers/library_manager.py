@@ -4,7 +4,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.node_library.library_registry import (
     LibraryRegistry,
@@ -72,7 +72,7 @@ from griptape_nodes.retained_mode.managers.library.workers import LibraryWorkers
 from griptape_nodes.retained_mode.managers.settings import (
     LIBRARIES_TO_REGISTER_KEY,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -86,8 +86,6 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class LibraryManager(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     SANDBOX_LIBRARY_NAME = SANDBOX_LIBRARY_NAME
     STABLE_NAMESPACE_PREFIX = STABLE_NAMESPACE_PREFIX
     LIBRARY_CONFIG_FILENAME = LIBRARY_CONFIG_FILENAME

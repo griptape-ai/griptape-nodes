@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.base_events import AppEvent
@@ -36,7 +36,7 @@ from griptape_nodes.retained_mode.events.open_workflow_events import (
     OpenWorkflowsChanged,
 )
 from griptape_nodes.retained_mode.events.workflow_events import RunWorkflowFromRegistryRequest
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.keyed_mutex import KeyedMutex
 
 if TYPE_CHECKING:
@@ -78,8 +78,6 @@ class WorkflowRebuildFailure:
 
 
 class OpenWorkflowsManager(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         # Opening awaits while it builds, so two opens of one workflow could each find it closed and

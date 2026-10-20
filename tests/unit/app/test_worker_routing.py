@@ -195,7 +195,7 @@ class TestInstallRemoteHandlersSwap:
                 return _StubResult(result_details="local")
 
             locals_registered[request_type] = original
-            event_manager.assign_manager_to_request_type(request_type, original, scope=RequestScope.HOST)
+            event_manager.assign_manager_to_request_type(request_type, original)
 
         register_remote_handlers(event_manager)
 
@@ -250,7 +250,10 @@ class TestInstallRemoteHandlersSwap:
             async def original(_request: RequestPayload) -> _StubResult:
                 return _StubResult(result_details="ok")
 
-            event_manager.assign_manager_to_request_type(request_type, original, scope=scope)
+            declared = None
+            if scope is not RequestScope.HOST:
+                declared = scope
+            event_manager.assign_manager_to_request_type(request_type, original, scope=declared)
 
         register_remote_handlers(event_manager)
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, cast
 
 from pydantic import ValidationError
 
@@ -34,7 +34,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     LibrarySchemaValidationProblem,
 )
 from griptape_nodes.retained_mode.managers.library.common import LIBRARY_CONFIG_FILENAME, LibraryFitness
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.git_utils import (
     get_git_info,
 )
@@ -57,8 +57,6 @@ def is_library_name_registered(library_name: str) -> bool:
 
 
 class LibraryMetadataLoading(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

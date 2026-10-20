@@ -246,7 +246,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointSubjectType,
 )
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.retained_mode.run_scheduler import Run, RunRefusedError, current_run, run_scope
 from griptape_nodes.retained_mode.runtime.context import NodeContext
@@ -3606,7 +3606,7 @@ class NodeManager(EngineScoped):
             worker_request_topic=worker_request_topic,
         )
 
-    @handles(CancelExecuteNodeRequest, scope=RequestScope.HOST)
+    @handles(CancelExecuteNodeRequest)
     async def on_cancel_execute_node_request(self, request: CancelExecuteNodeRequest) -> ResultPayload:
         """Worker-side handler: cancel an in-flight aprocess task by request_id.
 

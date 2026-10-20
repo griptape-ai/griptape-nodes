@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from griptape_nodes.files.path_utils import (
     derive_registry_key,
@@ -28,7 +28,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowRequest,
     SaveWorkflowResultSuccess,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.string_utils import normalize_display_name
 
 if TYPE_CHECKING:
@@ -45,8 +45,6 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class WorkflowFileOperations(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

@@ -13269,11 +13269,18 @@ class TestUnsavedWorkflowDirFromSaveSituation:
         real_get_builtin = ProjectManager._get_builtin_variable_value
 
         def counting_get_builtin(
-            pm_self: ProjectManager, var_name: str, project_info: ProjectInfo, workflow_context: WorkflowContextSnapshot
+            pm_self: ProjectManager,
+            var_name: str,
+            project_info: ProjectInfo,
+            workflow_context: WorkflowContextSnapshot,
+            *,
+            report_missing_workflow: bool = True,
         ) -> str:
             if var_name == "workflow_dir":
                 recorded.append(var_name)
-            return real_get_builtin(pm_self, var_name, project_info, workflow_context)
+            return real_get_builtin(
+                pm_self, var_name, project_info, workflow_context, report_missing_workflow=report_missing_workflow
+            )
 
         registered_unsaved = Mock()
         registered_unsaved.file_path = None

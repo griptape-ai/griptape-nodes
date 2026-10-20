@@ -44,7 +44,6 @@ from griptape_nodes.retained_mode.managers.event_manager import (
     ResultContext,
     current_request_type,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope
 
 
 class TestEventManagerBroadcasting:
@@ -242,7 +241,7 @@ class TestHandleRequestLoopSafety:
             captured["handler_loop"] = asyncio.get_running_loop()
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler)
 
         caller_loop = asyncio.get_running_loop()
         event = event_manager.handle_request(_ProbeRequest())
@@ -257,7 +256,7 @@ class TestHandleRequestLoopSafety:
         def sync_handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, sync_handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, sync_handler)
 
         event = event_manager.handle_request(_ProbeRequest())
         assert event.result.succeeded()
@@ -268,7 +267,7 @@ class TestHandleRequestLoopSafety:
         async def async_handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler)
 
         event = event_manager.handle_request(_ProbeRequest())
         assert event.result.succeeded()
@@ -280,7 +279,7 @@ class TestHandleRequestLoopSafety:
         async def async_handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, async_handler)
 
         event = await event_manager.ahandle_request(_ProbeRequest())
         assert event.result.succeeded()
@@ -335,8 +334,9 @@ class TestHandleRequestForwardingFromRunningLoop:
         async def original(_request: _ForwardableProbeRequest) -> _ForwardableProbeResult:
             return _ForwardableProbeResult(result_details="local")
 
+        event_manager.assign_manager_to_request_type(_ForwardableProbeRequest, original)
         remote = RemoteHandler(original=original, event_manager=event_manager)
-        event_manager.assign_manager_to_request_type(_ForwardableProbeRequest, remote, scope=RequestScope.HOST)
+        event_manager.replace_manager_for_request_type(_ForwardableProbeRequest, remote)
         event_manager._websocket_event_loop = ws_loop
         event_manager.forward_to_orchestrator = fake_forward  # type: ignore[method-assign]
 
@@ -525,7 +525,7 @@ class TestPreDispatchHooks:
             handler_calls.append(request)
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         hook_calls: list[RequestPayload] = []
 
@@ -548,7 +548,7 @@ class TestPreDispatchHooks:
             handler_calls.append(request)
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         def hook(_request: RequestPayload, _context: object) -> _DeniedResult:
             return _DeniedResult(result_details="denied")
@@ -567,7 +567,7 @@ class TestPreDispatchHooks:
         def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         order: list[str] = []
 
@@ -595,7 +595,7 @@ class TestPreDispatchHooks:
             handler_calls.append(request)
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         def hook(_request: RequestPayload, _context: object) -> None:
             msg = "boom"
@@ -621,7 +621,7 @@ class TestPreDispatchHooks:
             handler_calls.append(request)
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         hook_calls: list[RequestPayload] = []
 
@@ -648,7 +648,7 @@ class TestPreDispatchHooks:
         def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         calls: list[int] = []
 
@@ -676,7 +676,7 @@ class TestPreDispatchHooks:
         def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         hook_calls: list[RequestPayload] = []
 
@@ -696,7 +696,7 @@ class TestPreDispatchHooks:
         def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         hook_calls: list[RequestPayload] = []
 
@@ -728,7 +728,7 @@ class TestPreDispatchHooks:
             handler_calls.append(request)
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         def hook(_request: RequestPayload, _context: object) -> _DeniedResult:
             return _DeniedResult(result_details="denied")
@@ -837,7 +837,7 @@ class TestPostDispatchHooks:
     @staticmethod
     def _manager_with_handler(handler: Callable[[_ProbeRequest], ResultPayload]) -> EventManager:
         event_manager = EventManager()
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
         return event_manager
 
     def test_reentrancy_guard_skips_only_the_hook_that_is_actually_up_chain(self) -> None:
@@ -973,7 +973,7 @@ class TestPostDispatchHooks:
             msg = "async handler exploded"
             raise RuntimeError(msg)
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         seen: list[ResultPayload] = []
         event_manager.add_post_dispatch_hook(_ProbeRequest, _RecordingHook(seen))
@@ -1050,7 +1050,7 @@ class TestPostDispatchHooks:
             return _ProbeResult(result_details="ok")
 
         event_manager = self._manager_with_handler(handler)
-        event_manager.assign_manager_to_request_type(_SubProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_SubProbeRequest, handler)
 
         seen: list[ResultPayload] = []
         event_manager.add_post_dispatch_hook(_ProbeRequest, _RecordingHook(seen))
@@ -1237,8 +1237,8 @@ class TestPostDispatchHooks:
             return _ProbeResult(result_details="ok")
 
         event_manager = EventManager()
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
-        event_manager.assign_manager_to_request_type(_CycleProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
+        event_manager.assign_manager_to_request_type(_CycleProbeRequest, handler)
 
         calls: list[str] = []
         # Bounded so a regression fails the assertion instead of hanging the suite.
@@ -1295,7 +1295,7 @@ class TestPostDispatchHooks:
             return _ProbeResult(result_details="ok")
 
         event_manager = EventManager()
-        event_manager.assign_manager_to_request_type(_OmitFieldProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_OmitFieldProbeRequest, handler)
 
         # Sampled inside the hook, not by holding the request: the scrub mutates the
         # object in place, so a saved reference reads post-scrub state whenever the
@@ -1329,7 +1329,7 @@ class TestPostDispatchHooks:
         def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         depths: list[int] = []
 
@@ -1355,7 +1355,7 @@ class TestPostDispatchHooks:
             raise RuntimeError(msg)
 
         event_manager = EventManager()
-        event_manager.assign_manager_to_request_type(_OmitFieldProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_OmitFieldProbeRequest, handler)
 
         # Sampled inside the hook for the reason given in the test above.
         seen: list[str | None] = []
@@ -1427,7 +1427,7 @@ class TestPostDispatchHooks:
         async def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         seen: list[ResultPayload] = []
 
@@ -1456,7 +1456,7 @@ class TestPostDispatchHooks:
         async def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         seen: list[ResultPayload] = []
 
@@ -1489,7 +1489,7 @@ class TestPostDispatchHooks:
         async def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         async def hook(_request: RequestPayload, _result: ResultPayload) -> None:
             await asyncio.sleep(0)
@@ -1526,7 +1526,7 @@ class TestPostDispatchHooks:
         async def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         release = asyncio.Event()
 
@@ -1568,7 +1568,7 @@ class TestPostDispatchHooks:
         async def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         seen_engines: list[Engine] = []
 
@@ -1591,7 +1591,7 @@ class TestPostDispatchHooks:
         async def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         seen: list[ResultPayload] = []
 
@@ -1620,7 +1620,7 @@ class TestPostDispatchHooks:
         async def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
 
         hook_threads: list[int] = []
 
@@ -1657,7 +1657,7 @@ class TestPostDispatchHookContextIsolation:
         async def handler(_request: _ProbeRequest) -> _ProbeResult:
             return _ProbeResult(result_details="ok")
 
-        event_manager.assign_manager_to_request_type(_ProbeRequest, handler, scope=RequestScope.HOST)
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
         return event_manager
 
     @pytest.mark.asyncio

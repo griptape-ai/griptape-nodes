@@ -1,6 +1,6 @@
 import logging
 from re import Pattern
-from typing import Any, ClassVar
+from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -28,7 +28,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.runtime.objects import WorkflowObjects
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
@@ -36,8 +36,6 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class ObjectManager(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     def __init__(self, _event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         _event_manager.register_request_handlers(self)

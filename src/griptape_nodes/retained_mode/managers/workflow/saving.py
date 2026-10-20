@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, MacroVariables, ParsedMacro
 from griptape_nodes.common.project_templates.situation import BuiltInSituation, SituationFilePolicy
@@ -58,7 +58,7 @@ from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.project_manager import BUILTIN_VARIABLES
 from griptape_nodes.retained_mode.managers.workflow.loading import EPOCH_START
 from griptape_nodes.retained_mode.managers.workflow.shape import WorkflowShapeType
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -163,8 +163,6 @@ class _ExistingMetadata(NamedTuple):
 
 
 class WorkflowSaver(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

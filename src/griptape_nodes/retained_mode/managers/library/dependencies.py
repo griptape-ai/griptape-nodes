@@ -9,7 +9,7 @@ import sysconfig
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import anyio
 
@@ -31,7 +31,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     LoadLibraryMetadataFromFileResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.git_utils import (
     extract_repo_name_from_url,
@@ -165,8 +165,6 @@ async def engine_version_constraints() -> AsyncIterator[list[str]]:
 
 
 class LibraryDependencies(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

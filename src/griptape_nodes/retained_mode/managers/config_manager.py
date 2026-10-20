@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, ClassVar, Literal, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 from pydantic import ValidationError
 
@@ -88,7 +88,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     LogLevel,
     Settings,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.dict_utils import drop_blank_values, get_dot_value, merge_dicts, set_dot_value
 from griptape_nodes.utils.engine_dirs import engine_config_dir
 from griptape_nodes.utils.file_utils import DEFAULT_MAX_SEARCH_DEPTH
@@ -324,8 +324,6 @@ class ConfigManager(EngineScoped):
         env_config (dict): The configuration loaded from GTN_CONFIG_ environment variables.
         merged_config (dict): The merged configuration, combining all sources in precedence order.
     """
-
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(self, event_manager: EventManager | None = None, *, engine: Engine | None = None) -> None:
         """Initialize the ConfigManager.

@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.request_handlers import RequestScope
+from griptape_nodes.retained_mode.runtime.binding import bound_workflow_id
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -77,11 +77,7 @@ class InProcessWorkerHarness:
 
         async def _forward(request: RequestPayload) -> ResultPayload:
             # What forward_to_orchestrator puts on the envelope: the workflow the worker is bound to.
-            bound = self.worker.engine.current_workflow_or_none()
-            workflow_id = None
-            if bound is not None:
-                workflow_id = bound.workflow_id
-            result_event = await self.orchestrator.ahandle_request(request, workflow_id=workflow_id)
+            result_event = await self.orchestrator.ahandle_request(request, workflow_id=bound_workflow_id())
             return result_event.result
 
         original = self.worker.get_manager_for_request_type(request_type)
@@ -98,12 +94,11 @@ class InProcessWorkerHarness:
             return await _invoke_handler(original, request)
 
         # Production keeps each type's scope when it swaps in a RemoteHandler. A type with no original
-        # handler has nothing to keep.
-        scope = RequestScope.HOST
+        # handler has nothing to keep, and `remote` takes no workflow, so it is a host handler.
         if original is not None:
-            scope = self.worker.scope_for(request_type)
-            self.worker.remove_manager_from_request_type(request_type)
-        self.worker.assign_manager_to_request_type(request_type, remote, scope=scope)
+            self.worker.replace_manager_for_request_type(request_type, remote)
+            return
+        self.worker.assign_manager_to_request_type(request_type, remote)
 
     async def start(self) -> None:
         """Start the worker-side dispatch loop. Safe to call multiple times."""

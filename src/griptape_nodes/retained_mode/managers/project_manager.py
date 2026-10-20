@@ -8,7 +8,7 @@ import os
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import anyio
 from pydantic import ValidationError
@@ -146,7 +146,7 @@ from griptape_nodes.retained_mode.publishing.project_packager import (
     read_manifest,
     rename_project_template,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.variable_types import FlowVariable, VariableLayer, VariablePermission
 from griptape_nodes.utils.dict_utils import get_dot_value
 from griptape_nodes.utils.file_utils import find_files_recursive
@@ -686,8 +686,6 @@ class ProjectManager(EngineScoped):
 
     This allows UI to query validation status even when template failed to load.
     """
-
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(
         self,
@@ -1947,12 +1945,22 @@ class ProjectManager(EngineScoped):
         return dict(resolver.env_resolved)
 
     def _build_variable_resolver(
-        self, template: ProjectTemplate, project_info: ProjectInfo, workflow_context: WorkflowContextSnapshot
+        self,
+        template: ProjectTemplate,
+        project_info: ProjectInfo,
+        workflow_context: WorkflowContextSnapshot,
+        *,
+        report_missing_workflow: bool = True,
     ) -> _ProjectVariableResolver:
-        """Build a resolver that recursively resolves directories and env vars for this project."""
+        """Build a resolver that recursively resolves directories and env vars for this project.
+
+        `report_missing_workflow` is passed to `_get_builtin_variable_value`.
+        """
         return _ProjectVariableResolver(
             template=template,
-            get_builtin=lambda name: self._get_builtin_variable_value(name, project_info, workflow_context),
+            get_builtin=lambda name: self._get_builtin_variable_value(
+                name, project_info, workflow_context, report_missing_workflow=report_missing_workflow
+            ),
             secrets_manager=self._secrets_manager,
         )
 
@@ -4949,7 +4957,12 @@ class ProjectManager(EngineScoped):
         return _BuiltinResolutionResult(conflicts=conflicts, unavailable=unavailable)
 
     def _get_builtin_variable_value(
-        self, var_name: str, project_info: ProjectInfo, workflow_context: WorkflowContextSnapshot
+        self,
+        var_name: str,
+        project_info: ProjectInfo,
+        workflow_context: WorkflowContextSnapshot,
+        *,
+        report_missing_workflow: bool = True,
     ) -> str:
         """Get the value of a single builtin variable.
 
@@ -4957,6 +4970,8 @@ class ProjectManager(EngineScoped):
             var_name: Name of the builtin variable
             project_info: Information about the current project
             workflow_context: The workflow `workflow_name` and `workflow_dir` are answered from
+            report_missing_workflow: Whether a workflow builtin asked for with no workflow is reported as a
+                read the request depends on (see `Engine.report_host_workflow_read`)
 
         Returns:
             String value of the builtin variable
@@ -4978,11 +4993,12 @@ class ProjectManager(EngineScoped):
 
             case "workflow_name":
                 if workflow_context.name is None:
-                    msg = "No current workflow"
-                    raise RuntimeError(msg)
+                    raise self._no_workflow_error(var_name, report_missing_workflow=report_missing_workflow)
                 return workflow_context.name
 
             case "workflow_dir":
+                if workflow_context.name is None:
+                    raise self._no_workflow_error(var_name, report_missing_workflow=report_missing_workflow)
                 return self._resolve_workflow_dir(project_info, workflow_context)
 
             case "static_files_dir":
@@ -4996,6 +5012,12 @@ class ProjectManager(EngineScoped):
         # static analyzers (CodeQL) can prove the function never implicitly returns None.
         msg = f"Unknown builtin variable: {var_name}"
         raise ValueError(msg)
+
+    def _no_workflow_error(self, var_name: str, *, report_missing_workflow: bool) -> RuntimeError:
+        """The error for a workflow builtin asked for with no workflow, reporting the read if asked to."""
+        if report_missing_workflow:
+            self.engine.report_host_workflow_read(f"resolved {{{var_name}}}")
+        return RuntimeError("No current workflow")
 
     def _resolve_builtin_workspace_dir(self) -> str:
         """Resolve the `workspace_dir` builtin: the root every relative project path anchors to.
@@ -5148,8 +5170,11 @@ class ProjectManager(EngineScoped):
         # Shared recursive resolver so directories referencing other directories
         # (e.g. watch_output -> watch_folder) flatten through the same machinery
         # as forward macro resolution. Caches results across the whole inversion
-        # pass below.
-        resolver = self._build_variable_resolver(template, project_info, workflow_context)
+        # pass below. Every directory is resolved to find the ones containing the path, so one that
+        # needs a workflow this context lacks just doesn't match: that isn't a missing dependency.
+        resolver = self._build_variable_resolver(
+            template, project_info, workflow_context, report_missing_workflow=False
+        )
 
         # Find all matching directories (where absolute_path is inside the directory)
         class DirectoryMatch(NamedTuple):

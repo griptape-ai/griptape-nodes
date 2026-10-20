@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, cast
 
 from griptape_nodes.files.path_utils import derive_registry_key
 from griptape_nodes.retained_mode.engine import EngineScoped
@@ -23,7 +23,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RegisterWorkflowResultSuccess,
     SaveWorkflowRequest,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -35,8 +35,6 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class WorkflowPublishing(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

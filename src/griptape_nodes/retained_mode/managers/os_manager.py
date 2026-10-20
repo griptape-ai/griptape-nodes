@@ -155,7 +155,7 @@ from griptape_nodes.retained_mode.managers.resource_types.compute_resource impor
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
 from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform
 from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
-from griptape_nodes.retained_mode.runtime.binding import WorkflowNotNamedError
+from griptape_nodes.retained_mode.runtime.binding import NO_WORKFLOW, WorkflowNotNamedError, bound_workflow
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime, workflow_id_of
 
 if TYPE_CHECKING:
@@ -318,8 +318,6 @@ class OSManager(EngineScoped):
     Making its own class as some runtime environments and some customer requirements may dictate this as optional.
     This lays the groundwork to exclude specific functionality on a configuration basis.
     """
-
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     # Windows CSIDL constants for special folders (used by _expand_path)
     # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
@@ -1985,7 +1983,7 @@ class OSManager(EngineScoped):
             result_details="Unexpected result type from on_list_directory_request.",
         )
 
-    @handles(DeduceSequencesFromFileListRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(DeduceSequencesFromFileListRequest)
     def on_deduce_sequences_from_file_list_request(self, request: DeduceSequencesFromFileListRequest) -> ResultPayload:
         """Handle a request to detect sequences from a caller-supplied file list.
 
@@ -2321,7 +2319,7 @@ class OSManager(EngineScoped):
                 failure_reason=FileIOFailureReason.IO_ERROR, result_details=f"Error reading from {location}: {e}"
             )
 
-    @handles(ReadFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(ReadFileRequest)
     async def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
         """Handle a request to read file contents with automatic text/binary detection.
 
@@ -2410,7 +2408,7 @@ class OSManager(EngineScoped):
         logger.debug("Fallback to full image data URL")
         return data_url
 
-    @handles(GetNextUnusedFilenameRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(GetNextUnusedFilenameRequest)
     def on_get_next_unused_filename_request(self, request: GetNextUnusedFilenameRequest) -> ResultPayload:
         """Handle a request to find the next available filename (preview only - no file creation)."""
         # Handle string paths specially: try base path first, then indexed
@@ -3059,14 +3057,16 @@ class OSManager(EngineScoped):
     def _workflow_for_file_provenance(self, workflow: WorkflowRuntime | None) -> WorkflowRuntime | None:
         """The workflow a written file's embedded metadata and sidecar describe, or None when it has none.
 
-        Dispatch hands a write its workflow, so that one is used. A node library that calls
-        `on_write_file_request` directly gets no workflow, and its file belongs to the workflow the call
-        runs in, so this is the one place that reads the bound workflow for it. When several workflows are
-        open and the call is bound to none of them, the file gets no workflow provenance, because
-        provenance is best-effort and must not fail the write.
+        Dispatch hands a write its workflow, so that one is used, and when dispatch bound it to none it
+        has none. A node library that calls `on_write_file_request` directly gets no workflow, and its file
+        belongs to the workflow the call runs in, so this is the one place that reads the bound workflow
+        for it. When several workflows are open and the call is bound to none of them, the file gets no
+        workflow provenance, because provenance is best-effort and must not fail the write.
         """
         if workflow is not None:
             return workflow
+        if bound_workflow.get() is NO_WORKFLOW:
+            return None
         try:
             return self.engine.current_workflow_or_none()
         except WorkflowNotNamedError:
@@ -3920,7 +3920,7 @@ class OSManager(EngineScoped):
 
         return removed_count > 0
 
-    @handles(MakeDirectoryRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(MakeDirectoryRequest)
     def on_make_directory_request(self, request: MakeDirectoryRequest) -> ResultPayload:  # noqa: PLR0911
         """Handle a request to create a directory."""
         sanitized = sanitize_path_string(request.path)
@@ -3971,7 +3971,7 @@ class OSManager(EngineScoped):
             result_details=f"Directory created successfully at {dir_path}",
         )
 
-    @handles(CreateFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(CreateFileRequest)
     def on_create_file_request(self, request: CreateFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
         """Handle a request to create a file or directory."""
         # Get the full path
@@ -4046,7 +4046,7 @@ class OSManager(EngineScoped):
             result_details=f"{'Directory' if request.is_directory else 'File'} created successfully at {file_path}",
         )
 
-    @handles(RenameFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(RenameFileRequest)
     def on_rename_file_request(self, request: RenameFileRequest) -> ResultPayload:  # noqa: PLR0911, C901
         """Handle a request to rename a file or directory."""
         # Resolve and validate paths
@@ -4111,7 +4111,7 @@ class OSManager(EngineScoped):
             result_details=ResultDetails(message=details, level=logging.INFO),
         )
 
-    @handles(CopyFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(CopyFileRequest)
     def on_copy_file_request(self, request: CopyFileRequest) -> ResultPayload:  # noqa: PLR0911, C901
         """Handle a request to copy a single file."""
         # Resolve source path
@@ -4201,7 +4201,7 @@ class OSManager(EngineScoped):
             console.print(f"[red]Details: {e}[/red]")
             raise
 
-    @handles(DeleteFileRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(DeleteFileRequest)
     async def on_delete_file_request(  # noqa: PLR0911, PLR0912, PLR0915, C901
         self, request: DeleteFileRequest
     ) -> DeleteFileResultSuccess | DeleteFileResultFailure:
@@ -4326,7 +4326,7 @@ class OSManager(EngineScoped):
             result_details=result_details,
         )
 
-    @handles(GetFileInfoRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(GetFileInfoRequest)
     def on_get_file_info_request(  # noqa: PLR0911
         self, request: GetFileInfoRequest
     ) -> GetFileInfoResultSuccess | GetFileInfoResultFailure:
@@ -4572,7 +4572,7 @@ class OSManager(EngineScoped):
 
         return CopyTreeStats(files_copied=files_copied, total_bytes_copied=total_bytes_copied)
 
-    @handles(CopyTreeRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    @handles(CopyTreeRequest)
     def on_copy_tree_request(self, request: CopyTreeRequest) -> ResultPayload:
         """Handle a request to copy a directory tree."""
         # Validate paths

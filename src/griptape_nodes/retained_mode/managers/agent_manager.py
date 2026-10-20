@@ -28,7 +28,7 @@ import threading
 from dataclasses import asdict, dataclass, replace
 from http import HTTPStatus
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urlsplit
 
 import httpx2
@@ -161,7 +161,7 @@ from griptape_nodes.retained_mode.events.mcp_events import (
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime, workflow_id_of
 from griptape_nodes.servers import bind_free_socket
 from griptape_nodes.servers.mcp import GTN_MCP_SERVER_HOST, GTN_MCP_SERVER_PORT, start_mcp_server
@@ -530,8 +530,6 @@ class _RehydratedMessage:
 
 class AgentManager(EngineScoped):
     """Owns the chat-sidebar agent runner and the engine-bundled MCP server."""
-
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(
         self,

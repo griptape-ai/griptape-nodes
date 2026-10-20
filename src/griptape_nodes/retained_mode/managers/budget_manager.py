@@ -17,7 +17,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
@@ -28,7 +28,7 @@ from griptape_nodes.retained_mode.events.budget_events import (
     GetAttributionContextResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -71,8 +71,6 @@ def _encode_attribution_payload(payload: dict[str, Any]) -> str | None:
 
 class BudgetManager(EngineScoped):
     """Composes the attribution context for a credit-consuming call."""
-
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         """Initialize the BudgetManager.

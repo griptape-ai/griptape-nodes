@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.files.path_utils import (
     derive_registry_key,
@@ -55,13 +55,13 @@ class _BranchNaming(NamedTuple):
 
 
 class WorkflowBranching(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)
 
-    @handles(BranchWorkflowRequest)
+    # The new file's sidecar is placed through the File API, which resolves `{workflow_dir}` against the
+    # bound workflow, so the request depends on the workflow it is addressed to without taking it.
+    @handles(BranchWorkflowRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_branch_workflow_request(self, request: BranchWorkflowRequest) -> ResultPayload:  # noqa: PLR0911
         """Create a branch (copy) of an existing workflow with branch tracking."""
         try:
@@ -177,7 +177,8 @@ class WorkflowBranching(EngineScoped):
             traceback.print_exc()
             return BranchWorkflowResultFailure(result_details=details)
 
-    @handles(CreateWorkflowFromTemplateRequest)
+    # Placed like a branch: see BranchWorkflowRequest.
+    @handles(CreateWorkflowFromTemplateRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_create_workflow_from_template_request(self, request: CreateWorkflowFromTemplateRequest) -> ResultPayload:  # noqa: PLR0911
         """Create a new workflow file from a template (Griptape-provided or user-provided)."""
         try:

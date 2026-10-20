@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import anyio
 
@@ -65,7 +65,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     LIBRARIES_TO_REGISTER_KEY,
     LibraryRegistration,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.file_utils import find_files_recursive
 from griptape_nodes.utils.git_utils import (
     extract_repo_name_from_url,
@@ -163,8 +163,6 @@ def resolve_discovery_path(entry: LibraryRegistration, workspace_path: Path) -> 
 
 
 class LibraryDiscovery(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

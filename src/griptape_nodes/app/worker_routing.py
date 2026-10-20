@@ -72,7 +72,7 @@ from griptape_nodes.retained_mode.events.worker_events import (
     WorkerHeartbeatRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import ResultContext
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handler_takes_workflow
+from griptape_nodes.retained_mode.request_handlers import handler_takes_workflow
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 logger = logging.getLogger("griptape_nodes")
@@ -482,10 +482,8 @@ def register_remote_handlers(event_manager: EventManager) -> None:
         original = event_manager.get_manager_for_request_type(request_type)
         if original is None:
             continue
-        scope = event_manager.scope_for(request_type)
         remote = RemoteHandler(original=original, event_manager=event_manager)
-        event_manager.remove_manager_from_request_type(request_type)
-        event_manager.assign_manager_to_request_type(request_type, remote, scope=scope)
+        event_manager.replace_manager_for_request_type(request_type, remote)
 
 
 async def _handle_drop_workflow_local_objects(
@@ -649,11 +647,9 @@ def register_broadcast_handlers(
             worker_settled.set()
         return ActivateProjectResultSuccess(result_details=f"Adopted project from orchestrator: {request.project_id}.")
 
-    event_manager.assign_manager_to_request_type(ReloadConfigRequest, handle_reload_config, scope=RequestScope.HOST)
-    event_manager.assign_manager_to_request_type(RefreshSecretsRequest, handle_refresh_secrets, scope=RequestScope.HOST)
-    event_manager.assign_manager_to_request_type(
-        ActivateProjectRequest, handle_activate_project, scope=RequestScope.HOST
-    )
+    event_manager.assign_manager_to_request_type(ReloadConfigRequest, handle_reload_config)
+    event_manager.assign_manager_to_request_type(RefreshSecretsRequest, handle_refresh_secrets)
+    event_manager.assign_manager_to_request_type(ActivateProjectRequest, handle_activate_project)
 
     _register_local_object_handlers(event_manager)
 
@@ -668,13 +664,9 @@ def _register_local_object_handlers(event_manager: EventManager) -> None:
     ) -> ResultPayload:
         return await _handle_drop_workflow_local_objects(request, workflow=workflow, event_manager=event_manager)
 
-    event_manager.assign_manager_to_request_type(
-        DropWorkflowLocalObjectsRequest, handle_drop_workflow_local_objects, scope=RequestScope.WORKFLOW
-    )
+    event_manager.assign_manager_to_request_type(DropWorkflowLocalObjectsRequest, handle_drop_workflow_local_objects)
 
     async def handle_drop_local_objects(request: DropLocalObjectsRequest) -> ResultPayload:
         return await _handle_drop_local_objects(request, event_manager=event_manager)
 
-    event_manager.assign_manager_to_request_type(
-        DropLocalObjectsRequest, handle_drop_local_objects, scope=RequestScope.HOST
-    )
+    event_manager.assign_manager_to_request_type(DropLocalObjectsRequest, handle_drop_local_objects)

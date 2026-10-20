@@ -93,7 +93,7 @@ from griptape_nodes.retained_mode.managers.workflow.saving import (
 )
 from griptape_nodes.retained_mode.managers.workflow.shape import extract_workflow_shape
 from griptape_nodes.retained_mode.managers.workflow.variable_substitution import VariableSubstitution
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.file_utils import find_files_recursive
 
 if TYPE_CHECKING:
@@ -133,8 +133,6 @@ class WorkflowCandidate(NamedTuple):
 
 
 class WorkflowManager(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     WORKFLOW_METADATA_HEADER: ClassVar[str] = WORKFLOW_METADATA_HEADER
     MAX_MINOR_VERSION_DEVIATION: ClassVar[int] = (
         100  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1219 <- make the versioning enforcement softer after we get a release going

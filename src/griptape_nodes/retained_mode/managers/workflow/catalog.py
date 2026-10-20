@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import anyio
 
@@ -42,7 +42,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     WorkflowStatus,
 )
 from griptape_nodes.retained_mode.managers.workflow.running import collate_problems_by_type
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -63,8 +63,6 @@ class WorkflowPathResolution(NamedTuple):
 
 
 class WorkflowCatalog(EngineScoped):
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
-
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)

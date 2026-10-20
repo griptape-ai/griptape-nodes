@@ -11,7 +11,7 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 import anyio
 
@@ -33,7 +33,7 @@ from griptape_nodes.retained_mode.managers.settings import (
     WORKER_HEARTBEAT_TIMEOUT_KEY,
     WORKER_LIBRARY_LOAD_TIMEOUT_KEY,
 )
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.serialization.values import untag
 from griptape_nodes.servers.static import ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV
 from griptape_nodes.utils.version_utils import engine_version
@@ -98,8 +98,6 @@ class WorkerManager(EngineScoped):
     Transport operations (subscribe, unsubscribe, send message) are injected
     as callables so this class has no direct dependency on WebSocket plumbing.
     """
-
-    request_scope: ClassVar[RequestScope] = RequestScope.HOST
 
     DEFAULT_HEARTBEAT_INTERVAL_S: float = 5.0
     DEFAULT_HEARTBEAT_TIMEOUT_S: float = 15.0

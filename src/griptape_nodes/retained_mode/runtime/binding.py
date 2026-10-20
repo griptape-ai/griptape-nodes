@@ -8,10 +8,12 @@ can read the binding without importing what a workflow holds.
 from __future__ import annotations
 
 from contextvars import ContextVar
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.events.base_events import RequestPayload
     from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
@@ -27,6 +29,29 @@ NO_WORKFLOW: Final = NoWorkflow.NO_WORKFLOW
 # engine resolve a workflow for it (see `Engine.current_workflow`), and NO_WORKFLOW work has none.
 bound_workflow: ContextVar[WorkflowRuntime | NoWorkflow | None] = ContextVar(
     "griptape_nodes_bound_workflow", default=None
+)
+
+
+# The host request a client sent, while it and the work it issues are handled. Such a request acts on no
+# workflow, so a read of the current workflow made for it, while one is open, means its handler depends
+# on a workflow it doesn't take (see `RequestScope`). None outside one, and inside any workflow request.
+host_request_from_client: ContextVar[type[RequestPayload] | None] = ContextVar(
+    "griptape_nodes_host_request_from_client", default=None
+)
+
+
+@dataclass(frozen=True)
+class HostWorkflowRead:
+    """A read of the current workflow made for a host request a client sent, while a workflow was open."""
+
+    request_type_name: str
+    read: str
+
+
+# Where those reads are recorded, when something is collecting them. Tests collect them to fail on a
+# handler whose scope misses a workflow it depends on through the code it calls.
+host_workflow_reads: ContextVar[list[HostWorkflowRead] | None] = ContextVar(
+    "griptape_nodes_host_workflow_reads", default=None
 )
 
 

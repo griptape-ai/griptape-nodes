@@ -75,9 +75,13 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
-from griptape_nodes.retained_mode.request_handlers import RequestScope
 from griptape_nodes.retained_mode.run_scheduler import RunRefusedError, current_run
-from griptape_nodes.retained_mode.runtime.binding import NO_WORKFLOW, WorkflowNotNamedError, bound_workflow
+from griptape_nodes.retained_mode.runtime.binding import (
+    NO_WORKFLOW,
+    HostWorkflowRead,
+    WorkflowNotNamedError,
+    bound_workflow,
+)
 from griptape_nodes.retained_mode.variable_types import VariableScope
 
 if TYPE_CHECKING:
@@ -155,7 +159,7 @@ def _probe_binding(engine: Engine) -> list[object]:
         seen.append(bound_workflow.get())
         return _ProbeResult(result_details="probed")
 
-    engine.event_manager.assign_manager_to_request_type(_ProbeHostRequest, handle, scope=RequestScope.HOST)
+    engine.event_manager.assign_manager_to_request_type(_ProbeHostRequest, handle)
     return seen
 
 
@@ -271,13 +275,9 @@ def _probe_workflow_argument(engine: Engine, *, optional: bool) -> list[Workflow
         return _ProbeResult(result_details="probed")
 
     if optional:
-        engine.event_manager.assign_manager_to_request_type(
-            _ProbeWorkflowRequest, handle_optional, scope=RequestScope.OPTIONAL_WORKFLOW
-        )
+        engine.event_manager.assign_manager_to_request_type(_ProbeWorkflowRequest, handle_optional)
     else:
-        engine.event_manager.assign_manager_to_request_type(
-            _ProbeWorkflowRequest, handle_required, scope=RequestScope.WORKFLOW
-        )
+        engine.event_manager.assign_manager_to_request_type(_ProbeWorkflowRequest, handle_required)
     return seen
 
 
@@ -864,6 +864,25 @@ class TestProjectMacros:
         assert isinstance(result, GetPreviewForArtifactResultFailure), result
         assert result.source_file_missing
         assert str(resolve_path_safely(tmp_path / "a" / "missing.png")) in str(result.result_details)
+
+    def test_a_host_handler_resolving_workflow_dir_is_reported(
+        self, engine: Engine, tmp_path: Path, fail_on_host_workflow_reads: list[HostWorkflowRead]
+    ) -> None:
+        """A host handler that resolves `{workflow_dir}` through a nested request depends on a workflow it lacks."""
+        self._open_in(engine, "A", tmp_path / "a")
+
+        def handle(_request: _ProbeHostRequest) -> ResultPayload:
+            engine.handle_request(
+                GetPathForMacroRequest(parsed_macro=ParsedMacro("{workflow_dir?:/}out.png"), variables={})
+            )
+            return _ProbeResult(result_details="probed")
+
+        engine.event_manager.assign_manager_to_request_type(_ProbeHostRequest, handle)
+
+        engine.handle_request(_ProbeHostRequest())
+
+        assert [read.request_type_name for read in fail_on_host_workflow_reads] == ["_ProbeHostRequest"]
+        fail_on_host_workflow_reads.clear()
 
     def test_a_request_naming_no_workflow_while_several_are_open_has_no_folder(
         self, engine: Engine, tmp_path: Path

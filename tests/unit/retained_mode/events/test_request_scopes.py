@@ -9,7 +9,7 @@ import griptape_nodes.app.worker_routing
 import griptape_nodes.retained_mode.engine  # Imports every event module the engine registers.
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handler_scope, handler_takes_workflow
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handler_scope
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -35,25 +35,36 @@ def test_every_registered_request_has_a_scope(engine: Engine) -> None:
         assert isinstance(event_manager.scope_for(request_type), RequestScope), request_type.__name__
 
 
-def test_every_workflow_handler_declares_its_workflow_where_it_is_defined(engine: Engine) -> None:
-    """A handler that acts on a workflow says so itself, by its signature or by @handles(scope=...).
+def test_only_handlers_that_cannot_take_their_workflow_declare_a_scope(engine: Engine) -> None:
+    """`scope=` is for a handler that depends on a workflow only through code that reads the binding.
 
-    So reading a handler is enough to know whether it depends on a workflow, and none inherits that
-    from a class default.
+    Everything else declares its scope by its signature, so a new entry here is a decision to review.
     """
     event_manager = engine.event_manager
-    undeclared = []
-    for request_type in event_manager.registered_request_types():
-        if event_manager.scope_for(request_type) is RequestScope.HOST:
-            continue
-        handler = event_manager.get_manager_for_request_type(request_type)
-        assert handler is not None
-        if handler_takes_workflow(handler):
-            continue
-        if handler_scope(getattr(handler, "original", handler)) is None:
-            undeclared.append(request_type.__name__)
+    declared = sorted(
+        request_type.__name__
+        for request_type in event_manager.registered_request_types()
+        if handler_scope(_unwrapped(event_manager.get_manager_for_request_type(request_type))) is not None
+    )
 
-    assert undeclared == []
+    assert declared == [
+        # The new workflow file's sidecar is placed through the library File API, which resolves
+        # `{workflow_dir}` against the bound workflow.
+        "BranchWorkflowRequest",
+        "CreateWorkflowFromTemplateRequest",
+        # The library File API resolves the directory's macros against the bound workflow.
+        "ListDirectoryRequest",
+        "ListDirectorySequencesRequest",
+        # Model access is evaluated for a node, and authorization hooks may read its workflow.
+        "QueryModelAccessForNodeRequest",
+        # Runs user code, which reaches the workflow through the GriptapeNodes facade.
+        "RunArbitraryPythonStringRequest",
+    ]
+
+
+def _unwrapped(handler: object) -> object:
+    """The handler a RemoteHandler replaced, so a worker's registrations read like the orchestrator's."""
+    return getattr(handler, "original", handler)
 
 
 def test_no_engine_request_names_its_workflow_in_a_field() -> None:

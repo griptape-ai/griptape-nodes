@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 from enum import StrEnum
 from typing import TYPE_CHECKING, TypeVar
 
@@ -14,6 +15,8 @@ F = TypeVar("F", bound="Callable[..., Any]")
 
 _HANDLED_REQUEST_TYPES_ATTR = "__handled_request_types__"
 _HANDLER_SCOPE_ATTR = "__handler_scope__"
+# A `workflow` annotation that admits None. Annotations are strings under `from __future__ import annotations`.
+_NONE_IN_ANNOTATION = re.compile(r"\bNone\b|Optional\[")
 
 
 class RequestScope(StrEnum):
@@ -28,11 +31,11 @@ class RequestScope(StrEnum):
         `{workflow_dir}` and the project situations built on it depend on which workflow is asking. Naming
         none while several are open runs it with no workflow rather than failing.
 
-    A handler that takes a `workflow` parameter declares its scope by its signature: WORKFLOW, or
-    OPTIONAL_WORKFLOW when the parameter defaults to None. Dispatch passes it the workflow it resolved.
-    A handler that acts on a workflow only through code it calls, such as a nested request or macro
-    resolution, passes `scope=` to @handles instead. An owner's `request_scope` default may only be
-    HOST.
+    A handler declares its scope by its signature. One that takes no `workflow` parameter is HOST. One
+    that takes `workflow: WorkflowRuntime` is WORKFLOW, and `workflow: WorkflowRuntime | None = None` is
+    OPTIONAL_WORKFLOW; dispatch passes it the workflow it resolved. A handler that depends on a workflow
+    only through code that reads the binding itself, such as the library File API or user code it runs,
+    passes `scope=` to @handles instead (see `resolve_handler_scope`).
     """
 
     HOST = "host"
@@ -43,7 +46,7 @@ class RequestScope(StrEnum):
 def handles(*request_types: type[RequestPayload], scope: RequestScope | None = None) -> Callable[[F], F]:
     """Mark a method as the handler for `request_types`. `EventManager.register_request_handlers` wires it up.
 
-    `scope` overrides the owner's `request_scope` for these request types.
+    `scope` is for a handler that depends on a workflow without taking one. See `resolve_handler_scope`.
     """
     # A bare `@handles` passes the method itself here and would otherwise mark nothing.
     if not request_types or not all(inspect.isclass(request_type) for request_type in request_types):
@@ -73,17 +76,80 @@ def handled_request_types(attr: object) -> tuple[type[RequestPayload], ...]:
 
 
 def handler_scope(attr: object) -> RequestScope | None:
-    """The scope a `@handles` method declared for itself, or None to take its owner's `request_scope`."""
+    """The scope a `@handles` method passed as `scope=`, or None when it passed none."""
     return getattr(getattr(attr, "__func__", attr), _HANDLER_SCOPE_ATTR, None)
 
 
+def resolve_handler_scope(handler: Callable[..., Any], declared: RequestScope | None) -> RequestScope:
+    """The scope `handler` acts on: from its `workflow` parameter, else `declared`, else HOST.
+
+    `declared` is the `scope=` its registration passed. It exists only for a handler that depends on a
+    workflow without taking one, so it may only be WORKFLOW or OPTIONAL_WORKFLOW, and only on a handler
+    whose signature declares nothing.
+
+    Raises:
+        TypeError: `declared` is HOST, or contradicts or repeats the signature, or the signature is
+            ambiguous (see `scope_from_signature`).
+    """
+    name = getattr(handler, "__qualname__", repr(handler))
+    if declared is RequestScope.HOST:
+        msg = (
+            f"Attempted to register the request handler '{name}' with scope=host. Failed because a handler "
+            "that takes no `workflow` parameter is already a host handler. Drop `scope=`."
+        )
+        raise TypeError(msg)
+    signature_scope = scope_from_signature(handler)
+    if signature_scope is not None and declared is not None:
+        msg = (
+            f"Attempted to register the request handler '{name}' with scope={declared.value}. Failed because "
+            f"its `workflow` parameter already makes it {signature_scope.value}. Drop `scope=`."
+        )
+        raise TypeError(msg)
+    if signature_scope is not None:
+        return signature_scope
+    if declared is not None:
+        return declared
+    return RequestScope.HOST
+
+
 def scope_from_signature(handler: Callable[..., Any]) -> RequestScope | None:
-    """The scope a handler's `workflow` parameter declares, or None when it takes no workflow."""
-    parameter = inspect.signature(handler).parameters.get("workflow")
+    """The scope a handler's `workflow` parameter declares, or None when it takes no workflow.
+
+    A callable object that wraps a handler, like the worker's RemoteHandler, declares nothing here: it
+    says whether it takes a workflow through a `takes_workflow` attribute, and keeps the scope of the
+    handler it replaced.
+
+    Raises:
+        TypeError: The signature can't say. The handler accepts `**kwargs` without naming `workflow`, as a
+            decorator that hides its wrapped function's signature does, or its `workflow` parameter is
+            annotated optional without defaulting to None, or defaults to something else.
+    """
+    name = getattr(handler, "__qualname__", repr(handler))
+    parameters = inspect.signature(handler).parameters
+    parameter = parameters.get("workflow")
     if parameter is None:
+        if any(other.kind is inspect.Parameter.VAR_KEYWORD for other in parameters.values()):
+            msg = (
+                f"Attempted to register the request handler '{name}'. Failed because it accepts **kwargs, so "
+                "whether it takes a workflow can't be read from its signature. Name the parameters it takes, "
+                "or wrap it with functools.wraps."
+            )
+            raise TypeError(msg)
         return None
     if parameter.default is None:
         return RequestScope.OPTIONAL_WORKFLOW
+    if parameter.default is not inspect.Parameter.empty:
+        msg = (
+            f"Attempted to register the request handler '{name}'. Failed because its `workflow` parameter "
+            f"defaults to {parameter.default!r}. Give it no default, or default it to None."
+        )
+        raise TypeError(msg)
+    if _NONE_IN_ANNOTATION.search(str(parameter.annotation)):
+        msg = (
+            f"Attempted to register the request handler '{name}'. Failed because its `workflow` parameter "
+            "may be None but has no default. Default it to None to accept no workflow."
+        )
+        raise TypeError(msg)
     return RequestScope.WORKFLOW
 
 
