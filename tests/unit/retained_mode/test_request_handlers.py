@@ -5,7 +5,7 @@ import pytest
 from griptape_nodes.app.worker_routing import RemoteHandler
 from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles, scope_from_signature
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
@@ -267,6 +267,35 @@ class TestWorkflowParameter:
 
         with pytest.raises(TypeError, match="may be None but has no default"):
             event_manager.register_request_handlers(_OptionalWithoutDefault())
+
+    @pytest.mark.parametrize(
+        "annotation",
+        [
+            "WorkflowRuntime | None",
+            "None | WorkflowRuntime",
+            "Optional[WorkflowRuntime]",
+            "typing.Optional[WorkflowRuntime]",
+            "Union[WorkflowRuntime, None]",
+            "'WorkflowRuntime | None'",
+        ],
+    )
+    def test_a_string_annotation_admitting_none_needs_a_default(self, annotation: str) -> None:
+        def handle(_request: _PingRequest, workflow) -> None:  # noqa: ANN001, ARG001, annotated below as a string
+            raise AssertionError
+
+        handle.__annotations__["workflow"] = annotation
+
+        with pytest.raises(TypeError, match="may be None but has no default"):
+            scope_from_signature(handle)
+
+    @pytest.mark.parametrize("annotation", ["WorkflowRuntime", "NoneWorkflow", "Union[WorkflowRuntime, Other]"])
+    def test_a_string_annotation_not_admitting_none_is_a_workflow(self, annotation: str) -> None:
+        def handle(_request: _PingRequest, workflow) -> None:  # noqa: ANN001, ARG001, annotated below as a string
+            raise AssertionError
+
+        handle.__annotations__["workflow"] = annotation
+
+        assert scope_from_signature(handle) is RequestScope.WORKFLOW
 
     def test_a_handler_that_hides_its_signature_raises(self) -> None:
         event_manager = EventManager()

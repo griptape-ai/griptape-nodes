@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import ast
 import inspect
-import re
 from enum import StrEnum
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar, get_args
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -15,8 +15,9 @@ F = TypeVar("F", bound="Callable[..., Any]")
 
 _HANDLED_REQUEST_TYPES_ATTR = "__handled_request_types__"
 _HANDLER_SCOPE_ATTR = "__handler_scope__"
-# A `workflow` annotation that admits None. Annotations are strings under `from __future__ import annotations`.
-_NONE_IN_ANNOTATION = re.compile(r"\bNone\b|Optional\[")
+# Subscripted names whose arguments are alternatives: `Optional[X]` admits None, `Union[...]` may.
+_OPTIONAL_NAMES = frozenset({"Optional"})
+_UNION_NAMES = frozenset({"Union"})
 
 
 class RequestScope(StrEnum):
@@ -144,7 +145,7 @@ def scope_from_signature(handler: Callable[..., Any]) -> RequestScope | None:
             f"defaults to {parameter.default!r}. Give it no default, or default it to None."
         )
         raise TypeError(msg)
-    if _NONE_IN_ANNOTATION.search(str(parameter.annotation)):
+    if _annotation_admits_none(parameter.annotation):
         msg = (
             f"Attempted to register the request handler '{name}'. Failed because its `workflow` parameter "
             "may be None but has no default. Default it to None to accept no workflow."
@@ -163,3 +164,62 @@ def handler_takes_workflow(handler: Callable[..., Any]) -> bool:
     if isinstance(declared, bool):
         return declared
     return scope_from_signature(handler) is not None
+
+
+def _annotation_admits_none(annotation: object) -> bool:
+    """Whether a parameter annotation admits None, as `X | None`, `Optional[X]`, or `Union[X, None]` do.
+
+    Under `from __future__ import annotations` the annotation is a string, and the names in it are often
+    imported only for type checking, so it is parsed rather than evaluated.
+    """
+    if annotation is inspect.Parameter.empty:
+        return False
+    if annotation is None or annotation is type(None):
+        return True
+    if not isinstance(annotation, str):
+        return type(None) in get_args(annotation)
+    try:
+        expression = ast.parse(annotation, mode="eval").body
+    except SyntaxError:
+        return False
+    return _expression_admits_none(expression)
+
+
+def _expression_admits_none(expression: ast.expr) -> bool:
+    if isinstance(expression, ast.Constant):
+        return _constant_admits_none(expression)
+    if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.BitOr):
+        return _expression_admits_none(expression.left) or _expression_admits_none(expression.right)
+    if isinstance(expression, ast.Subscript):
+        return _subscript_admits_none(expression)
+    return False
+
+
+def _constant_admits_none(constant: ast.Constant) -> bool:
+    if constant.value is None:
+        return True
+    # A quoted forward reference inside the annotation, such as `"WorkflowRuntime | None"`.
+    if isinstance(constant.value, str):
+        return _annotation_admits_none(constant.value)
+    return False
+
+
+def _subscript_admits_none(subscript: ast.Subscript) -> bool:
+    name = _subscripted_name(subscript.value)
+    if name in _OPTIONAL_NAMES:
+        return True
+    if name not in _UNION_NAMES:
+        return False
+    alternatives = [subscript.slice]
+    if isinstance(subscript.slice, ast.Tuple):
+        alternatives = subscript.slice.elts
+    return any(_expression_admits_none(alternative) for alternative in alternatives)
+
+
+def _subscripted_name(expression: ast.expr) -> str | None:
+    """The bare name being subscripted: `Optional` for both `Optional[X]` and `typing.Optional[X]`."""
+    if isinstance(expression, ast.Name):
+        return expression.id
+    if isinstance(expression, ast.Attribute):
+        return expression.attr
+    return None
