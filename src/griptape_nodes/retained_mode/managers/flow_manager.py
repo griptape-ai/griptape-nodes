@@ -338,7 +338,7 @@ class FlowManager(EngineScoped):
         self._global_dag_builder = DagBuilder(self.engine)
         self._node_executor = NodeExecutor(self.engine)
         # Set when this engine runs a node group for another engine's run, which owns the id.
-        self._parent_run_id: str | None = None
+        self.parent_run_id: str | None = None
 
     @property
     def global_single_node_resolution(self) -> bool:
@@ -357,15 +357,6 @@ class FlowManager(EngineScoped):
         if self._global_control_flow_machine is None:
             return None
         return self._global_control_flow_machine.context.run_id
-
-    @property
-    def parent_run_id(self) -> str | None:
-        """The run this engine's runs belong to, when it runs a node group for another engine."""
-        return self._parent_run_id
-
-    @parent_run_id.setter
-    def parent_run_id(self, run_id: str | None) -> None:
-        self._parent_run_id = run_id
 
     @property
     def global_flow_queue(self) -> Queue[QueueItem]:
@@ -4862,7 +4853,12 @@ class FlowManager(EngineScoped):
             # Get or create machine
             if self._global_control_flow_machine is None:
                 self._global_control_flow_machine = ControlFlowMachine(flow.name, engine=self.engine)
-            await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
+            try:
+                await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
+            except Exception:
+                # The run was already announced, so it has to be ended as well, as start_flow does.
+                await self._abandon_running_flow()
+                raise
 
     async def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
         """Handle execution queue processing after execution completes."""
@@ -4872,8 +4868,7 @@ class FlowManager(EngineScoped):
             self._global_flow_queue.task_done()
             machine = self._global_control_flow_machine
             if machine is not None:
-                # The next start node queued during the run that just finished: still that run.
-                await machine.start_flow(start_node, debug_mode=debug_mode, continue_run=True)
+                await machine.start_flow(start_node, debug_mode=debug_mode)
 
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
         # We are now going to have different behavior depending on how the node is behaving.

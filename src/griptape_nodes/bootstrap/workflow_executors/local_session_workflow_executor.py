@@ -85,6 +85,7 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
         await self._stop_websocket_connection()
 
         GriptapeNodes.SessionManager().remove_session(self._session_id)
+        GriptapeNodes.FlowManager().parent_run_id = None
 
         # TODO: Broadcast shutdown https://github.com/griptape-ai/griptape-nodes/issues/2149
 

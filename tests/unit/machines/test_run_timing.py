@@ -138,7 +138,7 @@ class TestRunIdMinting:
     """Which runs get an id of their own, and which share another run's."""
 
     @staticmethod
-    async def _start(*, is_isolated: bool, parent_run_id: str | None, continue_run: bool = False) -> _StartedRun:
+    async def _start(*, is_isolated: bool, parent_run_id: str | None) -> _StartedRun:
         """Start a machine with everything past choosing its run id stubbed out."""
         engine = MagicMock()
         engine.config_manager.get_config_value.side_effect = lambda _key, default=None: default
@@ -147,8 +147,6 @@ class TestRunIdMinting:
         machine._process_nodes_for_dag = AsyncMock(return_value=[])  # type: ignore[method-assign]
         machine.start = AsyncMock()  # type: ignore[method-assign]
         await machine.start_flow(MagicMock(), MagicMock())
-        if continue_run:
-            await machine.start_flow(MagicMock(), MagicMock(), continue_run=True)
         return _StartedRun(machine=machine, engine=engine)
 
     @pytest.mark.asyncio
@@ -174,15 +172,8 @@ class TestRunIdMinting:
         assert run.announced == []
 
     @pytest.mark.asyncio
-    async def test_continuing_a_run_keeps_its_id(self) -> None:
-        """The next start node queued during a run is still that run."""
-        run = await self._start(is_isolated=False, parent_run_id=None, continue_run=True)
-
-        assert len(run.announced) == 1
-        assert run.machine.context.run_id == run.announced[0]
-
-    @pytest.mark.asyncio
     async def test_starting_again_is_a_new_run(self) -> None:
+        """Each start has its own end event, so each is a run, including a queued next start node."""
         engine = MagicMock()
         engine.config_manager.get_config_value.side_effect = lambda _key, default=None: default
         engine.flow_manager.parent_run_id = None

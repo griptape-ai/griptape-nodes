@@ -402,6 +402,10 @@ class ParameterSpotlightEvent(ExecutionPayload):
 class FlowRunStartedEvent(ExecutionPayload):
     """A flow run started, whether of the whole flow, from one node, or of a single node.
 
+    A run lasts from one start of the flow to its `ControlFlowResolvedEvent` or
+    `ControlFlowCancelledEvent`. When the engine goes on to the next start node queued during a run,
+    that is a run of its own, with its own id.
+
     Every `BudgetAccessRequest` and `ReportUsageRequest` sent during the run is tagged with
     `run_id`, so a client can look up what the run's direct provider calls cost in Griptape Cloud
     with a spend search filtered on the `run_id` tag. Loop bodies, and node groups run in a local
