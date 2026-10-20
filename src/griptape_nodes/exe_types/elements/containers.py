@@ -315,7 +315,6 @@ class ParameterList(ParameterContainer):
         return [*item_types, *(f"list[{item_type}]" for item_type in item_types), "list"]
 
     def _widen_row_input_types(self, row: Parameter) -> None:
-        """Let `row` take one item or a list of them, whatever input types it was created or saved with."""
         # The unwidened getter: `self.input_types` is the container's own list-shaped set. Read after the
         # setter stores a value, so a cleared value resolves to the same default for every row.
         row.input_types = self._with_list_variants(super()._custom_getter_for_property_input_types())
@@ -493,7 +492,7 @@ class ParameterList(ParameterContainer):
                 raise ValueError(msg)
 
         if isinstance(child, Parameter):
-            # Rows get the item converters and input types here, including rows restored from a saved workflow.
+            # Saved rows also need the container's item converters and input types.
             missing = [converter for converter in self._item_converters if converter not in child._converters]
             child._converters = [*missing, *child._converters]
             self._widen_row_input_types(child)

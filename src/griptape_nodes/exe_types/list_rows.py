@@ -150,7 +150,8 @@ class ListRows:
             held_count += len(_items_of_row(container, child_value))
         if held_count <= container.max_items:
             return
-        # Refused over a connection too: a worker builds the list's rows from its items, and could not.
+        # Refused over a connection too. A worker rebuilds the rows from the list's items, one row per item,
+        # and over `max_items` it could not.
         msg = f"Attempted to set an item of list '{node.name}.{container.name}'. Failed because the list would hold {held_count} items, counting the items of any list in a row, and holds at most {container.max_items} items."
         raise ValueError(msg)
 
