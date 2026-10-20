@@ -12,6 +12,14 @@ the engine's request API from working without edits. Migration steps live in
 
 <!-- Entries go in changelog.d/, one file each. See changelog.d/README.md. -->
 
+## [0.104.2] - 2026-10-20
+
+### Fixed
+
+- The agent chat on Windows no longer fails on every message with "`LocalWorkspaceBackend` only
+  supports POSIX platforms" when the workspace has an `.agents/skills` folder. If a platform
+  cannot load skills, the chat now answers without them instead of failing.
+
 ## [0.104.1] - 2026-10-13
 
 ### Fixed
@@ -515,7 +523,8 @@ the engine's request API from working without edits. Migration steps live in
   than a copy of it, and a value that refers to itself no longer fails the node with a
   `RecursionError`. Inline `{VAR}` substitution returns a value it did not rewrite unchanged.
 
-[Unreleased]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.104.1...HEAD
+[Unreleased]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.104.2...HEAD
+[0.104.2]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.104.1...v0.104.2
 [0.104.1]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.104.0...v0.104.1
 [0.104.0]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.103.0...v0.104.0
 [0.103.0]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.102.0...v0.103.0
