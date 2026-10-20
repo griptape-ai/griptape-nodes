@@ -454,7 +454,7 @@ class Engine:
             raise WorkflowNotOpenError(msg)
         runtime = self.current_workflow_or_none()
         if runtime is None:
-            return self.open_workflow_runtime()
+            return self._open_unnamed_workflow()
         return runtime
 
     def current_workflow_or_none(self) -> WorkflowRuntime | None:
@@ -630,8 +630,24 @@ class Engine:
             return runtime
         if optional:
             return NO_WORKFLOW
-        # A client that works on a single workflow never names one, so its first workflow request
-        # opens one.
+        return self._open_unnamed_workflow()
+
+    def _open_unnamed_workflow(self) -> WorkflowRuntime:
+        """Open a workflow for work that names none while none is open.
+
+        A client that works on a single workflow never names one, so its first workflow request opens
+        one. A worker holds no workflows of its own, only namespaces for the orchestrator's, so work
+        that reaches it naming none has lost the workflow it came from, and opening one would hide that.
+
+        Raises:
+            WorkflowNotOpenError: This engine is a worker.
+        """
+        if self._library_manager.is_worker:
+            msg = (
+                "Attempted to act on the current workflow in a worker. Failed because the work names no "
+                "workflow, and a worker only acts on the workflows it runs nodes for."
+            )
+            raise WorkflowNotOpenError(msg)
         return self.open_workflow_runtime()
 
     def _only_open_workflow(self) -> WorkflowRuntime | None:

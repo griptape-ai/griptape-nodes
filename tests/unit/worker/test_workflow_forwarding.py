@@ -30,7 +30,7 @@ from griptape_nodes.retained_mode.events.open_workflow_events import (
 from griptape_nodes.retained_mode.events.worker_events import DropWorkflowLocalObjectsRequest
 from griptape_nodes.retained_mode.managers.event_manager import ResultContext
 from griptape_nodes.retained_mode.request_handlers import RequestScope
-from griptape_nodes.retained_mode.runtime.binding import WorkflowNotOpenError
+from griptape_nodes.retained_mode.runtime.binding import NO_WORKFLOW, WorkflowNotOpenError
 from griptape_nodes.retained_mode.runtime.workflow_runtime import RuntimeKind
 from tests.unit.worker.harness import InProcessWorkerHarness
 
@@ -206,20 +206,33 @@ class TestWorkerRuntimeCreation:
         assert result.workflows == []
         assert worker.describe_open_workflows()["open_workflows"] == []
 
-    def test_a_namespace_does_not_change_how_an_unaddressed_request_is_bound(self) -> None:
-        with_namespace = Engine()
-        with_namespace.library_manager._is_worker = True
-        with_namespace.worker_namespace("workflow-a")
-        without_namespace = Engine()
-        without_namespace.library_manager._is_worker = True
+    def test_a_worker_fails_an_unaddressed_workflow_request_instead_of_opening_a_workflow(self) -> None:
+        worker = Engine()
+        worker.library_manager._is_worker = True
+        worker.worker_namespace("workflow-a")
 
-        for scope in (RequestScope.WORKFLOW, RequestScope.OPTIONAL_WORKFLOW):
-            bound_with = with_namespace.runtime_for_request(_CallbackProbe(), scope, None)
-            bound_without = without_namespace.runtime_for_request(_CallbackProbe(), scope, None)
-            assert type(bound_with) is type(bound_without)
+        with pytest.raises(WorkflowNotOpenError, match="in a worker"):
+            worker.runtime_for_request(_CallbackProbe(), RequestScope.WORKFLOW, None)
 
-        assert len(with_namespace.workflow_runtimes) == len(without_namespace.workflow_runtimes)
-        assert "workflow-a" not in [runtime.workflow_id for runtime in with_namespace.workflow_runtimes]
+        assert worker.workflow_runtimes == []
+
+    def test_a_worker_runs_an_unaddressed_optional_request_with_no_workflow(self) -> None:
+        worker = Engine()
+        worker.library_manager._is_worker = True
+        worker.worker_namespace("workflow-a")
+
+        assert worker.runtime_for_request(_CallbackProbe(), RequestScope.OPTIONAL_WORKFLOW, None) is NO_WORKFLOW
+        assert worker.workflow_runtimes == []
+
+    def test_an_unbound_read_on_a_worker_fails_instead_of_opening_a_workflow(self) -> None:
+        worker = Engine()
+        worker.library_manager._is_worker = True
+        worker.worker_namespace("workflow-a")
+
+        with pytest.raises(WorkflowNotOpenError, match="in a worker"):
+            _ = worker.current_workflow
+
+        assert worker.workflow_runtimes == []
 
     def test_the_orchestrator_fails_a_request_naming_an_unknown_workflow(self) -> None:
         orchestrator = Engine()

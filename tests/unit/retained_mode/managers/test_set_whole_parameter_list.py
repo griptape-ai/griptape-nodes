@@ -746,7 +746,9 @@ class TestAWorkerFillingItsCopy:
     @pytest.fixture
     def worker(self, engine: Engine) -> object:
         engine.library_manager._is_worker = True
-        yield
+        # A worker runs a node in the namespace of the orchestrator's workflow it belongs to.
+        with engine.bind_workflow(engine.worker_namespace("orchestrator-workflow")):
+            yield
         engine.library_manager._is_worker = False
 
     @pytest.mark.usefixtures("worker")
