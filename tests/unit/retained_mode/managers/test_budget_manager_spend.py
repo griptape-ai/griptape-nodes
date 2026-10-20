@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 from unittest.mock import MagicMock, patch
 
 import httpx2
@@ -82,9 +82,28 @@ def _response(status: int, body: object = None) -> httpx2.Response:
     return httpx2.Response(status, json=body, request=request)
 
 
+class _AsyncClientStub:
+    """Stands in for `httpx2.AsyncClient`, sending the check's POST through the same `http` stub."""
+
+    def __init__(self, request: MagicMock, **_kwargs: Any) -> None:
+        self._request = request
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+    async def post(self, url: str, **kwargs: Any) -> httpx2.Response:
+        return self._request("POST", url, **kwargs)
+
+
 @pytest.fixture
 def http() -> Iterator[MagicMock]:
-    """Stub `httpx2.request`, with the retry loop's backoff removed."""
+    """Stub every Cloud POST: the report's retrying `httpx2.request`, and the check's `AsyncClient`.
+
+    Both land on one mock, so a test reads either request's body the same way.
+    """
 
     def no_wait_retry(*args: Any, **kwargs: Any) -> httpx2.Response:
         return request_with_retry(*args, wait=wait_none(), **kwargs)
@@ -92,6 +111,9 @@ def http() -> Iterator[MagicMock]:
     with (
         patch("griptape_nodes.utils.http_utils.httpx2.request") as request,
         patch.object(budget_manager_module, "request_with_retry", side_effect=no_wait_retry),
+        patch.object(
+            budget_manager_module.httpx2, "AsyncClient", side_effect=lambda **kw: _AsyncClientStub(request, **kw)
+        ),
     ):
         yield request
 
@@ -345,12 +367,36 @@ class TestBudgetCheckFailsOpen:
         assert isinstance(result, BudgetAccessResultSuccess)
         assert result.checked is False
 
-    def test_the_http_call_runs_off_the_event_loop_thread(self, http: MagicMock) -> None:
-        loop_thread = threading.get_ident()
-        http.side_effect = lambda *_, **__: _response(200, {"allowed": threading.get_ident() != loop_thread})
+    def test_the_check_does_not_block_the_event_loop(self) -> None:
+        """Other work on the loop runs while the check waits on Cloud, not only after it returns."""
+        events: list[str] = []
 
-        result = _check(_manager(), BudgetAccessRequest(model="m"))
+        class _SlowClient:
+            async def __aenter__(self) -> Self:
+                return self
 
+            async def __aexit__(self, *_exc: object) -> None:
+                return None
+
+            async def post(self, *_args: Any, **_kwargs: Any) -> httpx2.Response:
+                events.append("check waiting")
+                await asyncio.sleep(0.05)
+                events.append("check answered")
+                return _response(200, {"allowed": True})
+
+        async def other_work() -> None:
+            await asyncio.sleep(0.01)
+            events.append("other work ran")
+
+        async def scenario() -> object:
+            check = asyncio.create_task(_manager().on_budget_access_request(BudgetAccessRequest(model="m")))
+            await other_work()
+            return await check
+
+        with patch.object(budget_manager_module.httpx2, "AsyncClient", side_effect=lambda **_: _SlowClient()):
+            result = asyncio.run(scenario())
+
+        assert events == ["check waiting", "other work ran", "check answered"]
         assert isinstance(result, BudgetAccessResultSuccess)
 
     def test_check_is_not_retried(self, http: MagicMock) -> None:

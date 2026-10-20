@@ -15,7 +15,6 @@ full result, and worker forwarding puts the Success payload on the response topi
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import logging
@@ -24,7 +23,7 @@ import threading
 import uuid
 from datetime import UTC, datetime
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urljoin
 
 import httpx2
@@ -120,12 +119,8 @@ class BudgetManager(EngineScoped):
             engine: The owning Engine, used to resolve peer managers.
         """
         super().__init__(engine)
-        # Reports post on their own thread, in order. A daemon thread, because engine exit must
-        # not wait on reports still queued, and a pool's workers (including `to_thread`'s) hold
-        # exit until they drain. Not an asyncio task: a sync `handle_request` runs this handler on
-        # a transient `ThreadRunner` loop, or under `asyncio.run`, and both shut down when the
-        # handler returns, cancelling the task mid-post. There is no long-lived engine loop to
-        # schedule it on instead: `EventManager.event_loop` is set only by the bootstrap executors.
+        # A daemon thread, so engine exit never waits on queued reports. Not an asyncio task: a
+        # sync `handle_request` runs the handler on a short-lived loop that would cancel it.
         self._reports: queue.SimpleQueue[dict[str, Any]] = queue.SimpleQueue()
         threading.Thread(target=self._post_reports, name="budget-report", daemon=True).start()
         event_manager.register_request_handlers(self)
@@ -197,10 +192,10 @@ class BudgetManager(EngineScoped):
             body["estimated_cost_micro_usd"] = request.estimated_cost_micro_usd
 
         try:
-            # Off the event loop: a slow Cloud would otherwise freeze the engine for the timeout.
-            response = await asyncio.to_thread(
-                self._post, BUDGET_CHECKS_PATH, body, timeout=CHECK_TIMEOUT_SECONDS, max_attempts=1
-            )
+            url, headers = self._cloud_target(BUDGET_CHECKS_PATH)
+            async with httpx2.AsyncClient(timeout=CHECK_TIMEOUT_SECONDS) as client:
+                response = await client.post(url, json=body, headers=headers)
+            response.raise_for_status()
         except _NoCredentialError:
             return self._unchecked(request.model, correlation_id, f"Failed because {MISSING_CREDENTIAL_MESSAGE}")
         except httpx2.HTTPStatusError as exc:
@@ -315,20 +310,15 @@ class BudgetManager(EngineScoped):
         tags.update({key: value for key, value in candidates.items() if value is not None})
         return tags
 
-    def _post(self, path: str, body: dict[str, Any], *, timeout: float, max_attempts: int) -> httpx2.Response:
-        """POST to Griptape Cloud. Raises `_NoCredentialError` or `httpx2.HTTPError`."""
+    def _cloud_target(self, path: str) -> CloudTarget:
+        """The Griptape Cloud URL for `path` and the headers to authenticate it. Raises `_NoCredentialError`."""
         secrets_manager = self.engine.secrets_manager
         credential = resolve_cloud_credential(secrets_manager)
         if credential is None:
             raise _NoCredentialError
-        return request_with_retry(
-            "POST",
-            urljoin(resolve_cloud_base_url(secrets_manager), path),
-            max_attempts=max_attempts,
-            should_retry=_is_retryable_report_error,
-            json=body,
+        return CloudTarget(
+            url=urljoin(resolve_cloud_base_url(secrets_manager), path),
             headers={"Authorization": f"Bearer {credential}"},
-            timeout=timeout,
         )
 
     def _post_reports(self) -> None:
@@ -345,7 +335,16 @@ class BudgetManager(EngineScoped):
     def _send_report(self, body: dict[str, Any]) -> None:
         """Post a usage report with bounded retries; log and drop it if Cloud cannot take it."""
         try:
-            self._post(SPEND_PATH, body, timeout=REPORT_TIMEOUT_SECONDS, max_attempts=REPORT_MAX_ATTEMPTS)
+            url, headers = self._cloud_target(SPEND_PATH)
+            request_with_retry(
+                "POST",
+                url,
+                max_attempts=REPORT_MAX_ATTEMPTS,
+                should_retry=_is_retryable_report_error,
+                json=body,
+                headers=headers,
+                timeout=REPORT_TIMEOUT_SECONDS,
+            )
         except _NoCredentialError:
             logger.warning("Dropped a usage report: %s", MISSING_CREDENTIAL_MESSAGE)
         except httpx2.HTTPStatusError as exc:
@@ -464,6 +463,13 @@ def _describe_call(model: str | None) -> str:
     if model is None:
         return "a direct model call"
     return f"a direct call to model '{model}'"
+
+
+class CloudTarget(NamedTuple):
+    """Where to send a Griptape Cloud request, and how to authenticate it."""
+
+    url: str
+    headers: dict[str, str]
 
 
 class _NoCredentialError(Exception):
