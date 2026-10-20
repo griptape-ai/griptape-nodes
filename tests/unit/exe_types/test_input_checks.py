@@ -322,15 +322,19 @@ class TestInstalledFfprobe:
 
         monkeypatch.setattr(input_checks.static_ffmpeg_run, "get_or_fetch_platform_executables_else_raise", fetch)
 
-    def _platform_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    def _platform_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exe_name: str = "ffprobe") -> Path:
         monkeypatch.setattr(input_checks.static_ffmpeg_run, "get_platform_dir", lambda: str(tmp_path))
-        (tmp_path / "ffprobe").write_bytes(b"")
+        (tmp_path / exe_name).write_bytes(b"")
         return tmp_path
 
-    def test_uses_a_finished_static_ffmpeg_install(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        platform_dir = self._platform_dir(tmp_path, monkeypatch)
+    @pytest.mark.parametrize(("platform", "exe_name"), [("linux", "ffprobe"), ("win32", "ffprobe.exe")])
+    def test_uses_a_finished_static_ffmpeg_install(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str, exe_name: str
+    ) -> None:
+        monkeypatch.setattr(input_checks.sys, "platform", platform)
+        platform_dir = self._platform_dir(tmp_path, monkeypatch, exe_name)
         (platform_dir / "installed.crumb").write_text("installed")
-        assert input_checks._installed_ffprobe() == str(platform_dir / "ffprobe")
+        assert input_checks._installed_ffprobe() == str(platform_dir / exe_name)
 
     def test_ignores_an_unfinished_static_ffmpeg_install(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         self._platform_dir(tmp_path, monkeypatch)
