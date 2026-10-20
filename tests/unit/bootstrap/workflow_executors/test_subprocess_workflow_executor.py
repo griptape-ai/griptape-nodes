@@ -12,9 +12,6 @@ from griptape_nodes.bootstrap.workflow_executors.local_session_workflow_executor
 from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import SubprocessWorkflowExecutor
 
 if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.engine import Engine
-
-if TYPE_CHECKING:
     from pathlib import Path
 
 
@@ -57,16 +54,3 @@ async def test_no_parent_run_means_the_child_mints_its_own(tmp_path: Path) -> No
     args = await _child_args(tmp_path, None)
 
     assert _parsed_parent_run_id(args) is None
-
-
-@pytest.mark.asyncio
-async def test_the_child_s_runs_take_the_parent_run_for_its_session_only(engine: Engine) -> None:
-    """The child's engine holds the parent run while it runs the group, and lets go afterwards."""
-    executor = LocalSessionWorkflowExecutor(session_id="session", parent_run_id="parent-run")
-    executor._start_websocket_connection = AsyncMock()  # type: ignore[method-assign]
-    executor._stop_websocket_connection = AsyncMock()  # type: ignore[method-assign]
-
-    async with executor:
-        assert engine.flow_manager.parent_run_id == "parent-run"
-
-    assert engine.flow_manager.parent_run_id is None

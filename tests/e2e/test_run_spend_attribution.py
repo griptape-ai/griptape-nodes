@@ -311,3 +311,25 @@ async def test_a_loop_s_iterations_count_toward_the_run_that_started_them(  # no
     assert len(announced) == 1, f"Only the run the artist started should announce an id, got {announced}"
     reports = stub_cloud.wait_for_reports(LOOP_ITERATIONS)
     assert [report["tags"].get("run_id") for report in reports] == announced * LOOP_ITERATIONS, reports
+
+
+@pytest.mark.asyncio
+async def test_a_group_run_for_another_engine_counts_toward_that_engine_s_run(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch, stub_cloud: _StubSpendServer, three_node_flow: str
+) -> None:
+    """The engine that runs a node group in its own process reports under the parent's run.
+
+    It sends no start event and no end event with the id either, so the parent's own end event is
+    the only one that says the run is over.
+    """
+    monkeypatch.setattr(engine.flow_manager, "parent_run_id", "parent-run")
+    payloads = _record_payloads(engine, monkeypatch)
+
+    result = await engine.ahandle_request(StartFlowRequest(flow_name=three_node_flow))
+    assert isinstance(result, StartFlowResultSuccess), result
+
+    assert _announced_run_ids(payloads) == []
+    resolved = [payload.run_id for payload in payloads if isinstance(payload, ControlFlowResolvedEvent)]
+    assert resolved == [None], resolved
+    reports = stub_cloud.wait_for_reports(len(NODE_NAMES))
+    assert [report["tags"].get("run_id") for report in reports] == ["parent-run"] * len(NODE_NAMES), reports

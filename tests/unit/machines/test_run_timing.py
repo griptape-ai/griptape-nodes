@@ -112,6 +112,14 @@ class TestRunId:
         # A finished run's machine lingers, and its id must not label spend made after it.
         assert flow_manager.current_run_id is None
 
+    def test_a_group_run_for_another_engine_reports_that_engine_s_run(self) -> None:
+        flow_manager = FlowManager(MagicMock(spec=EventManager), engine=MagicMock())
+        flow_manager.parent_run_id = "parent-run"
+        flow_manager._global_control_flow_machine = MagicMock()
+        flow_manager.check_for_existing_running_flow = MagicMock(return_value=True)
+
+        assert flow_manager.current_run_id == "parent-run"
+
     def test_a_live_run_reports_its_machine_s_id(self) -> None:
         flow_manager = FlowManager(MagicMock(spec=EventManager), engine=MagicMock())
         machine = MagicMock()
@@ -164,11 +172,11 @@ class TestRunIdMinting:
         assert run.announced == []
 
     @pytest.mark.asyncio
-    async def test_a_group_run_for_another_engine_takes_its_id_without_announcing(self) -> None:
-        """The parent engine announced the run; a second start for it would read as a new run."""
+    async def test_a_group_run_for_another_engine_leaves_its_events_to_that_engine(self) -> None:
+        """The parent engine sends the run's start and end events; this run's would duplicate them."""
         run = await self._start(is_isolated=False, parent_run_id="parent-run")
 
-        assert run.machine.context.run_id == "parent-run"
+        assert run.machine.context.run_id is None
         assert run.announced == []
 
     @pytest.mark.asyncio

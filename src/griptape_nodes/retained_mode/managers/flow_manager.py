@@ -350,10 +350,13 @@ class FlowManager(EngineScoped):
 
         Spend attribution reads this, so a model call made while a run is in progress counts toward
         that run. A node in a library worker sends its budget requests to this engine, which is why
-        the id is read here rather than from the running task's context.
+        the id is read here rather than from the running task's context. When this engine runs a
+        node group for another engine, its runs count toward that engine's run.
         """
         if not self.check_for_existing_running_flow():
             return None
+        if self.parent_run_id is not None:
+            return self.parent_run_id
         if self._global_control_flow_machine is None:
             return None
         return self._global_control_flow_machine.context.run_id
@@ -4868,7 +4871,12 @@ class FlowManager(EngineScoped):
             self._global_flow_queue.task_done()
             machine = self._global_control_flow_machine
             if machine is not None:
-                await machine.start_flow(start_node, debug_mode=debug_mode)
+                try:
+                    await machine.start_flow(start_node, debug_mode=debug_mode)
+                except Exception:
+                    # The run was already announced, so it has to be ended as well, as start_flow does.
+                    await self._abandon_running_flow()
+                    raise
 
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
         # We are now going to have different behavior depending on how the node is behaving.

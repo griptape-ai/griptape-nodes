@@ -409,7 +409,8 @@ class FlowRunStartedEvent(ExecutionPayload):
     Every `BudgetAccessRequest` and `ReportUsageRequest` sent during the run is tagged with
     `run_id`, so a client can look up what the run's direct provider calls cost in Griptape Cloud
     with a spend search filtered on the `run_id` tag. Loop bodies, and node groups run in a local
-    process of their own, are part of the run that started them and announce no run of their own.
+    process of their own, are part of the run that started them: they announce no run, and their end
+    events carry no `run_id`, so the only end event with this id is the run's own.
 
     Args:
         run_id: The run's id. The run's `ControlFlowResolvedEvent` or `ControlFlowCancelledEvent`
@@ -430,7 +431,8 @@ class ControlFlowResolvedEvent(ExecutionPayload):
         end_node_name: The node the run ended on.
         parameter_output_values: That node's output values.
         run_seconds: Wall-clock seconds the whole run took, or None when the run was not timed.
-        run_id: The id `FlowRunStartedEvent` announced for this run.
+        run_id: The id `FlowRunStartedEvent` announced for this run, or None for a run that announced
+            none, such as a node group run in a process of its own for another engine's run.
     """
 
     end_node_name: str
@@ -448,8 +450,9 @@ class ControlFlowCancelledEvent(ExecutionPayload):
         result_details: Why the run was cancelled.
         exception: The exception that ended the run, if one did.
         run_seconds: How long the run ran before it was cancelled, or None when it was not timed.
-        run_id: The id `FlowRunStartedEvent` announced for this run, or None when it never started or
-            when a workflow executor reports the failure after the engine has let go of the run.
+        run_id: The id `FlowRunStartedEvent` announced for this run, or None for a run that announced
+            none, or when a workflow executor reports the failure after the engine has let go of
+            the run.
     """
 
     result_details: ResultDetails | str | None = None
