@@ -59,6 +59,19 @@ class TestRowInputTypes:
 
         assert row.input_types == ["int", "list[int]", "list"]
 
+    def test_existing_rows_follow_a_change_of_output_type(self) -> None:
+        node = MockNode()
+        node.add_parameter(
+            ParameterList(name="refs", tooltip="t", output_type="str", allowed_modes={ParameterMode.INPUT})
+        )
+        refs = node.get_parameter_by_name("refs")
+        assert isinstance(refs, ParameterList)
+        row = refs.add_child_parameter()
+
+        refs.output_type = "int"
+
+        assert row.input_types == ["int", "list[int]", "list"]
+
     def test_clearing_input_types_leaves_old_and_new_rows_alike(self, node: MockNode) -> None:
         refs = _refs(node)
         old_row = refs.add_child_parameter()
@@ -88,10 +101,11 @@ class TestConcatenation:
 
         assert node.get_parameter_value("refs") == ["a", "b"]
 
-    def test_a_list_of_lists_keeps_its_rows_whole(self) -> None:
+    @pytest.mark.parametrize("item_type", ["list", "list[str]", "any", "all"])
+    def test_a_list_whose_items_may_be_lists_keeps_its_rows_whole(self, item_type: str) -> None:
         node = MockNode()
         node.add_parameter(
-            ParameterList(name="groups", tooltip="t", input_types=["list"], allowed_modes={ParameterMode.INPUT})
+            ParameterList(name="groups", tooltip="t", input_types=[item_type], allowed_modes={ParameterMode.INPUT})
         )
         groups = node.get_parameter_by_name("groups")
         assert isinstance(groups, ParameterList)

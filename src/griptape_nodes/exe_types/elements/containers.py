@@ -293,27 +293,18 @@ class ParameterList(ParameterContainer):
         super()._custom_setter_for_property_input_types(value)
         self._widen_all_row_input_types()
 
-    @property
-    def concatenates_list_rows(self) -> bool:
-        """Whether list-valued rows contribute items; false when lists are valid items."""
+    def row_value_is_items(self, value: Any) -> bool:
+        """Return whether a row's `value` contributes its items rather than one item.
+
+        False for every value when the list's items may themselves be lists (`any`, `all` or `list`).
+        """
+        if not isinstance(value, list):
+            return False
         whole_item_bases = {ParameterTypeBuiltin.ANY.value, ParameterTypeBuiltin.ALL.value, "list"}
         item_types = super()._custom_getter_for_property_input_types()
         return all(
             ParameterType._extract_base_type(item_type.lower()) not in whole_item_bases for item_type in item_types
         )
-
-    def row_value_is_items(self, value: Any) -> bool:
-        """Return whether `value` contributes its items rather than one item."""
-        return isinstance(value, list) and self.concatenates_list_rows
-
-    @staticmethod
-    def _with_list_variants(item_types: list[str]) -> list[str]:
-        """Each item type, then its `list[...]` form, then a bare `list`, so a row takes one item or a whole list.
-
-        A bare `list` is accepted for the reason the container accepts it: a runtime-built list cannot always
-        declare one item type.
-        """
-        return [*item_types, *(f"list[{item_type}]" for item_type in item_types), "list"]
 
     def _widen_all_row_input_types(self) -> None:
         rows = [child for child in self._children if isinstance(child, Parameter)]
@@ -543,6 +534,15 @@ class ParameterList(ParameterContainer):
             self._node_context.make_node_unresolved(
                 current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
             )
+
+    @staticmethod
+    def _with_list_variants(item_types: list[str]) -> list[str]:
+        """Each item type, then its `list[...]` form, then a bare `list`, so a row takes one item or a whole list.
+
+        A bare `list` is accepted for the reason the container accepts it: a runtime-built list cannot always
+        declare one item type.
+        """
+        return [*item_types, *(f"list[{item_type}]" for item_type in item_types), "list"]
 
 
 class ParameterKeyValuePair(Parameter):
