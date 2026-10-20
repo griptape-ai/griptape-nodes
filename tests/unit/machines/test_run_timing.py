@@ -1,6 +1,6 @@
 """Node and run timings, and the run id, ride on the execution events, so the editor can show where a run spent its time."""
 
-from typing import NamedTuple
+from typing import Any, NamedTuple
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -13,6 +13,7 @@ from griptape_nodes.machines.parallel_resolution import ExecuteDagState
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowCancelledEvent,
     FlowRunStartedEvent,
+    InvolvedNodesEvent,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
@@ -95,6 +96,25 @@ class TestRunSeconds:
         assert [p.run_id for p in cancelled] == ["run-1"]
 
 
+class _Cancelling(NamedTuple):
+    flow_manager: FlowManager
+    engine: MagicMock
+    cancelled_run: MagicMock
+    next_run: MagicMock
+
+    @property
+    def payloads(self) -> list[Any]:
+        return [call.args[0].wrapped_event.payload for call in self.engine.event_manager.put_event.call_args_list]
+
+    @property
+    def cancelled_ids(self) -> list[str | None]:
+        return [payload.run_id for payload in self.payloads if isinstance(payload, ControlFlowCancelledEvent)]
+
+    @property
+    def involved_node_sets(self) -> list[list[str]]:
+        return [payload.involved_nodes for payload in self.payloads if isinstance(payload, InvolvedNodesEvent)]
+
+
 class TestRunId:
     def test_a_run_hands_over_its_id_once(self) -> None:
         context = _context()
@@ -121,8 +141,9 @@ class TestRunId:
         # A finished run's machine lingers, and its id must not label spend made after it.
         assert flow_manager.current_run_id is None
 
-    @pytest.mark.asyncio
-    async def test_a_cancel_ends_the_run_it_cancelled_when_another_starts_meanwhile(self) -> None:
+    @staticmethod
+    def _cancelling(*, another_run_starts: bool) -> _Cancelling:
+        """A flow manager cancelling "run-a", optionally with "run-b" starting during the cancel's wait."""
         engine = MagicMock()
         flow_manager = FlowManager(MagicMock(spec=EventManager), engine=engine)
         cancelled_run = MagicMock()
@@ -130,19 +151,43 @@ class TestRunId:
         next_run = MagicMock()
         next_run.context.end_run.return_value = "run-b"
 
-        async def start_another_run_meanwhile() -> None:
-            flow_manager._global_control_flow_machine = next_run
+        async def cancel() -> None:
+            if another_run_starts:
+                # What starting a run does to the shared state while the cancel is still waiting.
+                flow_manager._global_control_flow_machine = next_run
+                flow_manager._global_single_node_resolution = True
+                flow_manager._global_dag_builder.node_to_reference["NextRunNode"] = MagicMock()
 
-        cancelled_run.cancel_flow = AsyncMock(side_effect=start_another_run_meanwhile)
+        cancelled_run.cancel_flow = AsyncMock(side_effect=cancel)
         flow_manager._global_control_flow_machine = cancelled_run
         flow_manager.check_for_existing_running_flow = MagicMock(return_value=True)
+        return _Cancelling(flow_manager=flow_manager, engine=engine, cancelled_run=cancelled_run, next_run=next_run)
 
-        await flow_manager.cancel_flow_run()
+    @pytest.mark.asyncio
+    async def test_a_cancel_ends_its_run_and_clears_the_shared_state(self) -> None:
+        cancelling = self._cancelling(another_run_starts=False)
+        cancelling.flow_manager._global_dag_builder.node_to_reference["CancelledNode"] = MagicMock()
 
-        payloads = [call.args[0].wrapped_event.payload for call in engine.event_manager.put_event.call_args_list]
-        assert [p.run_id for p in payloads if isinstance(p, ControlFlowCancelledEvent)] == ["run-a"]
-        cancelled_run.reset_machine.assert_called_once_with(cancel=True)
-        next_run.reset_machine.assert_not_called()
+        await cancelling.flow_manager.cancel_flow_run()
+
+        assert cancelling.cancelled_ids == ["run-a"]
+        cancelling.cancelled_run.reset_machine.assert_called_once_with(cancel=True)
+        assert cancelling.flow_manager._global_dag_builder.node_to_reference == {}
+        assert cancelling.involved_node_sets == [[]]
+
+    @pytest.mark.asyncio
+    async def test_a_cancel_leaves_a_run_that_started_while_it_waited_alone(self) -> None:
+        """The new run owns the shared DAG, single-node flag and involved nodes; the cancel must not clear them."""
+        cancelling = self._cancelling(another_run_starts=True)
+
+        await cancelling.flow_manager.cancel_flow_run()
+
+        assert cancelling.cancelled_ids == ["run-a"]
+        cancelling.cancelled_run.reset_machine.assert_not_called()
+        cancelling.next_run.reset_machine.assert_not_called()
+        assert "NextRunNode" in cancelling.flow_manager._global_dag_builder.node_to_reference
+        assert cancelling.flow_manager.global_single_node_resolution is True
+        assert cancelling.involved_node_sets == []
 
     def test_a_group_run_for_another_engine_reports_that_engine_s_run(self) -> None:
         flow_manager = FlowManager(MagicMock(spec=EventManager), engine=MagicMock())

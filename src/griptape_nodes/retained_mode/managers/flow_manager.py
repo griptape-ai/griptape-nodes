@@ -4811,18 +4811,25 @@ class FlowManager(EngineScoped):
 
         Both are read before the reset, which clears them, and sent on the run's
         `ControlFlowCancelledEvent`. The id is None when another end event already carried it.
+
+        A run started while this one was being cancelled has replaced its machine and owns the
+        shared state now: the DAG builder every top-level machine uses, the single-node flag, and
+        the editor's involved-node set. Those are left to it, and so is the reset, which would
+        clear that builder too. Nothing steps the replaced machine again.
         """
         run_seconds = None
         run_id = None
         if machine is not None:
             run_seconds = machine.context.seconds_since_run_started()
             run_id = machine.context.end_run()
-            machine.reset_machine(cancel=True)
-        self._global_single_node_resolution = False
-        self._global_dag_builder.clear()
-        self.engine.event_manager.put_event(
-            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
-        )
+        if machine is self._global_control_flow_machine:
+            if machine is not None:
+                machine.reset_machine(cancel=True)
+            self._global_single_node_resolution = False
+            self._global_dag_builder.clear()
+            self.engine.event_manager.put_event(
+                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
+            )
         self.engine.event_manager.put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds, run_id=run_id))
