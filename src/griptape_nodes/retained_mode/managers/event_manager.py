@@ -8,7 +8,7 @@ import threading
 from collections import defaultdict
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import fields
+from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING, Any, cast
 
 from asyncio_thread_runner import ThreadRunner
@@ -120,6 +120,24 @@ _suppressed_event_types: ContextVar[frozenset[type]] = ContextVar(
 # notification hook never misses a request. This is purely a "something is wrong" signal
 # for a hook that runs slower than requests arrive.
 POST_DISPATCH_HOOK_INFLIGHT_WARNING_THRESHOLD = 100
+
+
+@dataclass(frozen=True)
+class _PostDispatchCall:
+    """One post-dispatch hook to run for one handled request, with what its fresh context must restore."""
+
+    request_type: type[RequestPayload]
+    callback: PostDispatchHook
+    request: RequestPayload
+    result: ResultPayload
+    # The hooks running further up this chain (see `_active_post_dispatch_hooks`).
+    inherited_chain: tuple[tuple[type[RequestPayload], Any], ...]
+    # The workflow the request acted on.
+    binding: WorkflowRuntime | NoWorkflow | None
+
+    @property
+    def callback_name(self) -> str:
+        return getattr(self.callback, "__name__", str(self.callback))
 
 
 def _suppression_candidates(event: Any) -> list[Any]:
@@ -594,7 +612,16 @@ class EventManager(EngineScoped):
                     request_type.__name__,
                 )
                 continue
-            self._schedule_post_dispatch_hook(request_type, callback, request, result, active, binding)
+            self._schedule_post_dispatch_hook(
+                _PostDispatchCall(
+                    request_type=request_type,
+                    callback=callback,
+                    request=request,
+                    result=result,
+                    inherited_chain=active,
+                    binding=binding,
+                )
+            )
 
     def _scrub_omitted_request_fields(self, request: RequestPayload) -> None:
         """Null out the request fields marked `omit_from_result`, in place.
@@ -606,15 +633,7 @@ class EventManager(EngineScoped):
             if field.metadata.get("omit_from_result", False):
                 setattr(request, field.name, None)
 
-    def _schedule_post_dispatch_hook(  # noqa: PLR0913, PLR0917
-        self,
-        request_type: type[RequestPayload],
-        callback: PostDispatchHook,
-        request: RequestPayload,
-        result: ResultPayload,
-        inherited_chain: tuple[tuple[type[RequestPayload], Any], ...],
-        binding: WorkflowRuntime | NoWorkflow | None,
-    ) -> None:
+    def _schedule_post_dispatch_hook(self, call: _PostDispatchCall) -> None:
         """Hand one hook to the engine loop, or run it inline if there is no live loop.
 
         Always targets `self._event_loop` rather than the running loop. The sync
@@ -634,16 +653,7 @@ class EventManager(EngineScoped):
                 # call_soon_threadsafe is legal from the loop's own thread as well as
                 # from any other, so this is one path instead of two. The task itself is
                 # created on the loop thread by _spawn_post_dispatch_hook_task.
-                loop.call_soon_threadsafe(
-                    self._spawn_post_dispatch_hook_task,
-                    loop,
-                    request_type,
-                    callback,
-                    request,
-                    result,
-                    inherited_chain,
-                    binding,
-                )
+                loop.call_soon_threadsafe(self._spawn_post_dispatch_hook_task, loop, call)
             except RuntimeError:
                 # Lost the race with loop shutdown between the check and the call; fall
                 # through and run inline rather than dropping the notification.
@@ -651,21 +661,12 @@ class EventManager(EngineScoped):
             else:
                 return
 
-        self._run_post_dispatch_hook_inline(request_type, callback, request, result, inherited_chain, binding)
+        self._run_post_dispatch_hook_inline(call)
 
-    def _spawn_post_dispatch_hook_task(  # noqa: PLR0913, PLR0917
-        self,
-        loop: asyncio.AbstractEventLoop,
-        request_type: type[RequestPayload],
-        callback: PostDispatchHook,
-        request: RequestPayload,
-        result: ResultPayload,
-        inherited_chain: tuple[tuple[type[RequestPayload], Any], ...],
-        binding: WorkflowRuntime | NoWorkflow | None,
-    ) -> None:
+    def _spawn_post_dispatch_hook_task(self, loop: asyncio.AbstractEventLoop, call: _PostDispatchCall) -> None:
         """Create the detached hook task. Runs on `loop`'s own thread."""
         task = loop.create_task(
-            self._run_post_dispatch_hook(request_type, callback, request, result, inherited_chain, binding),
+            self._run_post_dispatch_hook(call),
             context=contextvars.Context(),
         )
         self._inflight_post_dispatch_hook_tasks.add(task)
@@ -677,8 +678,8 @@ class EventManager(EngineScoped):
                 "%d post-dispatch hooks are still running. Hooks are never dropped, so a hook "
                 "that runs slower than requests arrive will keep accumulating. Most recent: '%s' for %s.",
                 inflight,
-                getattr(callback, "__name__", callback),
-                request_type.__name__,
+                call.callback_name,
+                call.request_type.__name__,
             )
 
     def _on_post_dispatch_hook_done(self, task: asyncio.Task) -> None:
@@ -690,15 +691,7 @@ class EventManager(EngineScoped):
         if exception is not None:
             logging.getLogger("griptape_nodes").error("Post-dispatch hook task failed.", exc_info=exception)
 
-    async def _run_post_dispatch_hook(  # noqa: PLR0913, PLR0917
-        self,
-        request_type: type[RequestPayload],
-        callback: PostDispatchHook,
-        request: RequestPayload,
-        result: ResultPayload,
-        inherited_chain: tuple[tuple[type[RequestPayload], Any], ...],
-        binding: WorkflowRuntime | NoWorkflow | None,
-    ) -> None:
+    async def _run_post_dispatch_hook(self, call: _PostDispatchCall) -> None:
         """Invoke one hook, isolated from the context that dispatched the request.
 
         The task is created with a *fresh* context rather than a copy of the caller's, so
@@ -716,36 +709,28 @@ class EventManager(EngineScoped):
         drops the re-entrancy marker, which is why the chain is passed in explicitly rather
         than read from the context here.
         """
-        _active_post_dispatch_hooks.set((*inherited_chain, (request_type, callback)))
-        bound_workflow.set(binding)
+        _active_post_dispatch_hooks.set((*call.inherited_chain, (call.request_type, call.callback)))
+        bound_workflow.set(call.binding)
 
         with engine_scope(self.engine):
             try:
-                if _is_async_callable(callback):
-                    await callback(request, result)  # type: ignore[misc]
+                if _is_async_callable(call.callback):
+                    await call.callback(call.request, call.result)  # type: ignore[misc]
                 else:
                     # Sync callbacks go to a thread: they would otherwise run inline on
                     # the engine loop, where blocking stalls the event queue and every
                     # in-flight request.
-                    await to_thread(callback, request, result)
+                    await to_thread(call.callback, call.request, call.result)
             except Exception:
                 # Fail open. The result has already been returned, so there is nothing
                 # to fail; the only correct response is to log and move on.
                 logging.getLogger("griptape_nodes").exception(
                     "Post-dispatch hook '%s' for %s raised. The request result is unaffected.",
-                    getattr(callback, "__name__", callback),
-                    request_type.__name__,
+                    call.callback_name,
+                    call.request_type.__name__,
                 )
 
-    def _run_post_dispatch_hook_inline(  # noqa: PLR0913, PLR0917
-        self,
-        request_type: type[RequestPayload],
-        callback: PostDispatchHook,
-        request: RequestPayload,
-        result: ResultPayload,
-        inherited_chain: tuple[tuple[type[RequestPayload], Any], ...],
-        binding: WorkflowRuntime | NoWorkflow | None,
-    ) -> None:
+    def _run_post_dispatch_hook_inline(self, call: _PostDispatchCall) -> None:
         """Run a hook synchronously, blocking the caller's thread until it finishes.
 
         Blocking the caller is the guarantee; running *on* the caller's thread is not. A
@@ -758,7 +743,7 @@ class EventManager(EngineScoped):
         on those paths, and dropping the hook would make the feature "fires, except
         sometimes."
         """
-        coro = self._run_post_dispatch_hook(request_type, callback, request, result, inherited_chain, binding)
+        coro = self._run_post_dispatch_hook(call)
         try:
             if _running_loop() is not None:
                 # Both branches must start the hook from an empty context, for the
@@ -777,8 +762,8 @@ class EventManager(EngineScoped):
             # scheduling machinery itself failed. Still fail open.
             logging.getLogger("griptape_nodes").exception(
                 "Failed to run post-dispatch hook '%s' for %s inline.",
-                getattr(callback, "__name__", callback),
-                request_type.__name__,
+                call.callback_name,
+                call.request_type.__name__,
             )
 
     def add_authorization_hook(
