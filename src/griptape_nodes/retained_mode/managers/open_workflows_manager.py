@@ -61,12 +61,15 @@ class SuspendedWorkflow:
         working_directory: The folder an unsaved workflow belongs to, if it was given one.
         commands: Its graph as it was in memory, unsaved edits included, or None when it could not be
             serialized. A saved workflow is then rebuilt from its file instead.
+        serialization_failed: Whether it had a graph that could not be serialized. A workflow with no
+            graph yet has nothing to lose, so this is False for it.
     """
 
     runtime: WorkflowRuntime
     workflow_name: str
     working_directory: str | None
     commands: SerializedFlowCommands | None
+    serialization_failed: bool = False
 
 
 @dataclass
@@ -75,6 +78,25 @@ class WorkflowRebuildFailure:
 
     workflow_name: str
     details: str
+
+
+@dataclass
+class WorkflowEditsNotPreserved:
+    """An open workflow whose in-memory state could not be kept across a rebuild.
+
+    Whether the workflow had unsaved changes is not known, so a saved workflow is reported as one that
+    may have lost them.
+
+    Args:
+        workflow_name: Its registry key.
+        display_name: The name users see for it.
+        reopened_from_file: True when it was rebuilt from its last save, False when it had never been
+            saved and was reopened empty.
+    """
+
+    workflow_name: str
+    display_name: str
+    reopened_from_file: bool
 
 
 class OpenWorkflowsManager(EngineScoped):
@@ -175,6 +197,47 @@ class OpenWorkflowsManager(EngineScoped):
                 failures.append(WorkflowRebuildFailure(workflow_name=record.workflow_name, details=failure))
         self.announce_change()
         return failures
+
+    def find_edits_not_preserved(self, suspended: list[SuspendedWorkflow]) -> list[WorkflowEditsNotPreserved]:
+        """The resumed workflows whose in-memory state could not be kept, so they were not rebuilt as they were.
+
+        Call after `resume_open_workflows`.
+        """
+        lost = []
+        for record in suspended:
+            if not record.serialization_failed:
+                continue
+            if record.runtime not in self.engine.workflow_runtimes:
+                continue
+            lost.append(
+                WorkflowEditsNotPreserved(
+                    workflow_name=record.workflow_name,
+                    display_name=self._display_name_of(record.workflow_name),
+                    reopened_from_file=self._is_saved(record.workflow_name),
+                )
+            )
+        return lost
+
+    def describe_edits_not_preserved(self, lost: list[WorkflowEditsNotPreserved]) -> str:
+        """Tell an artist which workflows may have lost unsaved changes, and what became of each.
+
+        Returns an empty string when `lost` is empty.
+        """
+        sentences = []
+        from_file = [f"'{workflow.display_name}'" for workflow in lost if workflow.reopened_from_file]
+        empty = [f"'{workflow.display_name}'" for workflow in lost if not workflow.reopened_from_file]
+        if from_file:
+            sentences.append(
+                "Attempted to keep the open workflows as they were during the library reload. "
+                f"Failed for {', '.join(from_file)} because the current state could not be recorded, "
+                "so each was reopened from its last save and may have lost unsaved changes."
+            )
+        if empty:
+            sentences.append(
+                f"{', '.join(empty)} had never been saved and could not be recorded, "
+                "so each was reopened empty and its changes were lost."
+            )
+        return " ".join(sentences)
 
     def rekey_open_workflow(self, old_name: str, new_name: str, file_path: str) -> None:
         """Keep the workflow open from `old_name` open under `new_name`, after a rename or move.
@@ -291,29 +354,31 @@ class OpenWorkflowsManager(EngineScoped):
         working_directory = runtime.context.get_current_workflow_working_directory()
 
         commands = None
+        serialization_failed = False
         top_level = await engine.ahandle_request(GetTopLevelFlowRequest())
         if isinstance(top_level, GetTopLevelFlowResultSuccess) and top_level.flow_name is not None:
             serialized = await engine.ahandle_request(SerializeFlowToCommandsRequest(flow_name=top_level.flow_name))
             if isinstance(serialized, SerializeFlowToCommandsResultSuccess):
                 commands = serialized.serialized_flow_commands
             else:
+                serialization_failed = True
                 logger.warning(
                     "Could not record workflow '%s' as it is before rebuilding it: %s",
                     workflow_name,
                     serialized.result_details,
                 )
         return SuspendedWorkflow(
-            runtime=runtime, workflow_name=workflow_name, working_directory=working_directory, commands=commands
+            runtime=runtime,
+            workflow_name=workflow_name,
+            working_directory=working_directory,
+            commands=commands,
+            serialization_failed=serialization_failed,
         )
 
     async def _rebuild_current_workflow(self, record: SuspendedWorkflow) -> str | None:
         """Rebuild a suspended workflow in the current runtime. Returns why it failed, or None."""
         engine = self.engine
-        registry = engine.workflow_registry
-        is_saved = registry.has_workflow_with_name(record.workflow_name) and (
-            registry.get_workflow_by_name(record.workflow_name).is_saved
-        )
-        if record.commands is None and is_saved:
+        if record.commands is None and self._is_saved(record.workflow_name):
             # The file creates the variables it records.
             record.runtime.variables.clear()
             return await self._build_from_file(record.workflow_name)
@@ -329,6 +394,12 @@ class OpenWorkflowsManager(EngineScoped):
         if result.failed():
             return f"Attempted to rebuild workflow '{record.workflow_name}'. Failed due to: {result.result_details}"
         return None
+
+    def _is_saved(self, workflow_name: str) -> bool:
+        registry = self.engine.workflow_registry
+        if not registry.has_workflow_with_name(workflow_name):
+            return False
+        return registry.get_workflow_by_name(workflow_name).is_saved
 
     def _display_name_of(self, workflow_name: str) -> str:
         registry = self.engine.workflow_registry

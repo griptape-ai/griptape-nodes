@@ -867,11 +867,13 @@ class UnloadLibraryFromRegistryResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class ReloadAllLibrariesRequest(RequestPayload):
-    """WARNING: This request will CLEAR ALL CURRENT WORKFLOW STATE!
+    """WARNING: This request rebuilds every open workflow, and execution state is cleared.
 
     Reloading all libraries requires clearing all existing workflows, nodes, and execution state
     because there is no way to comprehensively erase references to old Python modules.
-    All current work will be lost and must be recreated after the reload operation completes.
+    Each open workflow is rebuilt as it was, unsaved changes included, and keeps its workflow_id.
+    A workflow that cannot be recorded as it is falls back to its last save, so it may lose unsaved
+    changes; the result names it in `workflows_with_lost_changes`.
 
     Use this operation only when you need to pick up changes to library code during development
     or when library corruption requires a complete reset.
@@ -881,7 +883,16 @@ class ReloadAllLibrariesRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class ReloadAllLibrariesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """All libraries reloaded successfully. All workflow state has been cleared."""
+    """All libraries reloaded successfully. Open workflows were rebuilt with them.
+
+    Args:
+        workflows_with_lost_changes: The names of the open workflows whose in-memory state could not be
+            kept across the reload. Each was rebuilt from its last save, or reopened empty when it had
+            never been saved, so it may have lost unsaved changes. Empty when every open workflow was
+            rebuilt as it was. `result_details` also carries a warning that names them.
+    """
+
+    workflows_with_lost_changes: list[str] = field(default_factory=list)
 
 
 @dataclass

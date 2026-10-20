@@ -23,7 +23,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
-from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails
+from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetail, ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
     DiscoverLibrariesRequest,
     DiscoverLibrariesResultFailure,
@@ -80,6 +80,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import Payload, RequestPayload, ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.open_workflows_manager import WorkflowEditsNotPreserved
     from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -639,6 +640,8 @@ class LibraryManager(EngineScoped):
             )
 
         rebuild_failures = await open_workflows.resume_open_workflows(suspended_workflows)
+        lost_changes = open_workflows.find_edits_not_preserved(suspended_workflows)
+        lost_changes_message = open_workflows.describe_edits_not_preserved(lost_changes)
 
         # Hard activation: a reload is interactive (project switch / explicit reload), so a
         # reconcile failure (bad engine_version gate or a sourced library that could not be
@@ -646,12 +649,28 @@ class LibraryManager(EngineScoped):
         # SetCurrentProjectResultFailure the GUI can show.
         if reconcile_failures:
             details = "Reloaded libraries but reconcile reported problem(s): " + "; ".join(reconcile_failures)
-            return ReloadAllLibrariesResultFailure(result_details=details)
+            return ReloadAllLibrariesResultFailure(result_details=f"{details} {lost_changes_message}".strip())
         if rebuild_failures:
             details = "Reloaded libraries, but some open workflows could not be rebuilt: " + "; ".join(
                 f"'{failure.workflow_name}': {failure.details}" for failure in rebuild_failures
             )
-            return ReloadAllLibrariesResultFailure(result_details=details)
+            return ReloadAllLibrariesResultFailure(result_details=f"{details} {lost_changes_message}".strip())
 
+        return self._reload_success(lost_changes, lost_changes_message)
+
+    @staticmethod
+    def _reload_success(
+        lost_changes: list[WorkflowEditsNotPreserved],
+        lost_changes_message: str,
+    ) -> ReloadAllLibrariesResultSuccess:
+        """The result of a reload that rebuilt every open workflow, warning about any that lost changes."""
         details = "Successfully reloaded all libraries and rebuilt the open workflows with them."
-        return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+        if not lost_changes:
+            return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+        return ReloadAllLibrariesResultSuccess(
+            result_details=ResultDetails(
+                ResultDetail(level=logging.INFO, message=details),
+                ResultDetail(level=logging.WARNING, message=lost_changes_message),
+            ),
+            workflows_with_lost_changes=[workflow.display_name for workflow in lost_changes],
+        )

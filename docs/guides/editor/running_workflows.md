@@ -138,6 +138,11 @@ it does, and closing it discards them. You can't close a tab while it runs.
 keeps its tab, including changes you haven't saved yet. Renaming, moving, or saving
 a workflow keeps its tab too.
 
+If the engine can't record a workflow's current state, it reopens that workflow from
+its last save, or empty if it was never saved, and logs a warning that names the
+workflow. Changes made since the last save may be lost, so save your work before you
+reload libraries.
+
 ## Reading execution state on the canvas
 
 Every node shows a status pill in its header while it's involved in the
