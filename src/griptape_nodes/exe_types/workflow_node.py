@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import ControlNode, EndNode, StartNode
+from griptape_nodes.exe_types.node_types import BaseNode, ControlNode, EndNode, StartNode
 from griptape_nodes.files.path_utils import (
     canonicalize_for_identity_preserving_symlinks,
     derive_registry_key,
@@ -51,7 +51,6 @@ if TYPE_CHECKING:
         WorkflowMetadata,
         _WorkflowRegistry,
     )
-    from griptape_nodes.retained_mode.engine import Engine
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -350,7 +349,9 @@ class WorkflowNode(ControlNode):
 
         self._apply_inputs(subflow_name, live_routes)
 
-        result = await self.engine.ahandle_request(StartLocalSubflowRequest(flow_name=subflow_name))
+        result = await self.engine.ahandle_request(
+            StartLocalSubflowRequest(flow_name=subflow_name), workflow_id=self.workflow_id
+        )
         if not isinstance(result, StartLocalSubflowResultSuccess):
             msg = (
                 f"Attempted to run the workflow behind node '{self.name}'. "
@@ -390,12 +391,14 @@ class WorkflowNode(ControlNode):
         """
         tracked = self.metadata.get(SUBFLOW_NAME_KEY)
         if tracked is not None:
-            if _get_flow_or_none(self.engine, tracked) is not None:
+            if _get_flow_or_none(self, tracked) is not None:
                 return tracked
             # Torn down out from under us (for example when the parent flow was deleted).
             self.metadata.pop(SUBFLOW_NAME_KEY, None)
 
-        flow_result = self.engine.handle_request(GetFlowForNodeRequest(node_name=self.name))
+        flow_result = self.engine.handle_request(
+            GetFlowForNodeRequest(node_name=self.name), workflow_id=self.workflow_id
+        )
         if not isinstance(flow_result, GetFlowForNodeResultSuccess):
             msg = (
                 f"Attempted to run the workflow behind node '{self.name}'. "
@@ -409,7 +412,8 @@ class WorkflowNode(ControlNode):
                 workflow_name=registry_key,
                 flow_name=flow_result.flow_name,
                 imported_flow_metadata={TRANSIENT_KEY: True},
-            )
+            ),
+            workflow_id=self.workflow_id,
         )
         if not isinstance(import_result, ImportWorkflowAsReferencedSubFlowResultSuccess):
             msg = (
@@ -462,9 +466,9 @@ class WorkflowNode(ControlNode):
         tracked = self.metadata.pop(SUBFLOW_NAME_KEY, None)
         if tracked is None:
             return
-        if _get_flow_or_none(self.engine, tracked) is None:
+        if _get_flow_or_none(self, tracked) is None:
             return
-        delete_result = self.engine.handle_request(DeleteFlowRequest(flow_name=tracked))
+        delete_result = self.engine.handle_request(DeleteFlowRequest(flow_name=tracked), workflow_id=self.workflow_id)
         if delete_result.failed():
             logger.warning(
                 "Node '%s' could not clean up its workflow subflow '%s': %s",
@@ -487,7 +491,8 @@ class WorkflowNode(ControlNode):
             WorkflowNodeRoutingError: A declared parameter is not present on the node it was paired
                 with, meaning the loaded copy does not match the workflow's stored shape.
         """
-        flow = self.engine.flow_manager.get_flow_by_name(subflow_name)
+        with self.in_own_workflow():
+            flow = self.engine.flow_manager.get_flow_by_name(subflow_name)
         live_start_nodes = [node.name for node in flow.nodes.values() if isinstance(node, StartNode)]
         live_end_nodes = [node.name for node in flow.nodes.values() if isinstance(node, EndNode)]
 
@@ -540,7 +545,8 @@ class WorkflowNode(ControlNode):
                     parameter_name=route.parameter_name,
                     node_name=route.workflow_node_name,
                     value=self._get_raw_parameter_value(surface_name),
-                )
+                ),
+                workflow_id=self.workflow_id,
             )
             if set_result.failed():
                 msg = (
@@ -552,7 +558,8 @@ class WorkflowNode(ControlNode):
         logger.debug("Node '%s' applied inputs to workflow subflow '%s'.", self.name, subflow_name)
 
     def _collect_outputs(self, subflow_name: str, live_routes: WorkflowNodeLiveRoutes) -> None:
-        flow = self.engine.flow_manager.get_flow_by_name(subflow_name)
+        with self.in_own_workflow():
+            flow = self.engine.flow_manager.get_flow_by_name(subflow_name)
         for surface_name, route in live_routes.outputs.items():
             end_node = flow.nodes[route.workflow_node_name]
             # A node that ran publishes to parameter_output_values; fall back to the stored value
@@ -624,5 +631,6 @@ def _build_surface_parameter(surface_name: str, surface_parameter: WorkflowNodeS
     )
 
 
-def _get_flow_or_none(engine: Engine, flow_name: str) -> ControlFlow | None:
-    return engine.object_manager.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+def _get_flow_or_none(node: BaseNode, flow_name: str) -> ControlFlow | None:
+    with node.in_own_workflow():
+        return node.engine.object_manager.attempt_get_object_by_name_as_type(flow_name, ControlFlow)

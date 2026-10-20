@@ -148,7 +148,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             set_as_new_context=False,
             metadata=subflow_metadata,
         )
-        result = self.engine.handle_request(request)
+        result = self.engine.handle_request(request, workflow_id=self.workflow_id)
         if not isinstance(result, CreateFlowResultSuccess):
             # Drop the name we optimistically recorded: no such flow exists, and leaving it set
             # makes every later lookup point at a phantom flow.
@@ -179,10 +179,11 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                 return enclosing_subflow_name
 
         # A group can be built with no Flow on the context stack, so this may find nothing.
-        context_manager = self.engine.context_manager
-        if not context_manager.has_current_flow():
-            return None
-        return context_manager.get_current_flow().name
+        with self.in_own_workflow():
+            context_manager = self.engine.context_manager
+            if not context_manager.has_current_flow():
+                return None
+            return context_manager.get_current_flow().name
 
     def _add_start_flow_parameters(self) -> None:
         """Add parameters from all registered StartFlow nodes to this SubflowNodeGroup.
@@ -382,7 +383,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             serializable=original_param.serializable,
         )
         # Add with a request, because this will handle naming for us.
-        result = self.engine.handle_request(request)
+        result = self.engine.handle_request(request, workflow_id=self.workflow_id)
         if not isinstance(result, AddParameterToNodeResultSuccess):
             msg = "Failed to add parameter to node."
             raise TypeError(msg)
@@ -436,7 +437,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             conn.source_node.name,
             conn.target_node.name,
         )
-        result = self.engine.handle_request(request)
+        result = self.engine.handle_request(request, workflow_id=self.workflow_id)
         if not isinstance(result, DeleteConnectionResultSuccess):
             return False
         proxy_parameter = self._create_proxy_parameter_for_connection(grouped_parameter, is_incoming=is_incoming)
@@ -468,8 +469,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             self._proxy_param_to_connections[proxy_parameter.name] = 2
         else:
             self._proxy_param_to_connections[proxy_parameter.name] += 2
-        self.engine.handle_request(create_first_connection)
-        self.engine.handle_request(create_second_connection)
+        self.engine.handle_request(create_first_connection, workflow_id=self.workflow_id)
+        self.engine.handle_request(create_second_connection, workflow_id=self.workflow_id)
 
     def unmap_node_connections(self, node: BaseNode, connections: Connections) -> None:  # noqa: C901
         """Remove tracking of an external connection, restore original connection, and clean up proxy parameter.
@@ -974,7 +975,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         if subflow_name is None:
             return
 
-        subflow = self.engine.object_manager.attempt_get_object_by_name_as_type(subflow_name, ControlFlow)
+        with self.in_own_workflow():
+            subflow = self.engine.object_manager.attempt_get_object_by_name_as_type(subflow_name, ControlFlow)
         if subflow is None:
             self.metadata.pop("subflow_name", None)
             return
@@ -988,7 +990,9 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             )
             return
 
-        delete_result = self.engine.handle_request(DeleteFlowRequest(flow_name=subflow_name))
+        delete_result = self.engine.handle_request(
+            DeleteFlowRequest(flow_name=subflow_name), workflow_id=self.workflow_id
+        )
         if isinstance(delete_result, DeleteFlowResultFailure):
             # Not worth failing the add twice over: it is already failing, and the message the artist
             # gets should be why their nodes did not move, not a leftover flow they cannot see.
@@ -1013,7 +1017,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             NodeGroupMembershipError: If the engine refused the move, carrying the reason it gave
         """
         move_request = MoveNodeToNewFlowRequest(node_name=node.name, target_flow_name=flow_name)
-        move_result = self.engine.handle_request(move_request)
+        move_result = self.engine.handle_request(move_request, workflow_id=self.workflow_id)
         if not isinstance(move_result, MoveNodeToNewFlowResultSuccess):
             # Carry the engine's own reason rather than only logging it: this is the innermost thing
             # that knows why the move was refused, and the caller turns it into what the artist reads.
@@ -1137,7 +1141,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                 conn.source_node.name,
                 conn.target_node.name,
             )
-            result = self.engine.handle_request(request)
+            result = self.engine.handle_request(request, workflow_id=self.workflow_id)
             if not isinstance(result, DeleteConnectionResultSuccess):
                 logger.warning(
                     "%s failed to delete connection from %s.%s to %s.%s",
@@ -1234,8 +1238,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         else:
             self._proxy_param_to_connections[proxy_parameter.name] += 2
 
-        self.engine.handle_request(create_first_connection)
-        self.engine.handle_request(create_second_connection)
+        self.engine.handle_request(create_first_connection, workflow_id=self.workflow_id)
+        self.engine.handle_request(create_second_connection, workflow_id=self.workflow_id)
 
     def remove_nodes_from_group(self, nodes: list[BaseNode]) -> list[BaseNode]:
         """Move nodes back out to this group's own flow and stop claiming them.
@@ -1376,9 +1380,12 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         self.remove_nodes_from_group(nodes_to_remove)
         subflow_name = self.metadata.get("subflow_name")
         if subflow_name is not None:
-            subflow = self.engine.object_manager.attempt_get_object_by_name_as_type(subflow_name, ControlFlow)
+            with self.in_own_workflow():
+                subflow = self.engine.object_manager.attempt_get_object_by_name_as_type(subflow_name, ControlFlow)
             if subflow is not None:
-                delete_result = self.engine.handle_request(DeleteFlowRequest(flow_name=subflow_name))
+                delete_result = self.engine.handle_request(
+                    DeleteFlowRequest(flow_name=subflow_name), workflow_id=self.workflow_id
+                )
                 if isinstance(delete_result, DeleteFlowResultFailure):
                     # This will propagate up to DeleteNodeRequest, and prevent the node from deleting.
                     msg = f"Failed to delete subflow {subflow_name} when deleting node {self.name}"
@@ -1403,7 +1410,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         nowhere to put these nodes" rather than an error in itself.
         """
         try:
-            return self.engine.node_manager.get_node_parent_flow_by_name(self.name)
+            with self.in_own_workflow():
+                return self.engine.node_manager.get_node_parent_flow_by_name(self.name)
         except KeyError:
             logger.warning("%s has no parent flow", self.name)
             return None

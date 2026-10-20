@@ -146,7 +146,8 @@ class ProjectOutputParameter(abc.ABC):
             ValueError: If a connected provider returns None.
         """
         result = self._node.engine.handle_request(
-            connection_events.ListConnectionsForNodeRequest(node_name=self._node.name)
+            connection_events.ListConnectionsForNodeRequest(node_name=self._node.name),
+            workflow_id=self._node.workflow_id,
         )
         if not isinstance(result, connection_events.ListConnectionsForNodeResultSuccess):
             return None
@@ -154,7 +155,8 @@ class ProjectOutputParameter(abc.ABC):
         for conn in result.incoming_connections:
             if conn.target_parameter_name != self._name:
                 continue
-            source_node = self._node.engine.object_manager.attempt_get_object_by_name(conn.source_node_name)
+            with self._node.in_own_workflow():
+                source_node = self._node.engine.object_manager.attempt_get_object_by_name(conn.source_node_name)
             if not isinstance(source_node, provider_type):
                 continue
             destination = get_destination(source_node)
@@ -174,7 +176,13 @@ class ProjectOutputParameter(abc.ABC):
         button: button_mod.Button,  # noqa: ARG002
         button_details: button_mod.ButtonDetailsMessagePayload,
     ) -> core_types.NodeMessageResult:
-        """Create and connect the appropriate settings node to this parameter."""
+        """Create and connect the appropriate settings node to this parameter, in this node's workflow."""
+        with self._node.in_own_workflow():
+            return self._configure_settings_node(button_details)
+
+    def _configure_settings_node(
+        self, button_details: button_mod.ButtonDetailsMessagePayload
+    ) -> core_types.NodeMessageResult:
         node_name = self._node.name
 
         has_incoming = False

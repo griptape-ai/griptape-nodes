@@ -203,7 +203,8 @@ class PublicArtifactUrlParameter:
         if self._is_public(url):
             return url
 
-        file_contents = File(url).read_bytes()
+        with self._node.in_own_workflow():
+            file_contents = File(url).read_bytes()
         # Resolved before recording the path, so a failed lookup leaves nothing for cleanup to delete.
         driver = self._get_storage_driver()
         self.gtc_file_path = self._build_upload_path(url)
@@ -219,7 +220,8 @@ class PublicArtifactUrlParameter:
         if self._is_public(url):
             return url
 
-        file_contents = await File(url).aread_bytes()
+        with self._node.in_own_workflow():
+            file_contents = await File(url).aread_bytes()
         driver = await self._aget_storage_driver()
         upload_path = self._build_upload_path(url)
         self.gtc_file_path = upload_path

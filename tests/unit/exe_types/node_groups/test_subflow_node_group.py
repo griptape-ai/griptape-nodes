@@ -55,7 +55,8 @@ class TestSubflowNodeGroupCreateSubflow:
                 parent_flow_name=None,
                 set_as_new_context=False,
                 metadata={"flow_type": "NodeGroupFlow"},
-            )
+            ),
+            workflow_id=None,
         )
         # ...but the group must record the flow it ACTUALLY got back, not the requested name.
         assert group.metadata["subflow_name"] == "G_subflow_1"

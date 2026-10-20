@@ -501,13 +501,15 @@ class _DispatchRecorder:
 
     def __init__(self) -> None:
         self.calls: list[Any] = []
+        self.workflow_ids: list[str | None] = []
         self._responses: dict[type, Any] = {}
 
     def map_type(self, request_type: type, response: Any) -> None:
         self._responses[request_type] = response
 
-    def __call__(self, request: Any) -> Any:
+    def __call__(self, request: Any, *, workflow_id: str | None = None) -> Any:
         self.calls.append(request)
+        self.workflow_ids.append(workflow_id)
         if type(request) not in self._responses:
             msg = f"DispatchRecorder has no response configured for {type(request).__name__}"
             raise AssertionError(msg)
@@ -519,6 +521,26 @@ class _DispatchRecorder:
 
 class TestTransitionToDispatchSequence:
     """Mock-based coverage of transition_to's request dispatch."""
+
+    def test_every_request_is_addressed_to_the_hosts_workflow(
+        self, host_node: MockNode, manage_dyn_prefix_component: ParameterTransitionComponent
+    ) -> None:
+        host_node.workflow_runtime = Mock(workflow_id="workflow-a")
+        recorder = _DispatchRecorder()
+        recorder.map_type(
+            AddParameterToNodeRequest,
+            AddParameterToNodeResultSuccess(
+                parameter_name="ignored",
+                type="str",
+                node_name=host_node.name,
+                result_details="ok",
+            ),
+        )
+
+        with patch(_HANDLE_REQUEST_TARGET, side_effect=recorder):
+            manage_dyn_prefix_component.transition_to([_transition_param("dyn_a"), _transition_param("dyn_b")])
+
+        assert recorder.workflow_ids == ["workflow-a", "workflow-a"]
 
     def test_pure_add_dispatches_only_add_requests(
         self, host_node: MockNode, manage_dyn_prefix_component: ParameterTransitionComponent

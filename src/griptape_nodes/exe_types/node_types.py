@@ -512,6 +512,18 @@ class BaseNode(ABC):
             return self.workflow_runtime
         return self.engine.current_workflow
 
+    @contextmanager
+    def in_own_workflow(self) -> Iterator[None]:
+        """Act on this node's workflow within the block, which code on a thread that lost the binding needs.
+
+        Binds nothing for a node that has no workflow recorded, so it acts as it would without this.
+        """
+        if self.workflow_runtime is None:
+            yield
+            return
+        with self.engine.bind_workflow(self.workflow_runtime):
+            yield
+
     def _run_id_in_own_workflow(self) -> str | None:
         """The run the current work belongs to, when it is a run of this node's workflow."""
         run = current_run.get()
@@ -1248,7 +1260,10 @@ class BaseNode(ABC):
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
         for child in parameter.find_elements_by_type(Parameter):
-            self.engine.handle_request(RemoveParameterFromNodeRequest(parameter_name=child.name, node_name=self.name))
+            self.engine.handle_request(
+                RemoveParameterFromNodeRequest(parameter_name=child.name, node_name=self.name),
+                workflow_id=self.workflow_id,
+            )
 
     def get_parameter_value(self, param_name: str) -> Any:
         """The value a node reads, with a held object substituted for the key standing in for it.
@@ -1426,7 +1441,9 @@ class BaseNode(ABC):
     # if not implemented, it will return no issues.
     def validate_before_workflow_run(self) -> list[Exception] | None:
         """Runs before the entire workflow is run."""
-        if VariableResolver.is_substitution_enabled(self.engine):
+        with self.in_own_workflow():
+            substitution_enabled = VariableResolver.is_substitution_enabled(self.engine)
+        if substitution_enabled:
             for param in self.parameters:
                 if not param.allow_variable_substitution:
                     continue
@@ -1893,7 +1910,9 @@ class BaseNode(ABC):
         executing in an isolated process holds only a transient copy of itself, so reading
         its own process's connection index would answer from almost nothing.
         """
-        result = self.engine.handle_request(ListConnectionsForNodeRequest(node_name=self.name, broadcast_result=False))
+        result = self.engine.handle_request(
+            ListConnectionsForNodeRequest(node_name=self.name, broadcast_result=False), workflow_id=self.workflow_id
+        )
         if not isinstance(result, ListConnectionsForNodeResultSuccess):
             return False
         return any(connection.target_parameter_name == param_name for connection in result.incoming_connections)
@@ -1944,13 +1963,15 @@ class BaseNode(ABC):
 
     def _resolve_variables_in_value(self, value: Any) -> Any:
         """Recursively substitute workflow variables in any str/dict/list value."""
-        variables = VariableResolver.get_variables_if_enabled(self.engine, self.name)
+        with self.in_own_workflow():
+            variables = VariableResolver.get_variables_if_enabled(self.engine, self.name)
         if variables is None:
             return value
         return VariableResolver.resolve_value(value, variables, self.name)
 
     def _resolve_variables_in_string(self, text: str) -> str:
-        variables = VariableResolver.get_variables_if_enabled(self.engine, self.name)
+        with self.in_own_workflow():
+            variables = VariableResolver.get_variables_if_enabled(self.engine, self.name)
         if variables is None:
             return text
         return VariableResolver.resolve_string(text, variables, self.name)
@@ -1989,7 +2010,8 @@ class BaseNode(ABC):
         # get_variables_without_memoizing, not get_variables_if_enabled: this runs
         # outside aprocess_scope(), where the latter's memo write has no reset token
         # and would leave a stale variable dict on the surrounding context.
-        variables = VariableResolver.get_variables_without_memoizing(self.engine, self.name)
+        with self.in_own_workflow():
+            variables = VariableResolver.get_variables_without_memoizing(self.engine, self.name)
         if variables is None:
             return True
         return VariableResolver.would_substitute(raw_value, variables)
@@ -2008,7 +2030,9 @@ class BaseNode(ABC):
         connection never gets substituted, so its output is genuine and its
         stored value must stay writable.
         """
-        if not VariableResolver.is_substitution_enabled(self.engine):
+        with self.in_own_workflow():
+            substitution_enabled = VariableResolver.is_substitution_enabled(self.engine)
+        if not substitution_enabled:
             return None
         parameter = self.get_parameter_by_name(parameter_name)
         if parameter is None:
@@ -2514,7 +2538,9 @@ class SuccessFailureNode(BaseNode):
 
     def _has_outgoing_connections(self, parameter: Parameter) -> bool:
         """Check if a specific parameter has outgoing connections."""
-        result = self.engine.handle_request(ListConnectionsForNodeRequest(node_name=self.name, broadcast_result=False))
+        result = self.engine.handle_request(
+            ListConnectionsForNodeRequest(node_name=self.name, broadcast_result=False), workflow_id=self.workflow_id
+        )
         if not isinstance(result, ListConnectionsForNodeResultSuccess):
             return False
         return any(connection.source_parameter_name == parameter.name for connection in result.outgoing_connections)
@@ -2793,7 +2819,7 @@ class ErrorProxyNode(BaseNode):
                 is_user_defined=False,  # Don't serialize this parameter
                 initial_setup=True,  # Allows setting non-settable parameters and prevents resolution cascades during workflow loading
             )
-            result = self.engine.handle_request(request)
+            result = self.engine.handle_request(request, workflow_id=self.workflow_id)
 
             # Check if parameter creation was successful
             from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeResultSuccess

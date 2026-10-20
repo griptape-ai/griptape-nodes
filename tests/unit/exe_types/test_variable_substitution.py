@@ -90,7 +90,7 @@ def _engine_mock(
     left implicit would flip every assertion for the wrong reason.
     """
     engine = MagicMock()
-    engine.handle_request.side_effect = lambda req: (
+    engine.handle_request.side_effect = lambda req, **_: (
         _list_variables_result(variables)
         if isinstance(req, ListVariablesRequest)
         else _connections_result(connected_params)

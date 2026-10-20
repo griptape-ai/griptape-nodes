@@ -110,7 +110,8 @@ class ProjectDirectoryParameter(project_output_parameter.ProjectOutputParameter)
         value = self._node.get_parameter_value(self._name)
         dirname = value if isinstance(value, str) and value else self._default_value
 
-        return _build_directory_destination_from_situation(dirname, self._situation_name, **extra_vars)
+        with self._node.in_own_workflow():
+            return _build_directory_destination_from_situation(dirname, self._situation_name, **extra_vars)
 
 
 def _build_directory_destination_from_situation(

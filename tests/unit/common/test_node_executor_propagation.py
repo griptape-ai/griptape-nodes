@@ -176,7 +176,7 @@ def _gn_mock_with_variable(name: str = "SHOT") -> Any:
     engine = MagicMock()
     engine.workflow_manager.variable_substitution.is_enabled.return_value = True
     engine.node_manager.get_node_parent_flow_by_name.return_value = "test_flow"
-    engine.handle_request.side_effect = lambda req: (
+    engine.handle_request.side_effect = lambda req, **_: (
         ListVariablesResultSuccess(
             variables=[FlowVariable(name=name, owning_flow_name="test_flow", type="str", value="hyperreal")],
             layers=[VariableLayerKind.FLOW],
