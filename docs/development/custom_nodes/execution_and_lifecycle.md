@@ -150,6 +150,32 @@ class MyBlockingNode(ControlNode):
 - Each yielded callable runs synchronously on a background thread; the generator resumes with its return value
 - Fine for existing synchronous code (`requests`, blocking SDKs), but prefer `aprocess()` for new integrations
 
+### Threads Your Node Starts
+
+The engine can hold several workflows open at once, and the work a request does is tied to its workflow through a context variable. A thread you start with `threading.Thread`, or work you hand to a `ThreadPoolExecutor`, doesn't inherit context variables. Code on it that calls the engine has no workflow: it gets the engine's only open workflow, and fails whenever several are open.
+
+Start the thread in a copy of the current context:
+
+```python
+import contextvars
+import threading
+
+context = contextvars.copy_context()
+threading.Thread(target=context.run, args=(work,)).start()
+```
+
+Work handed to an executor needs the same copy, since `loop.run_in_executor` and `ThreadPoolExecutor.submit` run it in the executor thread's own context:
+
+```python
+import asyncio
+import contextvars
+
+context = contextvars.copy_context()
+await asyncio.get_running_loop().run_in_executor(None, context.run, work)
+```
+
+`asyncio.to_thread` copies the context already. A node's own methods, such as `publish_update_to_parameter`, name the node's workflow from any thread, so a thread that only reports progress through the node needs no copy.
+
 ### Polling Pattern for Long-Running Tasks
 
 When integrating with APIs that use asynchronous task processing (video generation, model training, etc.), implement a three-step pattern. The examples below use synchronous `requests` calls, suited to the background-thread pattern above; in `aprocess()`, use `httpx.AsyncClient` and `await asyncio.sleep()` instead, as shown earlier.

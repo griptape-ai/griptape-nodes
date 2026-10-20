@@ -1,37 +1,5 @@
 # Unreleased
 
-## Threads a node starts keep their workflow
-
-The engine can hold several workflows open, and the work a request does is tied to the workflow it
-is addressed to through a context variable. A thread started with `threading.Thread` or a
-`ThreadPoolExecutor` doesn't inherit context variables, so code on it that calls the engine has no
-workflow. While one workflow is open the engine uses that one. While several are open it uses the
-running workflow and logs a warning; that fallback will be removed.
-
-Start the thread in a copy of the current context:
-
-```python
-import contextvars
-import threading
-
-context = contextvars.copy_context()
-threading.Thread(target=context.run, args=(work,)).start()
-```
-
-Work handed to an executor needs the same copy, since `loop.run_in_executor` and
-`ThreadPoolExecutor.submit` run it in the executor thread's own context:
-
-```python
-import asyncio
-import contextvars
-
-context = contextvars.copy_context()
-await asyncio.get_running_loop().run_in_executor(None, context.run, work)
-```
-
-`asyncio.to_thread` copies the context already. Events a node emits through its own methods, such
-as `publish_update_to_parameter`, name the node's workflow from any thread.
-
 ## `worker.heartbeat_startup_grace_s` is now `worker.library_load_timeout_s`
 
 Rename the key in any config file or environment that sets it; the environment variable is
