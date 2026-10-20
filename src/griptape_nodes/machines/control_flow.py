@@ -182,14 +182,14 @@ class CompleteState(State):
         # or fail, and a node task can end cancelled when nobody cancelled the run.
         cancelled = context.cancel_requested
 
+        if cancelled:
+            run_id = None
+        else:
+            run_id = context.end_run()
+
         # Broadcast completion events for any remaining current nodes. Only the first carries the
-        # run's id (end_run hands it over once), which is also the one LocalWorkflowExecutor treats
-        # as the workflow finishing.
+        # run's id, which is also the one LocalWorkflowExecutor treats as the workflow finishing.
         for current_node in context.current_nodes:
-            if cancelled:
-                run_id = None
-            else:
-                run_id = context.end_run()
             context.engine.event_manager.put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
@@ -202,6 +202,7 @@ class CompleteState(State):
                     )
                 )
             )
+            run_id = None
         logger.debug("Flow is complete.")
         return None
 
@@ -245,6 +246,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
     ) -> None:
         self._context.run_started_at = time.perf_counter()
         self._context.cancel_requested = False
+        self._context.run_id = None
         flow_manager = self._context.engine.flow_manager
         # If using DAG resolution, process data_nodes from queue first
         current_nodes = await self._process_nodes_for_dag(start_node)
@@ -451,9 +453,18 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         return start_nodes
 
     async def cancel_flow(self) -> None:
-        """Cancel all nodes in the flow by delegating to the resolution machine."""
+        """Cancel all nodes in the flow by delegating to the resolution machine.
+
+        The run is marked cancelled first, because it can reach CompleteState while its nodes are
+        still being cancelled. If cancelling fails the run goes on, so the mark comes off again.
+        """
         self._context.cancel_requested = True
-        await self.resolution_machine.cancel_all_nodes()
+        try:
+            await self.resolution_machine.cancel_all_nodes()
+        except Exception:
+            # Cancelling awaits arbitrary node code, so there is no narrower type to catch.
+            self._context.cancel_requested = False
+            raise
 
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)

@@ -4724,11 +4724,13 @@ class FlowManager(EngineScoped):
             raise RuntimeError(errormsg)
         self._global_flow_queue.queue.clear()
 
-        # Request cancellation on all nodes and wait for them to complete
-        if self._global_control_flow_machine is not None:
-            await self._global_control_flow_machine.cancel_flow()
+        # Request cancellation on all nodes and wait for them to complete. The machine is held on to
+        # across the wait: a new run can start meanwhile, and it is this run that has been cancelled.
+        machine = self._global_control_flow_machine
+        if machine is not None:
+            await machine.cancel_flow()
         logger.debug("Cancelling flow run")
-        self._end_cancelled_run()
+        self._end_cancelled_run(machine)
 
     async def _abandon_running_flow(self) -> None:
         """Give up on a run that has already failed, leaving the engine able to start another.
@@ -4756,7 +4758,7 @@ class FlowManager(EngineScoped):
             # cancel_flow_run already reset the machine and told the editor the run is over.
             return
 
-        self._end_cancelled_run()
+        self._end_cancelled_run(self._global_control_flow_machine)
 
     def reset_global_execution_state(self) -> None:
         """Reset all global execution state - useful when clearing all workflows."""
@@ -4804,18 +4806,18 @@ class FlowManager(EngineScoped):
         """Check if a connection exists between the specified nodes and parameters."""
         return self._has_connection(source_node, source_parameter, target_node, target_parameter)
 
-    def _end_cancelled_run(self) -> None:
-        """Reset the machine and tell the editor the run is over, with the run's timing and id.
+    def _end_cancelled_run(self, machine: ControlFlowMachine | None) -> None:
+        """Reset the cancelled run's machine and tell the editor the run is over, with its timing and id.
 
         Both are read before the reset, which clears them, and sent on the run's
         `ControlFlowCancelledEvent`. The id is None when another end event already carried it.
         """
         run_seconds = None
         run_id = None
-        if self._global_control_flow_machine is not None:
-            run_seconds = self._global_control_flow_machine.context.seconds_since_run_started()
-            run_id = self._global_control_flow_machine.context.end_run()
-            self._global_control_flow_machine.reset_machine(cancel=True)
+        if machine is not None:
+            run_seconds = machine.context.seconds_since_run_started()
+            run_id = machine.context.end_run()
+            machine.reset_machine(cancel=True)
         self._global_single_node_resolution = False
         self._global_dag_builder.clear()
         self.engine.event_manager.put_event(

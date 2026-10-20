@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 import pytest
 
 from griptape_nodes.drivers.cloud_credentials import API_KEY_SECRET_NAME, BASE_URL_SETTING_NAME
-from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.retained_mode.events.budget_events import ReportUsageRequest
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
@@ -42,6 +41,7 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, CreateNodeResultSuccess
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from tests.e2e.waits import wait_until_resolving
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -351,7 +351,7 @@ async def test_a_cancelled_run_names_itself_on_its_cancelled_event_only(
     payloads = record_published(object)
 
     run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=three_node_flow)))
-    await _wait_until_running(engine, NODE_NAMES[0])
+    await wait_until_resolving(engine, NODE_NAMES[0])
     cancelled = await engine.ahandle_request(CancelFlowRequest(flow_name=three_node_flow))
     assert cancelled.succeeded(), cancelled
     gate.parent.mkdir(parents=True, exist_ok=True)
@@ -370,14 +370,3 @@ async def test_a_cancelled_run_names_itself_on_its_cancelled_event_only(
     assert ends_with_id == ["ControlFlowCancelledEvent"], ends_with_id
     cancelled_ids = [payload.run_id for payload in payloads if isinstance(payload, ControlFlowCancelledEvent)]
     assert announced[0] in cancelled_ids, cancelled_ids
-
-
-async def _wait_until_running(engine: Engine, node_name: str) -> None:
-    """Block until the node is running, so a cancel lands mid-run."""
-    deadline = time.monotonic() + RUN_TIMEOUT_SECONDS
-    while time.monotonic() < deadline:
-        if engine.node_manager.get_node_by_name(node_name).state is NodeResolutionState.RESOLVING:
-            return
-        await asyncio.sleep(0.01)
-    msg = f"Node '{node_name}' never started running, so the cancel could not land mid-run."
-    raise AssertionError(msg)

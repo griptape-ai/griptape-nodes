@@ -121,6 +121,29 @@ class TestRunId:
         # A finished run's machine lingers, and its id must not label spend made after it.
         assert flow_manager.current_run_id is None
 
+    @pytest.mark.asyncio
+    async def test_a_cancel_ends_the_run_it_cancelled_when_another_starts_meanwhile(self) -> None:
+        engine = MagicMock()
+        flow_manager = FlowManager(MagicMock(spec=EventManager), engine=engine)
+        cancelled_run = MagicMock()
+        cancelled_run.context.end_run.return_value = "run-a"
+        next_run = MagicMock()
+        next_run.context.end_run.return_value = "run-b"
+
+        async def start_another_run_meanwhile() -> None:
+            flow_manager._global_control_flow_machine = next_run
+
+        cancelled_run.cancel_flow = AsyncMock(side_effect=start_another_run_meanwhile)
+        flow_manager._global_control_flow_machine = cancelled_run
+        flow_manager.check_for_existing_running_flow = MagicMock(return_value=True)
+
+        await flow_manager.cancel_flow_run()
+
+        payloads = [call.args[0].wrapped_event.payload for call in engine.event_manager.put_event.call_args_list]
+        assert [p.run_id for p in payloads if isinstance(p, ControlFlowCancelledEvent)] == ["run-a"]
+        cancelled_run.reset_machine.assert_called_once_with(cancel=True)
+        next_run.reset_machine.assert_not_called()
+
     def test_a_group_run_for_another_engine_reports_that_engine_s_run(self) -> None:
         flow_manager = FlowManager(MagicMock(spec=EventManager), engine=MagicMock())
         flow_manager.parent_run_id = "parent-run"
@@ -139,9 +162,21 @@ class TestRunId:
         assert flow_manager.current_run_id == "run-1"
 
 
+class _EndingRun(NamedTuple):
+    context: ControlFlowContext
+    engine: MagicMock
+
+    @property
+    def resolved(self) -> list[tuple[str, str | None]]:
+        """Each ControlFlowResolvedEvent sent, as its end node and run id."""
+        calls = self.engine.event_manager.put_event.call_args_list
+        payloads = [call.args[0].wrapped_event.payload for call in calls]
+        return [(payload.end_node_name, payload.run_id) for payload in payloads]
+
+
 class TestRunEndEvents:
     @staticmethod
-    def _ending(*, end_nodes: list[str], cancel_requested: bool) -> tuple[ControlFlowContext, MagicMock]:
+    def _ending(*, end_nodes: list[str], cancel_requested: bool) -> _EndingRun:
         """A context at the end of run "run-1", with its engine to read the sent events from."""
         engine = MagicMock()
         context = _context()
@@ -157,15 +192,7 @@ class TestRunEndEvents:
             node.name = name
             nodes.append(node)
         context.current_nodes = nodes
-        return context, engine
-
-    @staticmethod
-    def _resolved(engine: MagicMock) -> list[tuple[str, str | None]]:
-        calls = engine.event_manager.put_event.call_args_list
-        return [
-            (call.args[0].wrapped_event.payload.end_node_name, call.args[0].wrapped_event.payload.run_id)
-            for call in calls
-        ]
+        return _EndingRun(context=context, engine=engine)
 
     @pytest.mark.asyncio
     async def test_a_run_ending_on_several_nodes_names_itself_on_one_end_event(
@@ -173,22 +200,22 @@ class TestRunEndEvents:
     ) -> None:
         """A client that closes a run on its end event must see exactly one for the id."""
         monkeypatch.setattr(NodeManager, "result_parameter_values", staticmethod(lambda _node: {}))
-        context, engine = self._ending(end_nodes=["First", "Second"], cancel_requested=False)
+        run = self._ending(end_nodes=["First", "Second"], cancel_requested=False)
 
-        await CompleteState.on_enter(context)
+        await CompleteState.on_enter(run.context)
 
-        assert self._resolved(engine) == [("First", "run-1"), ("Second", None)]
+        assert run.resolved == [("First", "run-1"), ("Second", None)]
 
     @pytest.mark.asyncio
     async def test_a_cancelled_run_leaves_its_id_to_the_cancelled_event(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Even when a node caught the cancellation and finished, so the resolution never read CANCELED."""
         monkeypatch.setattr(NodeManager, "result_parameter_values", staticmethod(lambda _node: {}))
-        context, engine = self._ending(end_nodes=["Runner"], cancel_requested=True)
+        run = self._ending(end_nodes=["Runner"], cancel_requested=True)
 
-        await CompleteState.on_enter(context)
+        await CompleteState.on_enter(run.context)
 
-        assert self._resolved(engine) == [("Runner", None)]
-        assert context.end_run() == "run-1"
+        assert run.resolved == [("Runner", None)]
+        assert run.context.end_run() == "run-1"
 
     @pytest.mark.asyncio
     async def test_a_run_nobody_cancelled_names_itself_on_its_resolved_event(
@@ -196,12 +223,12 @@ class TestRunEndEvents:
     ) -> None:
         """A node task that ends cancelled on its own sends no cancelled event, so this is the run's end."""
         monkeypatch.setattr(NodeManager, "result_parameter_values", staticmethod(lambda _node: {}))
-        context, engine = self._ending(end_nodes=["Runner"], cancel_requested=False)
-        context.resolution_machine.context.workflow_state = WorkflowState.CANCELED
+        run = self._ending(end_nodes=["Runner"], cancel_requested=False)
+        run.context.resolution_machine.context.workflow_state = WorkflowState.CANCELED
 
-        await CompleteState.on_enter(context)
+        await CompleteState.on_enter(run.context)
 
-        assert self._resolved(engine) == [("Runner", "run-1")]
+        assert run.resolved == [("Runner", "run-1")]
 
 
 class _StartedRun(NamedTuple):
@@ -279,6 +306,17 @@ class TestRunIdMinting:
             await run.machine.start_flow(MagicMock(), MagicMock())
 
         assert run.announced == []
+
+    @pytest.mark.asyncio
+    async def test_a_cancel_that_fails_leaves_the_run_uncancelled(self) -> None:
+        """The run goes on, so its own ending, not a cancelled event, is its end event."""
+        run = self._machine()
+        run.machine.resolution_machine.cancel_all_nodes = AsyncMock(side_effect=RuntimeError("worker gone"))  # type: ignore[method-assign]
+
+        with pytest.raises(RuntimeError, match="worker gone"):
+            await run.machine.cancel_flow()
+
+        assert run.machine.context.cancel_requested is False
 
     @pytest.mark.asyncio
     async def test_starting_again_is_a_new_run(self) -> None:

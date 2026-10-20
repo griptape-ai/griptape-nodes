@@ -45,6 +45,7 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.node_events import DeleteNodeRequest, DeleteNodeResultSuccess
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from tests.e2e.waits import wait_until_resolving
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -118,17 +119,6 @@ def _configure(
     _set_parameter(engine, node_name, "text", text)
     _set_parameter(engine, node_name, "gate_file", str(gate_file) if gate_file is not None else "")
     _set_parameter(engine, node_name, "chunk", chunk)
-
-
-async def _wait_until_resolving(engine: Engine, node_name: str) -> None:
-    """Block until the node has actually entered execution, so a deletion lands mid-run."""
-    for _ in range(_POLL_ATTEMPTS):
-        node = engine.node_manager.get_node_by_name(node_name)
-        if node.state is NodeResolutionState.RESOLVING:
-            return
-        await asyncio.sleep(_POLL_SECONDS)
-    msg = f"Node '{node_name}' never started executing, so the deletion could not land mid-run."
-    raise AssertionError(msg)
 
 
 async def _wait_until_one_is_resolving(engine: Engine, *node_names: str) -> str:
@@ -227,7 +217,7 @@ async def test_deleting_the_running_node_cancels_the_run(
     cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Runner")))
-    await _wait_until_resolving(engine, "Runner")
+    await wait_until_resolving(engine, "Runner")
 
     delete_result = await _delete_node(engine, flow_name, "Runner")
 
@@ -271,7 +261,7 @@ async def test_deleting_an_unresolved_upstream_cancels_the_run(
     cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Downstream")))
-    await _wait_until_resolving(engine, "Upstream")
+    await wait_until_resolving(engine, "Upstream")
 
     delete_result = await _delete_node(engine, flow_name, "Upstream")
 
@@ -338,7 +328,7 @@ async def test_deleting_a_finished_node_a_queued_consumer_still_needs_cancels_th
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Sink")))
 
-    await _wait_until_resolving(engine, "Supplier")
+    await wait_until_resolving(engine, "Supplier")
     _open_gate(supplier_gate)
     await _wait_until_resolved(engine, "Supplier")
 
@@ -395,7 +385,7 @@ async def test_deleting_an_unresolved_node_from_a_control_chain_ends_the_run(
     _configure(engine, "Last", text="last")
 
     run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=flow_name)))
-    await _wait_until_resolving(engine, "Middle")
+    await wait_until_resolving(engine, "Middle")
 
     await _delete_node(engine, flow_name, "Middle")
 
@@ -453,7 +443,7 @@ async def test_deleting_a_supplier_of_a_later_chain_member_cancels_the_run(
     run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=flow_name)))
 
     await _wait_until_resolved(engine, "Shared")
-    await _wait_until_resolving(engine, "First")
+    await wait_until_resolving(engine, "First")
 
     dag_nodes = engine.flow_manager.global_dag_builder.node_to_reference
     assert "Second" not in dag_nodes, (
@@ -525,7 +515,7 @@ async def test_deleting_a_supplier_a_data_hop_away_from_the_chain_cancels_the_ru
 
     run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=flow_name)))
 
-    await _wait_until_resolving(engine, "First")
+    await wait_until_resolving(engine, "First")
 
     dag_nodes = engine.flow_manager.global_dag_builder.node_to_reference
     for absent_member in ("Second", "Resizer"):
@@ -597,7 +587,7 @@ async def test_deleting_a_supplier_two_hops_down_the_chain_cancels_the_run(
     cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
 
     run = asyncio.create_task(engine.ahandle_request(StartFlowRequest(flow_name=flow_name)))
-    await _wait_until_resolving(engine, "First")
+    await wait_until_resolving(engine, "First")
 
     dag_nodes = engine.flow_manager.global_dag_builder.node_to_reference
     for later_member in ("Second", "Third"):
@@ -655,7 +645,7 @@ async def test_deleting_an_unrelated_node_does_not_interrupt_streaming(
     streamed = record_published(ProgressEvent, lambda payload: payload.node_name)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Survivor")))
-    await _wait_until_resolving(engine, "Survivor")
+    await wait_until_resolving(engine, "Survivor")
     await _wait_for_progress(streamed, "Survivor", at_least=3)
 
     delete_result = await _delete_node(engine, flow_name, "Bystander")
@@ -714,10 +704,10 @@ async def test_deleting_a_resolved_upstream_leaves_its_running_successor_alone(
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Downstream")))
 
     # Let Upstream finish and propagate, then wait for Downstream to be parked in its own gate.
-    await _wait_until_resolving(engine, "Upstream")
+    await wait_until_resolving(engine, "Upstream")
     _open_gate(upstream_gate)
     await _wait_until_resolved(engine, "Upstream")
-    await _wait_until_resolving(engine, "Downstream")
+    await wait_until_resolving(engine, "Downstream")
 
     # Only events from the delete onward are interesting. Starting a run legitimately announces the
     # node it is about to run as unresolved, and that happened long before the delete.
@@ -796,7 +786,7 @@ async def test_a_later_run_does_not_keep_serving_the_deleted_connection(
 
     first_run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Consumer")))
 
-    await _wait_until_resolving(engine, "Middle")
+    await wait_until_resolving(engine, "Middle")
     await _delete_node(engine, flow_name, "Supplier")
 
     _open_gate(middle_gate)
@@ -847,7 +837,7 @@ async def test_deleting_a_downstream_node_that_has_not_started_leaves_the_run_al
     cancellations = record_published(ControlFlowCancelledEvent, lambda _payload: True)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Producer")))
-    await _wait_until_resolving(engine, "Producer")
+    await wait_until_resolving(engine, "Producer")
 
     await _delete_node(engine, flow_name, "Sink")
 
@@ -904,7 +894,7 @@ async def test_deleting_a_supplier_for_a_chain_nobody_started_leaves_the_run_alo
     streamed = record_published(ProgressEvent, lambda payload: payload.node_name)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Runner")))
-    await _wait_until_resolving(engine, "Runner")
+    await wait_until_resolving(engine, "Runner")
     await _wait_for_progress(streamed, "Runner", at_least=3)
 
     delete_result = await _delete_node(engine, flow_name, "Shared")
@@ -963,7 +953,7 @@ async def test_deleting_bystanders_then_the_running_node_answers_each_delete_on_
     streamed = record_published(ProgressEvent, lambda payload: payload.node_name)
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Runner")))
-    await _wait_until_resolving(engine, "Runner")
+    await wait_until_resolving(engine, "Runner")
     await _wait_for_progress(streamed, "Runner", at_least=3)
 
     for bystander in ("LooseBystander", "DownstreamBystander"):
@@ -1022,10 +1012,10 @@ async def test_deleting_a_settled_node_removes_it_from_the_live_dag(
 
     run = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Downstream")))
 
-    await _wait_until_resolving(engine, "Upstream")
+    await wait_until_resolving(engine, "Upstream")
     _open_gate(upstream_gate)
     await _wait_until_resolved(engine, "Upstream")
-    await _wait_until_resolving(engine, "Downstream")
+    await wait_until_resolving(engine, "Downstream")
 
     dag_nodes = engine.flow_manager.global_dag_builder.node_to_reference
     assert "Upstream" in dag_nodes, "Test setup is wrong: Upstream was never in the live DAG to begin with."
