@@ -263,7 +263,12 @@ class BudgetManager(EngineScoped):
             body["declared_cost_micro_usd"] = request.declared_cost_micro_usd
         for name, cap in _DESCRIPTOR_CAPS.items():
             value = getattr(request, name)
-            if value is not None and len(value) <= cap:
+            if value is None:
+                continue
+            # A token report is priced by its model, so an over-long one is sent and Cloud's length
+            # rule says so, rather than dropped and reported as missing. Elsewhere a long
+            # descriptor is only a label, and dropping it keeps one long name from losing the report.
+            if len(value) <= cap or (name == "model" and "usage" in body):
                 body[name] = value
         if request.correlation_id is not None:
             body["correlation_id"] = request.correlation_id
@@ -345,13 +350,20 @@ class BudgetManager(EngineScoped):
             logger.warning("Dropped a usage report: %s", MISSING_CREDENTIAL_MESSAGE)
         except httpx2.HTTPStatusError as exc:
             status = exc.response.status_code
-            if status in (HTTPStatus.BAD_REQUEST, HTTPStatus.CONFLICT):
-                # The engine built a body Cloud rejects, or reused a key: a bug here, not in Cloud.
+            if status == HTTPStatus.CONFLICT:
+                # The same key with a different body: only the engine mints keys, so a bug here.
                 logger.error(
-                    "Griptape Cloud rejected usage report %s with HTTP %s: %s",
+                    "Griptape Cloud rejected usage report %s as a reused key: %s",
                     body["idempotency_key"],
-                    status,
                     exc.response.text,
+                )
+                return
+            if status == HTTPStatus.BAD_REQUEST:
+                # Cloud enforces the count rules, so this is usually the calling node's input.
+                logger.warning(
+                    "Griptape Cloud rejected usage report %s from the calling node or the engine: %s",
+                    body["idempotency_key"],
+                    _rejection_reason(exc.response),
                 )
                 return
             logger.warning(
@@ -456,6 +468,21 @@ def _describe_call(model: str | None) -> str:
 
 class _NoCredentialError(Exception):
     """No Griptape Cloud credential is configured."""
+
+
+def _rejection_reason(response: httpx2.Response) -> str:
+    """Cloud's stated reasons for a 400, or its raw body when it gives none."""
+    try:
+        body = response.json()
+    except ValueError:
+        return response.text
+    errors = body.get("errors") if isinstance(body, dict) else None
+    if not isinstance(errors, list):
+        return response.text
+    details = [str(error.get("detail")) for error in errors if isinstance(error, dict) and error.get("detail")]
+    if not details:
+        return response.text
+    return "; ".join(details)
 
 
 def _is_retryable_report_error(exc: BaseException) -> bool:

@@ -469,7 +469,7 @@ class TestReportUsage:
 
     @pytest.mark.parametrize(
         ("status", "level"),
-        [(409, logging.ERROR), (400, logging.ERROR), (422, logging.WARNING), (404, logging.WARNING)],
+        [(409, logging.ERROR), (400, logging.WARNING), (422, logging.WARNING), (404, logging.WARNING)],
     )
     def test_rejections_log_and_are_not_retried(
         self, http: MagicMock, caplog: pytest.LogCaptureFixture, status: int, level: int
@@ -565,6 +565,37 @@ class TestTokenReports:
         body = _sent(http)
         assert body["declared_cost_micro_usd"] == cost
         assert "usage" not in body
+
+    def test_an_over_long_model_is_sent_on_a_token_report(self, http: MagicMock) -> None:
+        """Cloud prices a token report by its model, so its length rule should answer, not a silent drop."""
+        http.return_value = _response(201)
+        model = "m" * 256
+
+        _manager().on_report_usage_request(ReportUsageRequest(input_tokens=1000, output_tokens=500, model=model))
+
+        assert _sent(http)["model"] == model
+
+    def test_a_400_names_cloud_s_reason_at_warning(self, http: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+        """Cloud owns the count rules, so a 400 is usually the caller's input, not an engine bug."""
+        http.return_value = _response(
+            400,
+            {
+                "type": "validation_error",
+                "errors": [
+                    {"code": "invalid", "detail": "cache_read_tokens cannot exceed input_tokens.", "attr": None}
+                ],
+            },
+        )
+
+        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
+            _manager().on_report_usage_request(
+                ReportUsageRequest(input_tokens=100, output_tokens=50, cache_read_tokens=900, model="m")
+            )
+
+        rejected = [r for r in caplog.records if "rejected usage report" in r.getMessage()]
+        assert [r.levelno for r in rejected] == [logging.WARNING]
+        assert "cache_read_tokens cannot exceed input_tokens." in rejected[0].getMessage()
+        assert "calling node or the engine" in rejected[0].getMessage()
 
     def test_retries_resend_the_same_counts_under_the_same_key(self, http: MagicMock) -> None:
         """Cloud replays a same-key, same-counts report and rejects different counts, so retries must not vary."""
