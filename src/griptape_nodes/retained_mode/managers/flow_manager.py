@@ -343,6 +343,20 @@ class FlowManager(EngineScoped):
         return self._global_single_node_resolution
 
     @property
+    def current_run_id(self) -> str | None:
+        """The id of the flow run in progress, or None when nothing is running.
+
+        Spend attribution reads this, so a model call made while a run is in progress counts toward
+        that run. A node in a library worker sends its budget requests to this engine, which is why
+        the id is read here rather than from the running task's context.
+        """
+        if not self.check_for_existing_running_flow():
+            return None
+        if self._global_control_flow_machine is None:
+            return None
+        return self._global_control_flow_machine.context.run_id
+
+    @property
     def global_flow_queue(self) -> Queue[QueueItem]:
         return self._global_flow_queue
 
@@ -4707,10 +4721,12 @@ class FlowManager(EngineScoped):
 
         # Request cancellation on all nodes and wait for them to complete
         run_seconds = None
+        run_id = None
         if self._global_control_flow_machine is not None:
             await self._global_control_flow_machine.cancel_flow()
-            # Read before the reset below clears the run's start time.
+            # Read before the reset below clears the run's start time and id.
             run_seconds = self._global_control_flow_machine.context.seconds_since_run_started()
+            run_id = self._global_control_flow_machine.context.run_id
 
         # Reset control flow machine
         if self._global_control_flow_machine is not None:
@@ -4724,7 +4740,7 @@ class FlowManager(EngineScoped):
         )
         self.engine.event_manager.put_event(
             ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds))
+                wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds, run_id=run_id))
             )
         )
 
@@ -4755,8 +4771,10 @@ class FlowManager(EngineScoped):
             return
 
         run_seconds = None
+        run_id = None
         if self._global_control_flow_machine is not None:
             run_seconds = self._global_control_flow_machine.context.seconds_since_run_started()
+            run_id = self._global_control_flow_machine.context.run_id
             self._global_control_flow_machine.reset_machine(cancel=True)
         self._global_single_node_resolution = False
         self._global_dag_builder.clear()
@@ -4765,7 +4783,7 @@ class FlowManager(EngineScoped):
         )
         self.engine.event_manager.put_event(
             ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds))
+                wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds, run_id=run_id))
             )
         )
 

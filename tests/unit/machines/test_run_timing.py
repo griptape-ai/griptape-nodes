@@ -1,4 +1,4 @@
-"""Node and run timings ride on the execution events, so the editor can show where a run spent its time."""
+"""Node and run timings, and the run id, ride on the execution events, so the editor can show where a run spent its time."""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -73,6 +73,7 @@ class TestRunSeconds:
         machine = MagicMock()
         machine.cancel_flow = AsyncMock()
         machine.context.seconds_since_run_started.return_value = 1.5
+        machine.context.run_id = "run-1"
         # Resetting the real machine clears the run's start time, so the time must be read first.
         machine.reset_machine.side_effect = lambda **_: setattr(
             machine.context.seconds_since_run_started, "return_value", None
@@ -85,3 +86,24 @@ class TestRunSeconds:
         payloads = [call.args[0].wrapped_event.payload for call in engine.event_manager.put_event.call_args_list]
         cancelled = [p for p in payloads if isinstance(p, ControlFlowCancelledEvent)]
         assert [p.run_seconds for p in cancelled] == [1.5]
+        assert [p.run_id for p in cancelled] == ["run-1"]
+
+
+class TestRunId:
+    def test_resetting_a_run_forgets_its_id(self) -> None:
+        context = _context()
+        context.run_id = "run-1"
+
+        context.reset()
+
+        assert context.run_id is None
+
+    def test_no_run_in_progress_means_no_run_id(self) -> None:
+        flow_manager = FlowManager(MagicMock(spec=EventManager), engine=MagicMock())
+        machine = MagicMock()
+        machine.context.run_id = "run-1"
+        flow_manager._global_control_flow_machine = machine
+        flow_manager.check_for_existing_running_flow = MagicMock(return_value=False)
+
+        # A finished run's machine lingers, and its id must not label spend made after it.
+        assert flow_manager.current_run_id is None

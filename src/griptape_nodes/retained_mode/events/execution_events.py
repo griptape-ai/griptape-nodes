@@ -399,6 +399,25 @@ class ParameterSpotlightEvent(ExecutionPayload):
 
 @dataclass
 @PayloadRegistry.register
+class FlowRunStartedEvent(ExecutionPayload):
+    """A flow run started, whether of the whole flow, from one node, or of a single node.
+
+    Every model call made during the run is attributed to `run_id`, so a client can look up what
+    the run cost in Griptape Cloud with a spend search filtered on the `run_id` tag. Loop bodies
+    run as part of the run that started them and announce no run of their own.
+
+    Args:
+        run_id: The run's id. The run's `ControlFlowResolvedEvent` or `ControlFlowCancelledEvent`
+            carries the same id.
+        flow_name: The flow being run.
+    """
+
+    run_id: str
+    flow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
 class ControlFlowResolvedEvent(ExecutionPayload):
     """A flow run finished.
 
@@ -406,21 +425,31 @@ class ControlFlowResolvedEvent(ExecutionPayload):
         end_node_name: The node the run ended on.
         parameter_output_values: That node's output values.
         run_seconds: Wall-clock seconds the whole run took, or None when the run was not timed.
+        run_id: The id `FlowRunStartedEvent` announced for this run.
     """
 
     end_node_name: str
     parameter_output_values: dict[str, Value]
     run_seconds: float | None = None
+    run_id: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class ControlFlowCancelledEvent(ExecutionPayload):
-    """A flow run was cancelled. run_seconds is how long it ran before that, or None when not timed."""
+    """A flow run was cancelled.
+
+    Args:
+        result_details: Why the run was cancelled.
+        exception: The exception that ended the run, if one did.
+        run_seconds: How long the run ran before it was cancelled, or None when it was not timed.
+        run_id: The id `FlowRunStartedEvent` announced for this run, or None when it never started.
+    """
 
     result_details: ResultDetails | str | None = None
     exception: Exception | None = None
     run_seconds: float | None = None
+    run_id: str | None = None
 
 
 @dataclass
