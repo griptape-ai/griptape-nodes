@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
+from griptape_nodes.common.private_execution_scope import PrivateExecutionScope, current_private_execution_scope
 from griptape_nodes.drivers.cloud_credentials import resolve_cloud_host
 from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeEndNode,
@@ -102,6 +103,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowResultFailure,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
+    PACKAGED_FLOW_BOUNDARY_KEY,
     ListNodesInFlowRequest,
     ListNodesInFlowResultSuccess,
 )
@@ -3338,6 +3340,17 @@ class NodeManager(EngineScoped):
             wm = self.engine.worker_manager
             if wm is not None and worker is not None:
                 return await self._execute_node_via_worker(request, wm, worker)
+            # A library's own worker comes first: that is where its dependencies are installed. Only a
+            # node that would otherwise run here moves to the worker its Private Execution names.
+            #
+            # The StartFlow and EndFlow the packager adds around a packaged body stay here. They are the
+            # flow's boundary and only pass values in and out, and the packager gives them their
+            # parameters by request, which the fresh copy a worker builds from metadata does not have.
+            # The packager flags them; a Start/End node a user placed carries no flag and goes.
+            private_scope = current_private_execution_scope.get()
+            is_flow_boundary = bool(node.metadata.get(PACKAGED_FLOW_BOUNDARY_KEY))
+            if wm is not None and private_scope is not None and not is_flow_boundary:
+                return await self._execute_node_in_private_execution_worker(request, wm, private_scope)
 
         async with STRICT_MODE.scoped_execution(
             kind=StrictModeScopeKind.RUNTIME_EXECUTE,
@@ -3466,6 +3479,35 @@ class NodeManager(EngineScoped):
         if library_info.lifecycle_state is LibraryManager.LibraryLifecycleState.LOADED:
             return None
         return library_manager.catalog.get_collated_problems_for_library(library_name)
+
+    async def _execute_node_in_private_execution_worker(
+        self, request: ExecuteNodeRequest, wm: WorkerManager, scope: PrivateExecutionScope
+    ) -> ResultPayload:
+        """Run the node on the worker its Private Execution scope names.
+
+        The scope is set by NodeExecutor, which decided this run uses Private Execution, so nothing
+        here infers it from where the node sits in the graph.
+        """
+        try:
+            await wm.wait_until_executable(scope.worker_key)
+        except RuntimeError as err:
+            return ExecuteNodeResultFailure(result_details=str(err), exception=err)
+        unavailable = wm.worker_unavailable_reason(scope.worker_key)
+        if unavailable is not None:
+            details = (
+                f"Attempted to run '{request.node_name}' with the Private Execution set on '{scope.owner_name}'. "
+                f"Failed because {unavailable}"
+            )
+            return ExecuteNodeResultFailure(result_details=details)
+        worker = wm.get_worker_for_key(scope.worker_key)
+        if worker is None:
+            details = (
+                f"Attempted to run '{request.node_name}' with the Private Execution set on '{scope.owner_name}'. "
+                "Failed because the background process that runs Private Execution is not running. It starts "
+                "with the session while the 'Private Execution in a worker' beta feature is on."
+            )
+            return ExecuteNodeResultFailure(result_details=details)
+        return await self._execute_node_via_worker(request, wm, worker)
 
     async def _execute_node_via_worker(
         self,
