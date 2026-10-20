@@ -59,16 +59,12 @@ from griptape_nodes.utils.budget_refusal import (
 from griptape_nodes.utils.http_utils import is_retryable_httpx_error, request_with_retry
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
 
 BUDGET_CHECKS_PATH = "/api/budget-checks"
-# The error code Cloud's 503 carries while its spend-recording kill switch is off.
-SPEND_RECORDING_OFF_CODE = "SPEND_RECORDING_OFF"
 SPEND_PATH = "/api/spend"
 
 # The check blocks the node, so it gets one short attempt and fails open rather than retrying.
@@ -124,9 +120,14 @@ class BudgetManager(EngineScoped):
             engine: The owning Engine, used to resolve peer managers.
         """
         super().__init__(engine)
-        # Reports post off the caller's thread. Not an asyncio task: a sync dispatch runs the
-        # handler under a short-lived loop that would take the task down with it.
-        self._report_executor = _DaemonQueue("budget-report")
+        # Reports post on their own thread, in order. A daemon thread, because engine exit must
+        # not wait on reports still queued, and a pool's workers (including `to_thread`'s) hold
+        # exit until they drain. Not an asyncio task: a sync `handle_request` runs this handler on
+        # a transient `ThreadRunner` loop, or under `asyncio.run`, and both shut down when the
+        # handler returns, cancelling the task mid-post. There is no long-lived engine loop to
+        # schedule it on instead: `EventManager.event_loop` is set only by the bootstrap executors.
+        self._reports: queue.SimpleQueue[dict[str, Any]] = queue.SimpleQueue()
+        threading.Thread(target=self._post_reports, name="budget-report", daemon=True).start()
         event_manager.register_request_handlers(self)
 
     @handles(GetAttributionContextRequest)
@@ -243,7 +244,7 @@ class BudgetManager(EngineScoped):
         self, request: ReportUsageRequest
     ) -> ReportUsageResultSuccess | ReportUsageResultFailure:
         """Queue a usage report for a direct provider call and return without waiting on Cloud."""
-        problem = _usage_problem(request)
+        problem = _shape_problem(request)
         if problem is not None:
             return self._report_not_sent(request.model, f"Failed because {problem}")
         if resolve_cloud_credential(self.engine.secrets_manager) is None:
@@ -267,7 +268,7 @@ class BudgetManager(EngineScoped):
         if request.correlation_id is not None:
             body["correlation_id"] = request.correlation_id
 
-        self._report_executor.submit(self._send_report, body)
+        self._reports.put(body)
         return ReportUsageResultSuccess(
             idempotency_key=idempotency_key,
             result_details=f"Queued a usage report for {_describe_call(request.model)}.",
@@ -325,6 +326,17 @@ class BudgetManager(EngineScoped):
             timeout=timeout,
         )
 
+    def _post_reports(self) -> None:
+        """Post queued reports one at a time, for as long as the engine runs."""
+        while True:
+            body = self._reports.get()
+            # One report failing in a way nothing anticipated must not end the thread and
+            # silently drop every report after it.
+            try:
+                self._send_report(body)
+            except Exception:
+                logger.exception("A usage report failed unexpectedly and was dropped.")
+
     def _send_report(self, body: dict[str, Any]) -> None:
         """Post a usage report with bounded retries; log and drop it if Cloud cannot take it."""
         try:
@@ -333,12 +345,6 @@ class BudgetManager(EngineScoped):
             logger.warning("Dropped a usage report: %s", MISSING_CREDENTIAL_MESSAGE)
         except httpx2.HTTPStatusError as exc:
             status = exc.response.status_code
-            if _is_recording_off(exc.response):
-                logger.debug(
-                    "Dropped usage report %s: this Griptape Cloud deployment has spend recording switched off.",
-                    body["idempotency_key"],
-                )
-                return
             if status in (HTTPStatus.BAD_REQUEST, HTTPStatus.CONFLICT):
                 # The engine built a body Cloud rejects, or reused a key: a bug here, not in Cloud.
                 logger.error(
@@ -377,15 +383,8 @@ class BudgetManager(EngineScoped):
         self, model: str, correlation_id: str, response: httpx2.Response
     ) -> BudgetAccessResultSuccess:
         """Clear a call Cloud answered with an HTTP error rather than a decision."""
-        # Both are the steady state of a deployment, not news, so they stay out of the warnings.
-        if _is_recording_off(response):
-            return self._unchecked(
-                model,
-                correlation_id,
-                "Failed because this Griptape Cloud deployment has spend recording switched off.",
-                level=logging.DEBUG,
-            )
         if response.status_code == HTTPStatus.NOT_FOUND:
+            # A Cloud without budget checks: the steady state of that deployment, not news.
             return self._unchecked(
                 model,
                 correlation_id,
@@ -405,54 +404,18 @@ class BudgetManager(EngineScoped):
         )
 
 
-def _usage_problem(request: ReportUsageRequest) -> str | None:
-    """Say why a report can't be sent, or None when it can.
+def _shape_problem(request: ReportUsageRequest) -> str | None:
+    """Say why a report can't be built, or None when it can.
 
-    Mirrors the checks Cloud rejects a report with, so a report Cloud would refuse is never sent.
+    Only what decides the body: a declared cost, or input and output token counts, never both.
+    Every other rule on the counts is Cloud's to enforce; a report it rejects is logged and dropped.
     """
     has_tokens = request.input_tokens is not None or request.output_tokens is not None
-    if has_tokens and request.declared_cost_micro_usd is not None:
-        return "it gave both token counts and a declared cost; send one or the other."
-    if has_tokens:
-        return _token_problem(request)
-    if request.declared_cost_micro_usd is None:
-        return "it gave neither token counts nor a declared cost."
-    if request.declared_cost_micro_usd < 0:
-        return f"the declared cost {request.declared_cost_micro_usd} is negative."
-    return None
-
-
-def _token_problem(request: ReportUsageRequest) -> str | None:
-    """Say why a token report can't be sent, or None when it can."""
-    if request.input_tokens is None or request.output_tokens is None:
+    has_cost = request.declared_cost_micro_usd is not None
+    if has_tokens == has_cost:
+        return "a report needs either token counts or a declared cost, not both or neither."
+    if has_tokens and (request.input_tokens is None or request.output_tokens is None):
         return "a token report needs both input and output token counts."
-    count_problem = _count_problem(request.input_tokens, request.output_tokens, request)
-    if count_problem is not None:
-        return count_problem
-    if not request.model or len(request.model) > _DESCRIPTOR_CAPS["model"]:
-        return "a token report needs a model name Griptape Cloud can price it under."
-    if request.activity_type not in (None, "", "chat_completion"):
-        return "Griptape Cloud prices token counts as chat completions; send a declared cost for other kinds of call."
-    return None
-
-
-def _count_problem(input_tokens: int, output_tokens: int, request: ReportUsageRequest) -> str | None:
-    """Say why the token counts don't add up, or None when they do.
-
-    An absent optional count is 0, as Cloud reads it, so a share is only checked against what was sent.
-    """
-    cache_read = request.cache_read_tokens or 0
-    cache_write = request.cache_write_tokens or 0
-    input_audio = request.input_audio_tokens or 0
-    cache_audio_read = request.cache_audio_read_tokens or 0
-    if min(input_tokens, output_tokens, cache_read, cache_write, input_audio, cache_audio_read) < 0:
-        return "a token count is negative."
-    if cache_read + cache_write > input_tokens:
-        return "the cached token counts are larger than the input token count."
-    if input_audio > input_tokens:
-        return "the audio input count is larger than the input token count."
-    if cache_audio_read > min(input_audio, cache_read):
-        return "the cached audio count is larger than the audio input count or the cached input count."
     return None
 
 
@@ -491,63 +454,12 @@ def _describe_call(model: str | None) -> str:
     return f"a direct call to model '{model}'"
 
 
-class _DaemonQueue:
-    """Runs submitted work in order on one daemon thread.
-
-    Daemon, unlike `ThreadPoolExecutor`'s workers, which interpreter exit waits on: with Cloud
-    hanging, every queued report would hold the engine open for its full retry budget. Reports
-    are best-effort, so the ones still pending at exit are dropped instead.
-    """
-
-    def __init__(self, name: str) -> None:
-        self._name = name
-        self._work: queue.SimpleQueue[tuple[Callable[..., object], tuple[Any, ...]]] = queue.SimpleQueue()
-        self._lock = threading.Lock()
-        self._started = False
-
-    def submit(self, fn: Callable[..., object], *args: Any) -> None:
-        # Started on first use, so an engine that never reports never holds a thread.
-        with self._lock:
-            if not self._started:
-                threading.Thread(target=self._run, name=self._name, daemon=True).start()
-                self._started = True
-        self._work.put((fn, args))
-
-    def _run(self) -> None:
-        while True:
-            fn, args = self._work.get()
-            # One report failing in a way nothing anticipated must not end the thread and
-            # silently drop every report after it.
-            try:
-                fn(*args)
-            except Exception:
-                logger.exception("A usage report failed unexpectedly and was dropped.")
-
-
 class _NoCredentialError(Exception):
     """No Griptape Cloud credential is configured."""
 
 
 def _is_retryable_report_error(exc: BaseException) -> bool:
-    """Retry transient failures, and 429 too: Cloud throttles reports per license.
-
-    Not the spend-recording kill switch: it is a 503, but it stays off until someone turns it on.
-    """
-    if isinstance(exc, httpx2.HTTPStatusError) and _is_recording_off(exc.response):
-        return False
+    """Retry transient failures, and 429 too: Cloud throttles reports per license."""
     if isinstance(exc, httpx2.HTTPStatusError) and exc.response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
         return True
     return is_retryable_httpx_error(exc)
-
-
-def _is_recording_off(response: httpx2.Response) -> bool:
-    """Whether Cloud answered with its spend-recording kill switch: a 503 with code SPEND_RECORDING_OFF."""
-    if response.status_code != HTTPStatus.SERVICE_UNAVAILABLE:
-        return False
-    try:
-        body = response.json()
-    except ValueError:
-        return False
-    if not isinstance(body, dict) or not isinstance(body.get("errors"), list):
-        return False
-    return any(isinstance(error, dict) and error.get("code") == SPEND_RECORDING_OFF_CODE for error in body["errors"])

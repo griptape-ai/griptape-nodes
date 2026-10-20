@@ -61,7 +61,7 @@ await GriptapeNodes.ahandle_request(
     | Anthropic          | `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens` | `cache_read_input_tokens`             | `cache_creation_input_tokens`              |
     | Bedrock (Converse) | `inputTokens` + `cacheReadInputTokens` + `cacheWriteInputTokens`           | `cacheReadInputTokens`                | `cacheWriteInputTokens`                    |
 
-    Anthropic and Bedrock leave the cached tokens out of their input count, so passing their input count alone reports too little, and a report whose cache counts exceed it isn't sent.
+    Anthropic and Bedrock leave the cached tokens out of their input count, so passing their input count alone reports too little, and Griptape Cloud rejects a report whose cache counts exceed it.
 
 - When the call took audio in, also send `input_audio_tokens`, the audio share of `input_tokens` with cached audio included, and `cache_audio_read_tokens`, the cached share of that audio. The cached audio is also counted in `cache_read_tokens`. OpenAI reports input audio as `prompt_tokens_details.audio_tokens`. Leave both out for a call without audio.
 
@@ -75,6 +75,6 @@ await GriptapeNodes.ahandle_request(
 
 - The report is sent in the background and returns at once. It is retried briefly, then dropped with a line in the engine log.
 
-- **Never fail a node over its report.** Ignore the result. A report that can't be sent, such as one missing its model, comes back as a failure with the reason; the node carries on.
+- **Never fail a node over its report.** Ignore the result. A report with neither token counts nor a declared cost, or with both, comes back as a failure with the reason. Griptape Cloud checks everything else, such as the model or the cache counts, and a report it rejects is logged and dropped. Either way the node carries on.
 
 - Pass the `correlation_id` from the check's success so Cloud can pair the check with the report.

@@ -163,7 +163,8 @@ class ReportUsageRequest(RequestPayload):
 
     Send the provider's token counts and Griptape Cloud prices them, so no client holds prices.
     Send exactly one of: the token counts (`input_tokens` and `output_tokens`, with `model`), or
-    `declared_cost_micro_usd`. Anything else is not sent.
+    `declared_cost_micro_usd`; a report with both or neither is not sent. Griptape Cloud checks
+    the rest, such as the model and the cache counts, and a report it rejects is logged and dropped.
 
     Best-effort: the report is sent in the background, retried briefly, and dropped with a log
     line if Cloud cannot take it. A node must never fail over its usage report.

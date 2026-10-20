@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 import threading
-from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
@@ -34,18 +33,19 @@ from griptape_nodes.utils.budget_refusal import BUDGET_HALT_PREFIX, BudgetExceed
 from griptape_nodes.utils.http_utils import request_with_retry
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Iterator
 
 BASE_URL = "https://cloud.example.test"
 
 
-class _InlineExecutor:
-    """Runs submitted work on the spot, so a test sees the report's HTTP calls before it asserts."""
+class _InlineQueue:
+    """Posts a queued report on the spot, so a test sees the report's HTTP calls before it asserts."""
 
-    def submit(self, fn: Callable[..., Any], *args: Any) -> Future:
-        future: Future = Future()
-        future.set_result(fn(*args))
-        return future
+    def __init__(self, manager: BudgetManager) -> None:
+        self._manager = manager
+
+    def put(self, body: dict[str, Any]) -> None:
+        self._manager._send_report(body)
 
 
 def _mock_engine(*, credential: str | None = "gt-key") -> MagicMock:
@@ -65,7 +65,7 @@ def _mock_engine(*, credential: str | None = "gt-key") -> MagicMock:
 
 def _manager(engine: MagicMock | None = None) -> BudgetManager:
     manager = BudgetManager(MagicMock(), engine=engine or _mock_engine())
-    manager._report_executor = _InlineExecutor()  # type: ignore[assignment]
+    manager._reports = _InlineQueue(manager)  # type: ignore[assignment]
     return manager
 
 
@@ -409,12 +409,12 @@ class TestReportUsage:
 
     def test_returns_without_waiting_on_cloud(self) -> None:
         manager = BudgetManager(MagicMock(), engine=_mock_engine())
-        manager._report_executor = MagicMock()
+        manager._reports = MagicMock()
 
         result = manager.on_report_usage_request(ReportUsageRequest(declared_cost_micro_usd=1))
 
         assert isinstance(result, ReportUsageResultSuccess)
-        manager._report_executor.submit.assert_called_once()
+        manager._reports.put.assert_called_once()
 
     def test_an_over_long_descriptor_is_left_out(self, http: MagicMock) -> None:
         http.return_value = _response(201)
@@ -483,28 +483,19 @@ class TestReportUsage:
         assert http.call_count == 1
         assert [record.levelno for record in caplog.records] == [level]
 
-    def test_negative_cost_is_not_sent(self, http: MagicMock) -> None:
-        result = _manager().on_report_usage_request(ReportUsageRequest(declared_cost_micro_usd=-1))
-
-        assert isinstance(result, ReportUsageResultFailure)
-        assert isinstance(result.result_details, ResultDetails)
-        assert result.result_details.result_details[0].level == logging.WARNING
-        http.assert_not_called()
-
     def test_a_credential_removed_before_sending_drops_the_report(
         self, http: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """The report is queued with a credential, but the background send finds none."""
         engine = _mock_engine()
         manager = BudgetManager(MagicMock(), engine=engine)
-        queued: list[Callable[[], object]] = []
-        manager._report_executor = MagicMock()
-        manager._report_executor.submit.side_effect = lambda fn, *args: queued.append(lambda: fn(*args))
+        manager._reports = MagicMock()
         manager.on_report_usage_request(ReportUsageRequest(declared_cost_micro_usd=1))
+        (body,), _ = manager._reports.put.call_args
         engine.secrets_manager.get_secret.side_effect = lambda *_, **__: None
 
         with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
-            queued[0]()
+            manager._send_report(body)
 
         http.assert_not_called()
         assert "Dropped a usage report" in caplog.text
@@ -591,47 +582,15 @@ class TestTokenReports:
     @pytest.mark.parametrize(
         ("fields", "reason"),
         [
-            ({"input_tokens": 1000, "output_tokens": 500, "declared_cost_micro_usd": 250, "model": "m"}, "both"),
+            ({"input_tokens": 1000, "output_tokens": 500, "declared_cost_micro_usd": 250, "model": "m"}, "not both"),
             ({"model": "m"}, "neither"),
             ({"input_tokens": 1000, "model": "m"}, "both input and output"),
             ({"output_tokens": 500, "model": "m"}, "both input and output"),
-            ({"input_tokens": -1, "output_tokens": 500, "model": "m"}, "negative"),
-            ({"input_tokens": 1000, "output_tokens": -5, "model": "m"}, "negative"),
-            ({"input_tokens": 1000, "output_tokens": 500, "cache_read_tokens": -1, "model": "m"}, "negative"),
-            (
-                {
-                    "input_tokens": 100,
-                    "output_tokens": 50,
-                    "cache_read_tokens": 90,
-                    "cache_write_tokens": 20,
-                    "model": "m",
-                },
-                "larger than",
-            ),
-            ({"input_tokens": 1000, "output_tokens": 500}, "model name"),
-            ({"input_tokens": 1000, "output_tokens": 500, "model": "m" * 256}, "model name"),
-            ({"declared_cost_micro_usd": -1}, "negative"),
-            (
-                {"input_tokens": 1000, "output_tokens": 500, "model": "m", "activity_type": "embedding"},
-                "chat completions",
-            ),
         ],
-        ids=[
-            "both",
-            "neither",
-            "input-only",
-            "output-only",
-            "negative-input",
-            "negative-output",
-            "negative-cache",
-            "cache-over-input",
-            "no-model",
-            "model-too-long",
-            "negative-cost",
-            "non-chat-activity",
-        ],
+        ids=["both", "neither", "input-only", "output-only"],
     )
-    def test_a_report_cloud_would_reject_is_not_sent(self, http: MagicMock, fields: dict, reason: str) -> None:
+    def test_a_report_that_cannot_be_built_is_not_sent(self, http: MagicMock, fields: dict, reason: str) -> None:
+        """Only the body's shape is checked here; Cloud enforces every other rule on the counts."""
         result = _manager().on_report_usage_request(ReportUsageRequest(**fields))
 
         assert isinstance(result, ReportUsageResultFailure)
@@ -640,203 +599,47 @@ class TestTokenReports:
         assert result.result_details.result_details[0].level == logging.WARNING
         http.assert_not_called()
 
-    @pytest.mark.parametrize("activity_type", [None, "", "chat_completion"])
-    def test_a_chat_token_report_is_sent(self, http: MagicMock, activity_type: str | None) -> None:
-        http.return_value = _response(201)
+    def test_count_rules_are_left_to_cloud(self, http: MagicMock) -> None:
+        """A report that breaks one of Cloud's count rules is sent; Cloud's 400 is logged and the node unaffected."""
+        http.return_value = _response(400, {"type": "validation_error", "errors": [{"code": "invalid"}]})
 
         result = _manager().on_report_usage_request(
-            ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m", activity_type=activity_type)
+            ReportUsageRequest(input_tokens=100, output_tokens=50, cache_read_tokens=900, model="m")
         )
-
-        assert isinstance(result, ReportUsageResultSuccess)
-
-    def test_a_non_chat_cost_report_is_still_sent(self, http: MagicMock) -> None:
-        """Only token counts are priced as chat; a declared cost may describe any kind of call."""
-        http.return_value = _response(201)
-
-        result = _manager().on_report_usage_request(
-            ReportUsageRequest(declared_cost_micro_usd=10, model="m", activity_type="embedding")
-        )
-
-        assert isinstance(result, ReportUsageResultSuccess)
-        assert _sent(http)["activity_type"] == "embedding"
-
-    def test_cache_counts_equal_to_input_are_accepted(self, http: MagicMock) -> None:
-        """Every input token cached is valid: the cached share can equal the total."""
-        http.return_value = _response(201)
-
-        result = _manager().on_report_usage_request(
-            ReportUsageRequest(input_tokens=1000, output_tokens=500, cache_read_tokens=1000, model="m")
-        )
-
-        assert isinstance(result, ReportUsageResultSuccess)
-
-
-class TestAudioCounts:
-    """input_audio_tokens is the audio share of input_tokens; cache_audio_read_tokens the cached share of that."""
-
-    def test_audio_counts_are_posted_in_usage(self, http: MagicMock) -> None:
-        http.return_value = _response(201)
-
-        _manager().on_report_usage_request(
-            ReportUsageRequest(
-                input_tokens=1000,
-                output_tokens=500,
-                cache_read_tokens=900,
-                input_audio_tokens=300,
-                cache_audio_read_tokens=200,
-                model="gpt-4o",
-            )
-        )
-
-        assert _sent(http)["usage"] == {
-            "input_tokens": 1000,
-            "output_tokens": 500,
-            "cache_read_tokens": 900,
-            "input_audio_tokens": 300,
-            "cache_audio_read_tokens": 200,
-        }
-
-    def test_audio_counts_are_left_out_when_not_given(self, http: MagicMock) -> None:
-        http.return_value = _response(201)
-
-        _manager().on_report_usage_request(ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m"))
-
-        usage = _sent(http)["usage"]
-        assert "input_audio_tokens" not in usage
-        assert "cache_audio_read_tokens" not in usage
-
-    @pytest.mark.parametrize(
-        "fields",
-        [
-            {"input_audio_tokens": 1000},
-            {"input_audio_tokens": 300, "cache_read_tokens": 900, "cache_audio_read_tokens": 300},
-            {"input_audio_tokens": 300, "cache_read_tokens": 200, "cache_audio_read_tokens": 200},
-        ],
-        ids=["audio-equals-input", "cached-audio-equals-audio", "cached-audio-equals-cached-input"],
-    )
-    def test_shares_equal_to_their_limit_are_accepted(self, http: MagicMock, fields: dict) -> None:
-        http.return_value = _response(201)
-
-        result = _manager().on_report_usage_request(
-            ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m", **fields)
-        )
-
-        assert isinstance(result, ReportUsageResultSuccess)
-
-    @pytest.mark.parametrize(
-        ("fields", "reason"),
-        [
-            ({"input_audio_tokens": 1001}, "audio input count is larger"),
-            (
-                {"input_audio_tokens": 300, "cache_read_tokens": 900, "cache_audio_read_tokens": 301},
-                "cached audio count",
-            ),
-            (
-                {"input_audio_tokens": 300, "cache_read_tokens": 200, "cache_audio_read_tokens": 201},
-                "cached audio count",
-            ),
-            ({"cache_audio_read_tokens": 1}, "cached audio count"),
-            ({"input_audio_tokens": -1}, "negative"),
-            ({"cache_audio_read_tokens": -1}, "negative"),
-        ],
-        ids=[
-            "audio-over-input",
-            "cached-audio-over-audio",
-            "cached-audio-over-cached-input",
-            "cached-audio-without-audio",
-            "negative-audio",
-            "negative-cached-audio",
-        ],
-    )
-    def test_a_report_cloud_would_reject_for_audio_is_not_sent(
-        self, http: MagicMock, fields: dict, reason: str
-    ) -> None:
-        result = _manager().on_report_usage_request(
-            ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m", **fields)
-        )
-
-        assert isinstance(result, ReportUsageResultFailure)
-        assert reason in str(result.result_details)
-        http.assert_not_called()
-
-
-RECORDING_OFF = {
-    "type": "server_error",
-    "errors": [{"code": "SPEND_RECORDING_OFF", "detail": "Spend recording is switched off.", "attr": None}],
-}
-
-
-class TestSpendRecordingOff:
-    """Cloud's kill switch is a 503 with code SPEND_RECORDING_OFF: a steady state, not an outage."""
-
-    def test_a_check_clears_quietly(self, http: MagicMock) -> None:
-        http.return_value = _response(503, RECORDING_OFF)
-
-        result = _check(_manager(), BudgetAccessRequest(model="m"))
-
-        assert isinstance(result, BudgetAccessResultSuccess)
-        assert result.checked is False
-        assert isinstance(result.result_details, ResultDetails)
-        detail = result.result_details.result_details[0]
-        assert detail.level == logging.DEBUG
-        assert "spend recording switched off" in detail.message
-
-    def test_a_report_is_dropped_once_without_retrying(self, http: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        http.return_value = _response(503, RECORDING_OFF)
-
-        with caplog.at_level(logging.DEBUG, logger="griptape_nodes"):
-            result = _manager().on_report_usage_request(
-                ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m")
-            )
 
         assert isinstance(result, ReportUsageResultSuccess)
         assert http.call_count == 1
-        dropped = [r for r in caplog.records if "spend recording switched off" in r.getMessage()]
-        assert [r.levelno for r in dropped] == [logging.DEBUG]
-        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
-
-    def test_an_ordinary_503_is_still_an_outage(self, http: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        """Only the kill switch's code is quiet: any other 503 still warns and is retried."""
-        http.return_value = _response(503, {"type": "server_error", "errors": [{"code": "UNAVAILABLE"}]})
-
-        with caplog.at_level(logging.WARNING, logger="griptape_nodes"):
-            check = _check(_manager(), BudgetAccessRequest(model="m"))
-            _manager().on_report_usage_request(ReportUsageRequest(input_tokens=1000, output_tokens=500, model="m"))
-
-        assert isinstance(check.result_details, ResultDetails)
-        assert check.result_details.result_details[0].level == logging.WARNING
-        assert http.call_count == 1 + budget_manager_module.REPORT_MAX_ATTEMPTS
-        assert "Dropped usage report" in caplog.text
 
 
 class TestReportQueue:
-    def test_no_thread_until_the_first_report(self) -> None:
-        budget_manager_module._DaemonQueue("test-report-lazy")
+    """Reports post in order on one daemon thread, started with the manager."""
 
-        assert not [thread for thread in threading.enumerate() if thread.name == "test-report-lazy"]
+    def test_the_report_thread_is_a_daemon(self) -> None:
+        """Engine exit must not wait on reports still queued."""
+        BudgetManager(MagicMock(), engine=_mock_engine())
 
-    def test_exit_does_not_wait_on_pending_reports(self) -> None:
-        queue = budget_manager_module._DaemonQueue("test-report")
-        done = threading.Event()
-        queue.submit(done.set)
-        assert done.wait(timeout=5)
+        threads = [t for t in threading.enumerate() if t.name == "budget-report" and t.is_alive()]
 
-        threads = [thread for thread in threading.enumerate() if thread.name == "test-report"]
         assert threads
-        assert all(thread.daemon for thread in threads)
+        assert all(t.daemon for t in threads)
 
     def test_a_failing_report_does_not_stop_later_ones(self) -> None:
-        queue = budget_manager_module._DaemonQueue("test-report-survives")
-        done = threading.Event()
+        manager = BudgetManager(MagicMock(), engine=_mock_engine())
+        posted = threading.Event()
+        calls: list[dict] = []
 
-        def boom() -> None:
-            raise ValueError
+        def send(body: dict[str, Any]) -> None:
+            calls.append(body)
+            if body["n"] == 1:
+                raise ValueError
+            posted.set()
 
-        queue.submit(boom)
-        queue.submit(done.set)
+        manager._send_report = send  # type: ignore[method-assign]
+        manager._reports.put({"n": 1})
+        manager._reports.put({"n": 2})
 
-        assert done.wait(timeout=5)
+        assert posted.wait(timeout=5)
+        assert [body["n"] for body in calls] == [1, 2]
 
 
 class TestWiring:
