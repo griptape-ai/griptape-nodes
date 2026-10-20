@@ -286,24 +286,25 @@ class ParameterList(ParameterContainer):
             if isinstance(child, Parameter):
                 child.type = value
         super()._custom_setter_for_property_type(value)
+        # Without explicit input types, the item types fall back to the type.
+        self._widen_all_row_input_types()
 
     def _custom_setter_for_property_input_types(self, value: list[str] | None) -> None:
         super()._custom_setter_for_property_input_types(value)
-        rows = [child for child in self._children if isinstance(child, Parameter)]
-        if not rows:
-            # During construction there are no rows, and the other item types may not be set yet.
-            return
-        for row in rows:
-            self._widen_row_input_types(row)
+        self._widen_all_row_input_types()
 
     @property
     def concatenates_list_rows(self) -> bool:
-        """Whether list-valued rows contribute their items; false when lists are valid items."""
+        """Whether a row holding a list adds its items, rather than being one item. False when lists are valid items."""
         whole_item_bases = {ParameterTypeBuiltin.ANY.value, ParameterTypeBuiltin.ALL.value, "list"}
         item_types = super()._custom_getter_for_property_input_types()
         return all(
             ParameterType._extract_base_type(item_type.lower()) not in whole_item_bases for item_type in item_types
         )
+
+    def row_value_is_items(self, value: Any) -> bool:
+        """Whether a row's `value` adds its items to this list, rather than being one item."""
+        return isinstance(value, list) and self.concatenates_list_rows
 
     @staticmethod
     def _with_list_variants(item_types: list[str]) -> list[str]:
@@ -314,9 +315,16 @@ class ParameterList(ParameterContainer):
         """
         return [*item_types, *(f"list[{item_type}]" for item_type in item_types), "list"]
 
+    def _widen_all_row_input_types(self) -> None:
+        rows = [child for child in self._children if isinstance(child, Parameter)]
+        if not rows:
+            # During construction there are no rows, and the other item types may not be set yet.
+            return
+        for row in rows:
+            self._widen_row_input_types(row)
+
     def _widen_row_input_types(self, row: Parameter) -> None:
-        # The unwidened getter: `self.input_types` is the container's own list-shaped set. Read after the
-        # setter stores a value, so a cleared value resolves to the same default for every row.
+        # The item types come from the base getter. `self.input_types` is the container's list-shaped set.
         row.input_types = self._with_list_variants(super()._custom_getter_for_property_input_types())
 
     def _custom_setter_for_property_output_type(self, value: str | None) -> None:
@@ -324,7 +332,9 @@ class ParameterList(ParameterContainer):
         for child in self._children:
             if isinstance(child, Parameter):
                 child.output_type = value
-        return super()._custom_setter_for_property_output_type(value)
+        super()._custom_setter_for_property_output_type(value)
+        # Without explicit input types or a type, the item types fall back to the output type.
+        self._widen_all_row_input_types()
 
     def _custom_getter_for_property_input_types(self) -> list[str]:
         # The container accepts only lists. Rows accept items and lists of them, from `_with_list_variants`.

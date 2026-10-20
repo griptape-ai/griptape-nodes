@@ -1156,10 +1156,10 @@ class BaseNode(ABC):
         return candidate_items
 
     def _row_value_is_items(self, parameter: Parameter, value: Any) -> bool:
-        if not isinstance(value, list) or parameter.parent_container_name is None:
+        if parameter.parent_container_name is None:
             return False
         container = self.get_parameter_by_name(parameter.parent_container_name)
-        return isinstance(container, ParameterList) and container.concatenates_list_rows
+        return isinstance(container, ParameterList) and container.row_value_is_items(value)
 
     @staticmethod
     def _convert_value(parameter: Parameter, value: Any) -> Any:

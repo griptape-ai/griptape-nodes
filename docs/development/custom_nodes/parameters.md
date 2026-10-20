@@ -598,8 +598,9 @@ ParameterList(
 
 **Rows and whole lists:** a row accepts one item, a `list[...]` of the item type, or an untyped `list`. A row that
 receives a list adds its items to the list, so the list value is the concatenation of its rows, and `max_items` counts
-those items. This does not apply when the list's own items may be lists (`list`, `any` or `all`), where a list in a row
-is one item.
+those items. A row value that would take the list over `max_items` is refused, including one passed over a connection,
+which fails the run with an error naming the list. This does not apply when the list's own items may be lists (`list`,
+`any` or `all`), where a list in a row is one item.
 
 **Setting a whole list:** a list nothing is connected to holds its items in rows, one per item, and has no value of
 its own: reading it builds it from the rows. Setting a whole list, with `SetParameterValueRequest` or with

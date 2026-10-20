@@ -48,6 +48,17 @@ class TestRowInputTypes:
 
         assert row.input_types == ["VideoUrlArtifact", "list[VideoUrlArtifact]", "list"]
 
+    def test_existing_rows_follow_a_change_of_type(self) -> None:
+        node = MockNode()
+        node.add_parameter(ParameterList(name="refs", tooltip="t", type="str", allowed_modes={ParameterMode.INPUT}))
+        refs = node.get_parameter_by_name("refs")
+        assert isinstance(refs, ParameterList)
+        row = refs.add_child_parameter()
+
+        refs.type = "int"
+
+        assert row.input_types == ["int", "list[int]", "list"]
+
     def test_clearing_input_types_leaves_old_and_new_rows_alike(self, node: MockNode) -> None:
         refs = _refs(node)
         old_row = refs.add_child_parameter()

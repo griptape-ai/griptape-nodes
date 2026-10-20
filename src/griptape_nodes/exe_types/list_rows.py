@@ -305,7 +305,7 @@ def handle_container_parameter(current_node: BaseNode, parameter: ParameterConta
 def _items_of_row(container: ParameterContainer, value: Any) -> list[Any]:
     if value is None:
         return []
-    if isinstance(value, list) and isinstance(container, ParameterList) and container.concatenates_list_rows:
+    if isinstance(container, ParameterList) and container.row_value_is_items(value):
         # Dropped like an empty row.
         return [item for item in value if item is not None]
     return [value]
