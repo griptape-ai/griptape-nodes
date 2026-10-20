@@ -28,6 +28,7 @@ from griptape_nodes.exe_types.input_checks import (
     check_mime_type,
     check_size,
     image_errors,
+    input_check_budget,
     input_subject,
     local_image_info,
     local_size_bytes,
@@ -179,6 +180,43 @@ class TestLocalVideoDuration:
         # ffprobe echoes the file name in UTF-8; decoding with Windows' code page fails on a non-Latin one.
         _probed_seconds(str(clip))
         assert ffprobe_runs[0]["encoding"] == "utf-8"
+
+    def test_gives_each_probe_the_probe_timeout_outside_a_budget(
+        self, clip: Path, ffprobe_runs: list[dict[str, Any]]
+    ) -> None:
+        _probed_seconds(str(clip))
+        assert ffprobe_runs[0]["timeout"] == input_checks.FFPROBE_TIMEOUT_SECONDS
+
+    def test_gives_a_probe_only_what_is_left_of_the_budget(
+        self, clip: Path, ffprobe_runs: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        now = [100.0]
+        monkeypatch.setattr(input_checks.time, "monotonic", lambda: now[0])
+        with input_check_budget(seconds=3):
+            _probed_seconds(str(clip))
+            now[0] += 2.5
+            _probed_seconds(str(clip))
+        assert [run["timeout"] for run in ffprobe_runs] == [input_checks.FFPROBE_TIMEOUT_SECONDS, 0.5]
+
+    def test_skips_a_probe_once_the_budget_is_spent(
+        self, clip: Path, ffprobe_runs: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        now = [100.0]
+        monkeypatch.setattr(input_checks.time, "monotonic", lambda: now[0])
+        with input_check_budget(seconds=3):
+            now[0] += 3
+            assert _probed_seconds(str(clip)) is None
+        assert ffprobe_runs == []
+
+    def test_ends_the_budget_with_its_block(
+        self, clip: Path, ffprobe_runs: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        now = [100.0]
+        monkeypatch.setattr(input_checks.time, "monotonic", lambda: now[0])
+        with input_check_budget(seconds=1):
+            now[0] += 5
+        assert _probed_seconds(str(clip)) == 9.5
+        assert ffprobe_runs[0]["timeout"] == input_checks.FFPROBE_TIMEOUT_SECONDS
 
     def test_skips_when_ffprobe_times_out(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         def slow_run(cmd: list[str], **kwargs: Any) -> SimpleNamespace:

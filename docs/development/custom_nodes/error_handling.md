@@ -384,14 +384,16 @@ The checks follow these rules:
 
 - **Skip what can't be read locally, don't fail it.** A remote URL, a format Pillow can't open, an
     image over Pillow's decompression-bomb limit (about 179 megapixels), a video when ffprobe isn't
-    installed, or a probe that takes longer than 5 seconds is left for the provider to judge. A
+    installed, or a probe that runs out of time (see the next rule) is left for the provider to judge. A
     check refuses only an input it has read and found outside the limit.
 - **Pass the provider's limits and a docs link for the selected model.** The checks know nothing
     about any provider. Your node passes the limits the provider documents, only for the inputs its
     request sends, and `docs_url` for the page that documents them, so the user can see the rule.
-- **No network calls.** Validation runs before every run, on the engine's event loop. The checks
-    never download an input or a tool: they measure files on this machine and data URIs, and use
-    ffprobe only when it is already installed.
+- **No network calls, and a cap on blocking.** Validation runs before every run, on the engine's
+    event loop. The checks never download an input or a tool: they measure files on this machine
+    and data URIs, and use ffprobe only when it is already installed. A local probe takes tens of
+    milliseconds. Each one is given at most 2 seconds, and one node's validation at most 5 seconds of
+    probing across all its videos; a video left when that runs out is skipped.
 - **Where a limit is ambiguous, refuse less.** Sizes are in MiB. A maximum length is checked
     against the shorter of the video stream and the whole file, and a minimum against the longer.
     Frame rates work the same way, with 1% leeway so 23.976 fps passes a 24 fps minimum.

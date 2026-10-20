@@ -10,6 +10,7 @@ from griptape_nodes.common.node_executor import ExecuteNodeFailedError
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
+from griptape_nodes.exe_types.input_checks import input_check_budget
 from griptape_nodes.exe_types.node_types import (
     BaseNode,
     NodeResolutionState,
@@ -720,7 +721,9 @@ class ExecuteDagState(State):
             # Clear all of the current output values but don't broadcast the clearing.
             # to avoid any flickering in subscribers (UI).
             node_reference.node_reference.parameter_output_values.silent_clear()
-            exceptions = node_reference.node_reference.validate_before_node_run()
+            # Caps the time the node's input checks spend probing videos, which blocks this loop.
+            with input_check_budget():
+                exceptions = node_reference.node_reference.validate_before_node_run()
             if exceptions:
                 context.running_tasks_count -= 1  # Decrement on error
                 validation_node_name = node_reference.node_reference.name

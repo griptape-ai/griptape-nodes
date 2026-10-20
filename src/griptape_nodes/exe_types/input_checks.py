@@ -47,6 +47,9 @@ import math
 import shutil
 import subprocess
 import sys
+import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -60,7 +63,7 @@ from griptape_nodes.files.path_utils import is_url
 from griptape_nodes.utils.media_values import MediaKind, coerce_media_url_or_data_uri
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -75,6 +78,7 @@ __all__ = [
     "check_mime_type",
     "check_size",
     "image_errors",
+    "input_check_budget",
     "input_subject",
     "local_image_info",
     "local_size_bytes",
@@ -91,9 +95,19 @@ LIMITS_LINK_LABEL = "Provider limits"
 # like "24-60fps"; NTSC footage at 23.976 or 59.94 fps is within 0.1% of those.
 FRAME_RATE_TOLERANCE = 0.01
 
-# Validation runs on the engine's event loop, so a probe that takes longer than this is abandoned
-# and the checks that need it (frame size, duration, frame rate) are skipped.
-FFPROBE_TIMEOUT_SECONDS = 5
+# Validation runs on the engine's event loop, so every probe blocks it. A local probe takes tens of
+# milliseconds; one that takes longer than this is abandoned and the checks that need it (frame
+# size, duration, frame rate) are skipped.
+FFPROBE_TIMEOUT_SECONDS = 2
+
+# The most one validation run spends probing videos, across all of a node's inputs. The engine
+# opens one `input_check_budget` around each node's `validate_before_node_run`; once it's spent,
+# the remaining videos are skipped rather than probed, so several slow probes can't add up.
+VALIDATION_PROBE_BUDGET_SECONDS = 5
+
+# When the current validation run's probe budget runs out, as a `time.monotonic()` reading, or None
+# outside a run, where each probe is limited only by FFPROBE_TIMEOUT_SECONDS.
+_probe_deadline: ContextVar[float | None] = ContextVar("input_check_probe_deadline", default=None)
 
 _QUARTER_TURN_DEGREES = 90
 _HALF_TURN_DEGREES = 180
@@ -221,11 +235,28 @@ class VideoProbe(NamedTuple):
 _PROBE_NOT_GIVEN = VideoProbe(info=None, seconds=None)
 
 
+@contextmanager
+def input_check_budget(seconds: float = VALIDATION_PROBE_BUDGET_SECONDS) -> Iterator[None]:
+    """Cap the time the video probes inside this block spend, together, at `seconds`.
+
+    The engine opens one around each node's `validate_before_node_run`, so a node checking several
+    videos blocks the event loop for at most `seconds` in all. Inside it, each probe gets the
+    smaller of `FFPROBE_TIMEOUT_SECONDS` and the time left, and a probe that would start with no
+    time left is skipped.
+    """
+    token = _probe_deadline.set(time.monotonic() + seconds)
+    try:
+        yield
+    finally:
+        _probe_deadline.reset(token)
+
+
 def local_video_probe(value: Any) -> VideoProbe | None:
     """The frame size, duration and frame rate of a video input, or None if it can't be read locally.
 
     One ffprobe run reads all three, so a node checking several on the same clip waits on at most
-    one `FFPROBE_TIMEOUT_SECONDS`, and the values come from the same read of the file.
+    one `FFPROBE_TIMEOUT_SECONDS`, and the values come from the same read of the file. Inside an
+    `input_check_budget`, the probe also stops when the budget does.
     Probes only a file on this machine, with an ffprobe that is already installed; see
     `_probe_local_video`.
     """
@@ -708,7 +739,8 @@ def _probe_local_video(value: Any, args: list[str]) -> dict[str, Any] | None:  #
 
     Only a file on this machine is probed: a remote URL would make ffprobe download it, and a data
     URI is too large to pass on its command line. ffprobe is used only if it is already installed
-    (see `_installed_ffprobe`), never fetched, and is given `FFPROBE_TIMEOUT_SECONDS` to answer.
+    (see `_installed_ffprobe`), never fetched, and is given `FFPROBE_TIMEOUT_SECONDS` to answer, or
+    what's left of the current `input_check_budget` if that's less.
     """
     location = coerce_media_url_or_data_uri(value, kind="video")
     if not location or location.startswith("data:"):
@@ -720,6 +752,10 @@ def _probe_local_video(value: Any, args: list[str]) -> dict[str, Any] | None:  #
     if ffprobe is None:
         logger.debug("ffprobe is not installed, skipping a pre-run video check")
         return None
+    timeout = _probe_timeout()
+    if timeout is None:
+        logger.debug("This validation run's probe budget is spent, skipping a pre-run video check")
+        return None
     cmd = [ffprobe, "-v", "error", "-print_format", "json", *args, str(path)]
     try:
         result = subprocess.run(  # noqa: S603
@@ -730,7 +766,7 @@ def _probe_local_video(value: Any, args: list[str]) -> dict[str, Any] | None:  #
             encoding="utf-8",
             errors="replace",
             check=True,
-            timeout=FFPROBE_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
     except (subprocess.SubprocessError, OSError, ValueError) as e:
         logger.debug("Could not probe a video for a pre-run input check, skipping it: %s", e)
@@ -743,6 +779,17 @@ def _probe_local_video(value: Any, args: list[str]) -> dict[str, Any] | None:  #
     if not isinstance(data, dict):
         return None
     return data
+
+
+def _probe_timeout() -> float | None:
+    """How long the next probe may take, or None when the current budget leaves no time for one."""
+    deadline = _probe_deadline.get()
+    if deadline is None:
+        return FFPROBE_TIMEOUT_SECONDS
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
+    return min(FFPROBE_TIMEOUT_SECONDS, remaining)
 
 
 def _installed_ffprobe() -> str | None:
