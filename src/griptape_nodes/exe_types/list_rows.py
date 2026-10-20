@@ -133,10 +133,7 @@ class ListRows:
         return True
 
     def check_row_within_max_items(self, row: Parameter, value: Any, *, initial_setup: bool) -> None:
-        """Refuse a value for `row` that would take its list over `max_items`.
-
-        A row holding a list adds all of its items, so a list can hold more items than it has rows. A value
-        that arrives over a connection can't be refused, so it only logs a warning.
+        """Refuse a value for `row` that would take its list over `max_items`, counting a list's items.
 
         Raises:
             ValueError: if the list would hold more than `max_items` items.
@@ -153,6 +150,7 @@ class ListRows:
             held_count += len(_items_of_row(container, child_value))
         if held_count <= container.max_items:
             return
+        # Connected values cannot be refused.
         if node._param_has_incoming_connection(row.name):
             logger.warning(
                 "Node '%s' list '%s' would hold %d items but accepts at most %d. The extra items may be dropped.",
@@ -313,10 +311,8 @@ def handle_container_parameter(current_node: BaseNode, parameter: ParameterConta
 
 
 def _items_of_row(container: ParameterContainer, value: Any) -> list[Any]:
-    """The items a row's value adds to its list: none for an empty row, and all of a list's items for a row holding one."""
     if value is None:
         return []
-    # A row fed a whole list adds its items, so the list ends up the concatenation of its rows.
     if isinstance(value, list) and isinstance(container, ParameterList) and container.concatenates_list_rows:
         return value
     return [value]

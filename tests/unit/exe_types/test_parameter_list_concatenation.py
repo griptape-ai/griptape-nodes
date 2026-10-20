@@ -1,5 +1,3 @@
-"""A ParameterList row takes one item or a whole list of its item type, and the rows concatenate."""
-
 import pytest
 
 from griptape_nodes.exe_types.core_types import ParameterList, ParameterMode
@@ -9,7 +7,7 @@ from .mocks import MockNode
 
 @pytest.fixture
 def node() -> MockNode:
-    """A node with a single INPUT-only ParameterList named `refs`."""
+    """A node with an input-only list `refs` of `ImageUrlArtifact`."""
     node = MockNode()
     node.add_parameter(
         ParameterList(

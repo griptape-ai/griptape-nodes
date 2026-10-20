@@ -731,7 +731,6 @@ class TestParameterListInputTypes:
         assert param_list.is_incoming_type_allowed("str") is False
 
     def test_children_accept_the_element_types_and_lists_of_them(self) -> None:
-        """Child rows take the bare element type, a whole list of it, or an untyped `list`."""
         param_list = ParameterList(name="refs", tooltip="t", input_types=["ImageUrlArtifact"])
         child = param_list.add_child_parameter()
 

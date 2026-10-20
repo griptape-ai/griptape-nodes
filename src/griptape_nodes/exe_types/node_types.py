@@ -1142,10 +1142,7 @@ class BaseNode(ABC):
                 self._list_rows.rows_changed(container, initial_setup=initial_setup)
 
     def _convert_and_validate(self, parameter: Parameter, value: Any) -> Any:
-        """Run the Parameter's converters, then its validators, and return the converted value.
-
-        A row holding a list adds its items to the list, so its converters and validators run on each item.
-        """
+        """Concatenated rows use item-level converters and validators."""
         if not self._row_value_is_items(parameter, value):
             candidate_value = self._convert_value(parameter, value)
             for validator in parameter.validators:
@@ -1159,7 +1156,6 @@ class BaseNode(ABC):
         return candidate_items
 
     def _row_value_is_items(self, parameter: Parameter, value: Any) -> bool:
-        """Whether `value` is a list a row adds to its list item by item, instead of being one item."""
         if not isinstance(value, list) or parameter.parent_container_name is None:
             return False
         container = self.get_parameter_by_name(parameter.parent_container_name)

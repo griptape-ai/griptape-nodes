@@ -291,20 +291,16 @@ class ParameterList(ParameterContainer):
         super()._custom_setter_for_property_input_types(value)
         rows = [child for child in self._children if isinstance(child, Parameter)]
         if not rows:
-            # Also the case while the list is being constructed, before its types are all set.
+            # Types may be unset during construction.
             return
-        # Existing rows get what add_child_parameter gives a new row. Read after the value is stored, so a
-        # cleared value resolves to the same default for both.
+        # Read the stored value so clearing input types uses the default for both existing and new rows.
         row_input_types = self._with_list_variants(super()._custom_getter_for_property_input_types())
         for row in rows:
             row.input_types = row_input_types
 
     @property
     def concatenates_list_rows(self) -> bool:
-        """Whether a row holding a list contributes its items to this list, rather than being one item.
-
-        False when the list's own items may be lists (or anything), where a list in a row is a legitimate item.
-        """
+        """Whether list-valued rows contribute their items; false when lists are valid items."""
         whole_item_bases = {ParameterTypeBuiltin.ANY.value, ParameterTypeBuiltin.ALL.value, "list"}
         item_types = super()._custom_getter_for_property_input_types()
         return all(
@@ -313,11 +309,10 @@ class ParameterList(ParameterContainer):
 
     @staticmethod
     def _with_list_variants(item_types: list[str]) -> list[str]:
-        """Each item type followed by its `list[...]` form, then a bare `list`.
+        """Each item type, then its `list[...]` form, then a bare `list`, so a row takes one item or a whole list.
 
-        Lets a row take one item or a whole list of them. A bare `list` is accepted for the same reason the
-        container accepts it: a source that builds a list at runtime cannot always declare one element type,
-        so element-type correctness is deferred to the consuming node.
+        A bare `list` is accepted for the reason the container accepts it: a runtime-built list cannot always
+        declare one item type.
         """
         return [*item_types, *(f"list[{item_type}]" for item_type in item_types), "list"]
 
@@ -329,8 +324,7 @@ class ParameterList(ParameterContainer):
         return super()._custom_setter_for_property_output_type(value)
 
     def _custom_getter_for_property_input_types(self) -> list[str]:
-        # For every valid input type, also accept a list variant of that for the CONTAINER Parameter only.
-        # Children still use the input types given to them.
+        # The container accepts only lists. Rows accept items and lists of them, from `_with_list_variants`.
         base_input_types = super()._custom_getter_for_property_input_types()
         result = []
         for base_input_type in base_input_types:
