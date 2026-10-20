@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -18,7 +17,6 @@ from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachin
 from griptape_nodes.retained_mode.engine import EngineScoped, current_engine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
-    PARENT_RUN_ID_ENV_VAR,
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
     FlowRunStartedEvent,
@@ -217,23 +215,22 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         super().__init__(context)
 
     async def start_flow(
-        self, start_node: BaseNode, end_node: BaseNode | None = None, *, debug_mode: bool = False
+        self,
+        start_node: BaseNode,
+        end_node: BaseNode | None = None,
+        *,
+        debug_mode: bool = False,
+        continue_run: bool = False,
     ) -> None:
+        """Start resolving from `start_node`.
+
+        `continue_run` resumes the run this machine last started, keeping its id, for the next start
+        node queued during that run. Otherwise this is a new run.
+        """
         self._context.run_started_at = time.perf_counter()
         flow_manager = self._context.engine.flow_manager
-        # A loop body is part of the run that started it: spend reads the id off the global
-        # machine, so an isolated subflow neither takes an id nor announces a run.
-        if not self._context.is_isolated:
-            # A node group run in its own engine process is part of the parent engine's run, which
-            # hands its id over in the environment so the group's spend counts toward that run.
-            self._context.run_id = os.getenv(PARENT_RUN_ID_ENV_VAR) or uuid.uuid4().hex
-            self._context.engine.event_manager.put_event(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(
-                        payload=FlowRunStartedEvent(run_id=self._context.run_id, flow_name=self._context.flow_name)
-                    )
-                )
-            )
+        if not continue_run:
+            self._begin_run(flow_manager)
         # If using DAG resolution, process data_nodes from queue first
         current_nodes = await self._process_nodes_for_dag(start_node)
         self._context.current_nodes = current_nodes
@@ -259,6 +256,28 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                 )
             )
         await self.start(ResolveNodeState)  # Begins the flow
+
+    def _begin_run(self, flow_manager: FlowManager) -> None:
+        """Give the run its id, announcing it only when this engine started the run.
+
+        A loop body is part of the run that started it: spend reads the id off the global machine,
+        so an isolated subflow neither takes an id nor announces a run. A node group run in a local
+        process of its own takes the id of the parent engine's run and leaves announcing to it.
+        """
+        if self._context.is_isolated:
+            return
+        parent_run_id = flow_manager.parent_run_id
+        if parent_run_id is not None:
+            self._context.run_id = parent_run_id
+            return
+        self._context.run_id = uuid.uuid4().hex
+        self._context.engine.event_manager.put_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(
+                    payload=FlowRunStartedEvent(run_id=self._context.run_id, flow_name=self._context.flow_name)
+                )
+            )
+        )
 
     async def update(self) -> None:
         if self._current_state is None:

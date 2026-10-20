@@ -16,13 +16,6 @@ from griptape_nodes.retained_mode.events.node_error_details import NodeErrorDeta
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.serialization.values import DisplayValue, Value
 
-PARENT_RUN_ID_ENV_VAR = "GTN_PARENT_RUN_ID"
-"""Set on an engine process that runs a node group for another engine, to that engine's run id.
-
-The group's run takes this id instead of minting its own, so its spend counts toward the run
-that started the group.
-"""
-
 # Requests and Results TO/FROM USER! These begin requests - and are not fully Execution Events.
 
 
@@ -411,8 +404,8 @@ class FlowRunStartedEvent(ExecutionPayload):
 
     Every `BudgetAccessRequest` and `ReportUsageRequest` sent during the run is tagged with
     `run_id`, so a client can look up what the run's direct provider calls cost in Griptape Cloud
-    with a spend search filtered on the `run_id` tag. Loop bodies, and node groups run in their own
-    engine process, are part of the run that started them and announce no run of their own.
+    with a spend search filtered on the `run_id` tag. Loop bodies, and node groups run in a local
+    process of their own, are part of the run that started them and announce no run of their own.
 
     Args:
         run_id: The run's id. The run's `ControlFlowResolvedEvent` or `ControlFlowCancelledEvent`

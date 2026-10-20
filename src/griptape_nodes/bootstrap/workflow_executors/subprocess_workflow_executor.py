@@ -19,7 +19,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
-    PARENT_RUN_ID_ENV_VAR,
     ControlFlowCancelledEvent,
     ControlFlowResolvedEvent,
     StartFlowRequest,
@@ -112,16 +111,17 @@ class SubprocessWorkflowExecutor(WorkflowExecutor, PythonSubprocessExecutor, Sub
                 str(tmp_workflow_path),
             ]
 
-            env = {"GTN_CONFIG_ENABLE_WORKSPACE_FILE_WATCHING": "false"}
             if self._parent_run_id is not None:
-                env[PARENT_RUN_ID_ENV_VAR] = self._parent_run_id
+                args.extend(["--parent-run-id", self._parent_run_id])
 
             try:
                 await self.execute_python_script(
                     script_path=tmp_script_path,
                     args=args,
                     cwd=Path(tmpdir),
-                    env=env,
+                    env={
+                        "GTN_CONFIG_ENABLE_WORKSPACE_FILE_WATCHING": "false",
+                    },
                 )
             except Exception as e:
                 msg = f"Failed to execute subprocess script: {e}"

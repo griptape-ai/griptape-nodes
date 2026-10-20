@@ -10,7 +10,6 @@ from griptape_nodes.machines.control_flow import ControlFlowContext, ControlFlow
 from griptape_nodes.machines.dag_builder import DagNode
 from griptape_nodes.machines.parallel_resolution import ExecuteDagState
 from griptape_nodes.retained_mode.events.execution_events import (
-    PARENT_RUN_ID_ENV_VAR,
     ControlFlowCancelledEvent,
     FlowRunStartedEvent,
 )
@@ -139,36 +138,60 @@ class TestRunIdMinting:
     """Which runs get an id of their own, and which share another run's."""
 
     @staticmethod
-    async def _start(*, is_isolated: bool, monkeypatch: pytest.MonkeyPatch, parent_run_id: str | None) -> _StartedRun:
+    async def _start(*, is_isolated: bool, parent_run_id: str | None, continue_run: bool = False) -> _StartedRun:
         """Start a machine with everything past choosing its run id stubbed out."""
-        if parent_run_id is None:
-            monkeypatch.delenv(PARENT_RUN_ID_ENV_VAR, raising=False)
-        else:
-            monkeypatch.setenv(PARENT_RUN_ID_ENV_VAR, parent_run_id)
         engine = MagicMock()
         engine.config_manager.get_config_value.side_effect = lambda _key, default=None: default
+        engine.flow_manager.parent_run_id = parent_run_id
         machine = ControlFlowMachine("Flow", is_isolated=is_isolated, engine=engine)
         machine._process_nodes_for_dag = AsyncMock(return_value=[])  # type: ignore[method-assign]
         machine.start = AsyncMock()  # type: ignore[method-assign]
         await machine.start_flow(MagicMock(), MagicMock())
+        if continue_run:
+            await machine.start_flow(MagicMock(), MagicMock(), continue_run=True)
         return _StartedRun(machine=machine, engine=engine)
 
     @pytest.mark.asyncio
-    async def test_a_top_level_run_mints_and_announces_its_own_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        run = await self._start(is_isolated=False, monkeypatch=monkeypatch, parent_run_id=None)
+    async def test_a_top_level_run_mints_and_announces_its_own_id(self) -> None:
+        run = await self._start(is_isolated=False, parent_run_id=None)
 
         assert run.machine.context.run_id is not None
         assert run.announced == [run.machine.context.run_id]
 
     @pytest.mark.asyncio
-    async def test_a_loop_body_neither_takes_an_id_nor_announces_a_run(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        run = await self._start(is_isolated=True, monkeypatch=monkeypatch, parent_run_id=None)
+    async def test_a_loop_body_neither_takes_an_id_nor_announces_a_run(self) -> None:
+        run = await self._start(is_isolated=True, parent_run_id=None)
 
         assert run.machine.context.run_id is None
         assert run.announced == []
 
     @pytest.mark.asyncio
-    async def test_a_group_run_for_another_engine_takes_that_engine_s_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        run = await self._start(is_isolated=False, monkeypatch=monkeypatch, parent_run_id="parent-run")
+    async def test_a_group_run_for_another_engine_takes_its_id_without_announcing(self) -> None:
+        """The parent engine announced the run; a second start for it would read as a new run."""
+        run = await self._start(is_isolated=False, parent_run_id="parent-run")
 
         assert run.machine.context.run_id == "parent-run"
+        assert run.announced == []
+
+    @pytest.mark.asyncio
+    async def test_continuing_a_run_keeps_its_id(self) -> None:
+        """The next start node queued during a run is still that run."""
+        run = await self._start(is_isolated=False, parent_run_id=None, continue_run=True)
+
+        assert len(run.announced) == 1
+        assert run.machine.context.run_id == run.announced[0]
+
+    @pytest.mark.asyncio
+    async def test_starting_again_is_a_new_run(self) -> None:
+        engine = MagicMock()
+        engine.config_manager.get_config_value.side_effect = lambda _key, default=None: default
+        engine.flow_manager.parent_run_id = None
+        machine = ControlFlowMachine("Flow", engine=engine)
+        machine._process_nodes_for_dag = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        machine.start = AsyncMock()  # type: ignore[method-assign]
+
+        await machine.start_flow(MagicMock(), MagicMock())
+        await machine.start_flow(MagicMock(), MagicMock())
+
+        first, second = _StartedRun(machine=machine, engine=engine).announced
+        assert first != second
