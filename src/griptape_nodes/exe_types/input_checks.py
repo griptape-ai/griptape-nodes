@@ -51,7 +51,6 @@ import shutil
 import subprocess
 import sys
 import time
-from functools import cache
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -64,14 +63,6 @@ from griptape_nodes.exe_types.node_error import NodeError, NodeErrorLink
 from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.files.path_utils import is_url
 from griptape_nodes.utils.media_values import MediaKind, coerce_media_url_or_data_uri
-
-# pillow-heif teaches Pillow to read HEIC and HEIF headers, the format phones save photos in. Without
-# it (no wheel for this platform, or its native library won't load), HEIC photos are skipped like any
-# other format nothing here can open.
-try:
-    from pillow_heif import register_heif_opener
-except ImportError:
-    register_heif_opener = None
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -184,7 +175,6 @@ def local_image_info(value: Any) -> ImageInfo | None:
     source = _image_source(location)
     if source is None:
         return None
-    _register_heif_opener()
     try:
         with Image.open(source) as image:
             image_format = image.format
@@ -315,16 +305,6 @@ class VideoProbe(NamedTuple):
 # video_errors' default for `probe`, told apart by identity from a None the caller passes for a video
 # it couldn't read, so that video isn't probed a second time.
 _PROBE_NOT_GIVEN = VideoProbe(info=None, seconds=None)
-
-
-@cache
-def _register_heif_opener() -> None:
-    """Let Pillow open HEIC and HEIF photos, once, when the first image is read rather than at import.
-
-    Registering changes `Image.open` for the whole process, so it waits until a node checks an image.
-    """
-    if register_heif_opener is not None:
-        register_heif_opener()
 
 
 def local_video_probe(value: Any) -> VideoProbe | None:

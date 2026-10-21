@@ -347,9 +347,9 @@ them. The single checks they use (`check_size`, `check_dimensions`, `check_durat
 are there too for a limit that isn't about one file.
 
 Formats are read from the file, not its name: a MOV renamed to `.mp4` is still refused as a MOV,
-and an MP3 renamed to `.wav` as an MP3. HEIC and HEIF photos are read like any other image, and a
-provider listing either `image/heic` or `image/heif` accepts both. For a provider that writes "less
-than 30 MB", pass `strict_maximum_bytes=True` so a file of exactly 30 MB is refused too.
+and an MP3 renamed to `.wav` as an MP3. HEIC and HEIF photos can't be read, so their checks are
+skipped and the provider judges them. For a provider that writes "less than 30 MB", pass
+`strict_maximum_bytes=True` so a file of exactly 30 MB is refused too.
 
 Codecs are given as ffprobe names them, such as `("h264", "hevc")` or `("mp3", "pcm_s16le")`. The
 names the messages show ("H.264", "AC-3") and "AVC" work too, and any other name raises a

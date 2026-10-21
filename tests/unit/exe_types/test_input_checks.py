@@ -158,13 +158,6 @@ class TestLocalImageInfo:
         damaged = data[:item_locations] + bytes(16) + data[item_locations + 16 :]
         assert local_image_info(_data_uri(damaged, "image/avif")) is None
 
-    @pytest.mark.parametrize("orientation", [1, 6])
-    def test_reads_a_heic_photo_as_displayed(self, orientation: int) -> None:
-        # pillow-heif applies a HEIC's rotation itself and resets the tag, so it isn't turned twice.
-        heic = _data_uri(_rotated_jpeg_bytes(400, 200, orientation, "HEIF"), "image/heic")
-        expected = (400, 200) if orientation == 1 else (200, 400)
-        assert local_image_info(heic) == ImageInfo(*expected, "image/heif")
-
     def test_does_not_decode_a_png_without_exif(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Pillow's PNG plugin decodes the whole image to look for EXIF after the pixel data.
         def no_decode(*_args: Any, **_kwargs: Any) -> None:
@@ -741,16 +734,6 @@ class TestImageErrors:
     def test_refuses_allowed_formats_given_as_one_string(self) -> None:
         with pytest.raises(TypeError, match="pass a tuple"):
             image_errors("https://example.com/image.png", subject=SUBJECT, allowed_mime_types="image/png")
-
-    @pytest.mark.parametrize("listed", [("image/heic",), ("image/heif",), ("image/heic", "image/heif")])
-    def test_accepts_a_heic_photo_under_either_heif_name(self, listed: tuple[str, ...]) -> None:
-        heic = _data_uri(_rotated_jpeg_bytes(400, 200, 1, "HEIF"), "image/heic")
-        assert image_errors(heic, subject=SUBJECT, allowed_mime_types=("image/jpeg", *listed)) == []
-
-    def test_refuses_a_heic_photo_where_heif_is_not_allowed(self) -> None:
-        heic = _data_uri(_rotated_jpeg_bytes(400, 200, 1, "HEIF"), "image/heic")
-        errors = image_errors(heic, subject=SUBJECT, allowed_mime_types=("image/jpeg", "image/png"))
-        assert [str(e) for e in errors] == [f"{SUBJECT} is in HEIC format. Convert it to JPEG or PNG."]
 
     def test_passes_a_strict_size_limit_through(self) -> None:
         image = _data_uri(_png_bytes(40, 30))
@@ -1497,22 +1480,12 @@ class TestCodecNames:
         assert str(error) == f"{SUBJECT} is encoded as THEORA. Re-encode it as H.264."
 
 
-class TestHeifOpener:
-    def test_reads_images_without_pillow_heif(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(input_checks, "register_heif_opener", None)
-        input_checks._register_heif_opener.cache_clear()
-        try:
-            path = tmp_path / "photo.png"
-            Image.new("RGB", (40, 20)).save(path)
-            assert local_image_info(str(path)) == ImageInfo(40, 20, "image/png")
-        finally:
-            input_checks._register_heif_opener.cache_clear()
-
+class TestInputCheckBudgetImport:
     def test_resolution_machine_loads_no_media_libraries(self) -> None:
         code = (
             "import sys\n"
             "import griptape_nodes.machines.parallel_resolution\n"
-            "loaded = [m for m in ('pillow_heif', 'griptape_nodes.exe_types.input_checks') if m in sys.modules]\n"
+            "loaded = [m for m in ('griptape_nodes.exe_types.input_checks',) if m in sys.modules]\n"
             "print(loaded)\n"
         )
         result = subprocess.run(  # noqa: S603 (a fresh interpreter, so earlier imports do not count)

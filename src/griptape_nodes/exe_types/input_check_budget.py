@@ -1,8 +1,7 @@
 """How long one node's pre-run input checks may spend probing its video and audio inputs.
 
 The engine opens `input_check_budget` around each node's `validate_before_node_run`. It lives apart
-from `input_checks` so the resolution machine can open it without importing Pillow, pillow-heif or
-static-ffmpeg.
+from `input_checks` so the resolution machine can open it without importing Pillow or static-ffmpeg.
 """
 
 from __future__ import annotations
