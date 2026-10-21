@@ -1,10 +1,10 @@
 """Make a launcher's import paths available without letting them shadow the engine's packages.
 
-`PYTHONPATH` is searched before site-packages, so a studio environment that sets it (Rez, Conda, an
-in-house launcher) can replace the packages the engine was installed with and break it on import. A
-launcher that runs the engine on its own interpreter, like the desktop app, therefore removes
-`PYTHONPATH` and passes it here instead. These entries go to the end of `sys.path`: studio modules
-the engine does not ship stay importable, and the engine's packages always win.
+`PYTHONPATH` is searched before site-packages, so an environment that sets it (Rez, Conda, a custom
+launcher) can replace the packages the engine was installed with and break it on import. A launcher
+that runs the engine on its own interpreter can remove `PYTHONPATH` and pass it here instead. These
+entries go to the end of `sys.path`: modules the engine does not ship stay importable, and the
+engine's packages always win.
 
 Stdlib only, because `griptape_nodes/__init__.py` runs this before anything else is imported.
 """
