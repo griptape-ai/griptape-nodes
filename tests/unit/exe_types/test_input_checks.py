@@ -28,6 +28,7 @@ from griptape_nodes.exe_types.input_checks import (
     check_frame_rate,
     check_mime_type,
     check_size,
+    check_video_codec,
     image_errors,
     input_check_budget,
     input_subject,
@@ -915,6 +916,23 @@ class TestVideoErrors:
             == []
         )
 
+    def test_checks_the_container_and_codec_from_one_probe(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[Any] = []
+
+        def probe(_value: Any) -> VideoProbe:
+            calls.append(_value)
+            return VideoProbe(info=None, seconds=None, mime_type="video/quicktime", codec="prores")
+
+        monkeypatch.setattr(input_checks, "local_video_probe", probe)
+        errors = video_errors(
+            str(clip), subject=SUBJECT, allowed_mime_types=("video/mp4",), allowed_codecs=("h264", "hevc")
+        )
+        assert [str(e) for e in errors] == [
+            f"{SUBJECT} is in MOV format. Convert it to MP4.",
+            f"{SUBJECT} is encoded as ProRes. Re-encode it as H.264 or H.265.",
+        ]
+        assert len(calls) == 1
+
 
 class TestCheckFrameRate:
     @pytest.mark.parametrize("fps", [24.0, 23.976, 30.0, 59.94, 60.0])
@@ -975,6 +993,41 @@ class TestCheckAspectRatioExact:
         assert [str(e) for e in errors] == [
             f"{SUBJECT} is 400x300, and its aspect ratio must be 16:9 or 9:16. Crop it."
         ]
+
+
+class TestVideoEncoding:
+    @pytest.mark.parametrize(
+        ("demuxer", "brand", "codec", "expected"),
+        [
+            ("mov,mp4,m4a,3gp,3g2,mj2", "isom", "h264", "video/mp4"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "mp42", "h264", "video/mp4"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "qt  ", "h264", "video/quicktime"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", None, "h264", "video/quicktime"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "3gp6", "h264", "video/3gpp"),
+            ("matroska,webm", None, "vp9", "video/webm"),
+            ("matroska,webm", None, "h264", "video/x-matroska"),
+            ("avi", None, "mpeg4", "video/x-msvideo"),
+            ("something_new", None, "h264", None),
+        ],
+    )
+    def test_reads_the_container_from_the_file_not_its_name(
+        self, demuxer: str, brand: str | None, codec: str, expected: str | None
+    ) -> None:
+        tags = {} if brand is None else {"major_brand": brand}
+        data = {"format": {"format_name": demuxer, "tags": tags}, "streams": [{"codec_name": codec}]}
+        assert input_checks._video_mime_type(data) == expected
+
+    def test_refuses_a_codec_by_the_name_artists_know(self) -> None:
+        error = check_video_codec("hevc", subject=SUBJECT, allowed=("h264",))
+        assert str(error) == f"{SUBJECT} is encoded as H.265. Re-encode it as H.264."
+
+    def test_allows_a_listed_codec_and_skips_an_unread_one(self) -> None:
+        assert check_video_codec("h264", subject=SUBJECT, allowed=("h264", "hevc")) is None
+        assert check_video_codec(None, subject=SUBJECT, allowed=("h264",)) is None
+
+    def test_refuses_codecs_given_as_one_string(self) -> None:
+        with pytest.raises(TypeError, match="pass a tuple"):
+            check_video_codec("h264", subject=SUBJECT, allowed="h264")
 
 
 class TestCheckMimeType:

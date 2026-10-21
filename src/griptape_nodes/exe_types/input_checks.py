@@ -83,6 +83,7 @@ __all__ = [
     "check_frame_rate",
     "check_mime_type",
     "check_size",
+    "check_video_codec",
     "image_errors",
     "input_check_budget",
     "input_subject",
@@ -249,6 +250,8 @@ class VideoProbe(NamedTuple):
     `container_seconds` keeps it so a minimum can be checked against the longer of the two.
     `fps` is the average frame rate and `nominal_fps` the stream's declared one; they differ only
     for a variable-frame-rate clip, so each frame-rate bound is checked against the easier of them.
+    `mime_type` is the container, such as "video/mp4" or "video/quicktime", read from the file rather
+    than its name, and `codec` the video stream's, as ffprobe names it, such as "h264" or "hevc".
     Each part is None when ffprobe didn't report it.
     """
 
@@ -257,6 +260,8 @@ class VideoProbe(NamedTuple):
     fps: float | None = None
     container_seconds: float | None = None
     nominal_fps: float | None = None
+    mime_type: str | None = None
+    codec: str | None = None
 
     @property
     def shortest_seconds(self) -> float | None:
@@ -329,6 +334,8 @@ def local_video_probe(value: Any) -> VideoProbe | None:
         fps=_frame_rate(data),
         container_seconds=container_seconds,
         nominal_fps=_nominal_frame_rate(data),
+        mime_type=_video_mime_type(data),
+        codec=_video_codec(data),
     )
 
 
@@ -527,6 +534,33 @@ def check_mime_type(
     return _error(f"{subject} is in {current} format. Convert it to {formats}.", docs_url)
 
 
+def check_video_codec(
+    codec: str | None, *, subject: str, allowed: Sequence[str], docs_url: str | None = None
+) -> NodeError | None:
+    """An error when a video's codec isn't one the provider accepts.
+
+    Args:
+        codec: The video stream's codec as ffprobe names it, from `local_video_probe`, such as "h264".
+            None skips the check.
+        subject: The input, from `input_subject`.
+        allowed: The codecs the provider accepts, as ffprobe names them, such as ("h264", "hevc").
+        docs_url: The provider's page documenting the limit.
+
+    Raises:
+        TypeError: If `allowed` is a single string rather than a sequence of codecs.
+    """
+    if isinstance(allowed, str):
+        msg = (
+            "Attempted to check a video codec. Failed because the allowed codecs were one string; "
+            "pass a tuple such as ('h264',)."
+        )
+        raise TypeError(msg)
+    if codec is None or codec in allowed:
+        return None
+    codecs = _join_or([_codec_name(name) for name in allowed])
+    return _error(f"{subject} is encoded as {_codec_name(codec)}. Re-encode it as {codecs}.", docs_url)
+
+
 def check_duration(  # noqa: PLR0913
     seconds: float | None,
     *,
@@ -703,6 +737,8 @@ def video_errors(  # noqa: PLR0913
     exact_aspect_ratios: Sequence[str] = (),
     min_fps: float | None = None,
     max_fps: float | None = None,
+    allowed_mime_types: Sequence[str] = (),
+    allowed_codecs: Sequence[str] = (),
     duration_fix: str | None = None,
     docs_url: str | None = None,
     probe: VideoProbe | None = _PROBE_NOT_GIVEN,
@@ -733,6 +769,10 @@ def video_errors(  # noqa: PLR0913
             ratios, such as ("16:9", "9:16"). See `check_aspect_ratio_exact`.
         min_fps: The lowest frame rate accepted.
         max_fps: The highest frame rate accepted.
+        allowed_mime_types: The containers the provider accepts, such as ("video/mp4", "video/quicktime").
+            The container is read from the file, so a MOV renamed to .mp4 is still a MOV.
+        allowed_codecs: The video codecs the provider accepts, as ffprobe names them, such as
+            ("h264", "hevc").
         duration_fix: What the artist can do about a clip of the wrong length. Defaults to
             `check_duration`'s.
         docs_url: The provider's page documenting the limits.
@@ -742,10 +782,12 @@ def video_errors(  # noqa: PLR0913
 
     Raises:
         ValueError: If only one of `widest` and `tallest` is given, or one isn't a ratio such as "16:9".
+        TypeError: If `allowed_mime_types` or `allowed_codecs` is a single string.
     """
     _require_valid_aspect_ratio_bounds(widest, tallest)
     if exact_aspect_ratios:
         _require_valid_exact_ratios(exact_aspect_ratios)
+    _require_mime_type_sequence(allowed_mime_types)
     errors: list[NodeError | None] = []
     if maximum_bytes is not None:
         errors.append(
@@ -766,13 +808,23 @@ def video_errors(  # noqa: PLR0913
         or bool(exact_aspect_ratios)
     )
     needs_fps = min_fps is not None or max_fps is not None
-    if min_seconds is None and max_seconds is None and not needs_frame and not needs_fps:
+    needs_encoding = bool(allowed_mime_types) or bool(allowed_codecs)
+    if min_seconds is None and max_seconds is None and not needs_frame and not needs_fps and not needs_encoding:
         return [error for error in errors if error]
     if probe is _PROBE_NOT_GIVEN:
         probe = local_video_probe(video)
     info = None
     if probe is not None:
         info = probe.info
+    errors.extend(
+        _encoding_errors(
+            probe,
+            subject=subject,
+            allowed_mime_types=allowed_mime_types,
+            allowed_codecs=allowed_codecs,
+            docs_url=docs_url,
+        )
+    )
     errors.extend(
         _duration_errors(
             probe,
@@ -805,6 +857,28 @@ def video_errors(  # noqa: PLR0913
     if min_fps is not None:
         errors.append(check_frame_rate(max(rates, default=None), subject=subject, minimum=min_fps, docs_url=docs_url))
     return [error for error in errors if error]
+
+
+def _encoding_errors(
+    probe: VideoProbe | None,
+    *,
+    subject: str,
+    allowed_mime_types: Sequence[str],
+    allowed_codecs: Sequence[str],
+    docs_url: str | None,
+) -> list[NodeError | None]:
+    """`video_errors`' container and codec checks, for those whose limits are given."""
+    mime_type = None
+    codec = None
+    if probe is not None:
+        mime_type = probe.mime_type
+        codec = probe.codec
+    errors: list[NodeError | None] = []
+    if allowed_mime_types:
+        errors.append(check_mime_type(mime_type, subject=subject, allowed=allowed_mime_types, docs_url=docs_url))
+    if allowed_codecs:
+        errors.append(check_video_codec(codec, subject=subject, allowed=allowed_codecs, docs_url=docs_url))
+    return errors
 
 
 def _frame_errors(  # noqa: PLR0913
@@ -1057,6 +1131,53 @@ def _first_stream(data: dict[str, Any]) -> dict[str, Any]:
     return streams[0]
 
 
+def _video_codec(data: dict[str, Any]) -> str | None:
+    """The first video stream's codec in ffprobe's JSON, such as "h264", or None."""
+    codec = _first_stream(data).get("codec_name")
+    if isinstance(codec, str) and codec:
+        return codec
+    return None
+
+
+def _video_mime_type(data: dict[str, Any]) -> str | None:
+    """A video's container as a MIME type, read from ffprobe's JSON, or None if it's one not named here.
+
+    ffprobe names MP4, MOV and 3GP with one demuxer ("mov,mp4,m4a,3gp,3g2,mj2"), and MKV and WebM with
+    another, so the file's brand tells MP4 from MOV, and the codec WebM from MKV.
+    """
+    format_info = data.get("format")
+    if not isinstance(format_info, dict):
+        return None
+    demuxer = format_info.get("format_name")
+    if not isinstance(demuxer, str):
+        return None
+    if demuxer.startswith("mov,"):
+        brand = format_info.get("tags", {}).get("major_brand")
+        return _iso_media_mime_type(brand)
+    if demuxer.startswith("matroska"):
+        if _video_codec(data) in _WEBM_VIDEO_CODECS:
+            return "video/webm"
+        return "video/x-matroska"
+    return _DEMUXER_MIME_TYPES.get(demuxer)
+
+
+def _iso_media_mime_type(brand: Any) -> str:
+    """The MIME type an ISO media file's major brand names.
+
+    A file with no brand is old QuickTime, so it reads as MOV, like one branded "qt".
+    """
+    if not isinstance(brand, str):
+        return "video/quicktime"
+    brand = brand.strip().lower()
+    if brand in {"", "qt"}:
+        return "video/quicktime"
+    if brand.startswith("3gp"):
+        return "video/3gpp"
+    if brand.startswith("3g2"):
+        return "video/3gpp2"
+    return "video/mp4"
+
+
 def _frame_size(data: dict[str, Any]) -> ImageInfo | None:
     """The displayed frame size in ffprobe's JSON for the first video stream, or None."""
     streams = data.get("streams")
@@ -1209,6 +1330,19 @@ def _format_past(value: float, limit: float, decimals: int) -> str:
 # Formats whose MIME subtype isn't the name an artist knows them by.
 _HEIF_MIME_TYPES = frozenset({"image/heic", "image/heif"})
 
+# Video codecs a WebM file may carry; Matroska with any other codec is an MKV.
+_WEBM_VIDEO_CODECS = frozenset({"vp8", "vp9", "av1"})
+
+# ffprobe demuxer names for containers that name one format each.
+_DEMUXER_MIME_TYPES = {
+    "avi": "video/x-msvideo",
+    "flv": "video/x-flv",
+    "mpegts": "video/mp2t",
+    "mpeg": "video/mpeg",
+    "asf": "video/x-ms-wmv",
+    "gif": "image/gif",
+}
+
 _FORMAT_NAMES = {
     "image/vnd.adobe.photoshop": "PSD",
     "image/x-portable-anymap": "PPM",
@@ -1216,7 +1350,35 @@ _FORMAT_NAMES = {
     "video/quicktime": "MOV",
     "video/x-matroska": "MKV",
     "video/x-msvideo": "AVI",
+    "video/webm": "WebM",
+    "video/3gpp": "3GP",
+    "video/3gpp2": "3G2",
+    "video/mp2t": "MPEG-TS",
+    "video/x-ms-wmv": "WMV",
 }
+
+
+# ffprobe's codec names that aren't the name an artist knows a codec by.
+_CODEC_NAMES = {
+    "h264": "H.264",
+    "hevc": "H.265",
+    "av1": "AV1",
+    "vp8": "VP8",
+    "vp9": "VP9",
+    "prores": "ProRes",
+    "mpeg4": "MPEG-4",
+    "mpeg2video": "MPEG-2",
+    "mjpeg": "Motion JPEG",
+    "dnxhd": "DNxHD",
+}
+
+
+def _codec_name(codec: str) -> str:
+    """A codec as a message shows it: ffprobe's "hevc" reads "H.265"."""
+    known = _CODEC_NAMES.get(codec)
+    if known:
+        return known
+    return codec.upper()
 
 
 def _format_name(mime_type: str) -> str:
