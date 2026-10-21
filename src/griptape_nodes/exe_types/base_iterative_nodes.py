@@ -601,8 +601,9 @@ class BaseIterativeEndNode(BaseNode):
     conditional evaluation, and result accumulation logic used by iterative loop end nodes.
     """
 
-    # Mirrors the loop's tethering connection, and is set again from it whenever that connection is made.
-    attributes_outside_parameters = frozenset({"start_node"})
+    # Each mirrors a connection, the loop's tether and the one from `results`, and is set again from it
+    # whenever that connection is made.
+    attributes_outside_parameters = frozenset({"start_node", "results_output"})
 
     start_node: BaseIterativeStartNode | None = None
 
