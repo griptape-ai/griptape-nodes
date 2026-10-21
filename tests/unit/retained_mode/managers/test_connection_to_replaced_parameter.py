@@ -1,7 +1,8 @@
-"""A connection into a parameter its node replaced with a same-named one can still be edited.
+"""A connection into a parameter its node replaced or removed locally can still be edited.
 
 Nodes that rebuild parameters while loading remove and re-add them locally, without requests. The
-connection keeps the Parameter it was made to, and finds the node's current one by name.
+connection keeps the Parameter it was made to, and finds the node's current one by name. When the node
+no longer has the parameter at all, the connection can still be deleted, and so can its nodes and flow.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.node_library.library_registry import LibraryMetadata, LibraryRegistry, LibrarySchema, NodeMetadata
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
@@ -21,7 +22,12 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
 )
-from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, CreateFlowResultSuccess
+from griptape_nodes.retained_mode.events.flow_events import (
+    CreateFlowRequest,
+    CreateFlowResultSuccess,
+    DeleteFlowRequest,
+    DeleteFlowResultSuccess,
+)
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     CreateNodeResultSuccess,
@@ -62,6 +68,35 @@ class _ValueNode(DataNode):
 @pytest.fixture
 def connected_nodes(engine: Engine) -> Iterator[None]:
     """Node "first" connected into "target", whose "value" is then replaced locally, and an unconnected "second"."""
+    target = _connect_first_into_target(engine)
+    original = target.get_parameter_by_name("value")
+    assert original is not None
+    target.remove_parameter_element(original)
+    target.add_parameter(_value_parameter())
+    assert target.get_parameter_by_name("value") is not original
+    try:
+        yield
+    finally:
+        engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+        LibraryRegistry._clear()
+
+
+@pytest.fixture
+def connection_to_removed_parameter(engine: Engine) -> Iterator[None]:
+    """Node "first" connected into "target", whose "value" is then removed locally and not added back."""
+    target = _connect_first_into_target(engine)
+    original = target.get_parameter_by_name("value")
+    assert original is not None
+    target.remove_parameter_element(original)
+    try:
+        yield
+    finally:
+        engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+        LibraryRegistry._clear()
+
+
+def _connect_first_into_target(engine: Engine) -> BaseNode:
+    """Nodes "first", "second" and "target" in flow "main", with "first" connected into "target". Returns "target"."""
     engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
     LibraryRegistry._clear()
     schema = LibrarySchema(
@@ -82,18 +117,7 @@ def connected_nodes(engine: Engine) -> Iterator[None]:
         created = engine.handle_request(CreateNodeRequest(node_type="_ValueNode", node_name=name))
         assert isinstance(created, CreateNodeResultSuccess), created
     _connect(engine, "first")
-
-    target = engine.node_manager.get_node_by_name("target")
-    original = target.get_parameter_by_name("value")
-    assert original is not None
-    target.remove_parameter_element(original)
-    target.add_parameter(_value_parameter())
-    assert target.get_parameter_by_name("value") is not original
-    try:
-        yield
-    finally:
-        engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
-        LibraryRegistry._clear()
+    return engine.node_manager.get_node_by_name("target")
 
 
 def _connect(engine: Engine, source: str) -> CreateConnectionResultSuccess:
@@ -141,3 +165,30 @@ class TestConnectionToReplacedParameter:
         result = engine.handle_request(DeleteNodeRequest(node_name="target"))
 
         assert isinstance(result, DeleteNodeResultSuccess), result
+
+
+@pytest.mark.usefixtures("connection_to_removed_parameter")
+class TestConnectionToRemovedParameter:
+    def test_the_connection_can_be_deleted(self, engine: Engine) -> None:
+        result = engine.handle_request(
+            DeleteConnectionRequest(
+                source_node_name="first",
+                source_parameter_name="value",
+                target_node_name="target",
+                target_parameter_name="value",
+            )
+        )
+
+        assert isinstance(result, DeleteConnectionResultSuccess), result
+        assert _incoming_sources(engine) == []
+
+    @pytest.mark.parametrize("node_name", ["target", "first"])
+    def test_either_node_can_be_deleted(self, engine: Engine, node_name: str) -> None:
+        result = engine.handle_request(DeleteNodeRequest(node_name=node_name))
+
+        assert isinstance(result, DeleteNodeResultSuccess), result
+
+    def test_the_flow_can_be_deleted(self, engine: Engine) -> None:
+        result = engine.handle_request(DeleteFlowRequest(flow_name="main"))
+
+        assert isinstance(result, DeleteFlowResultSuccess), result
