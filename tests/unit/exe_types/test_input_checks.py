@@ -970,7 +970,19 @@ class TestCheckAspectRatioExact:
 
     @pytest.mark.parametrize(
         ("width", "height"),
-        [(1920, 1080), (3840, 2160), (1280, 720), (854, 480), (1366, 768), (426, 240), (1080, 1920), (480, 854)],
+        [
+            (1920, 1080),
+            (3840, 2160),
+            (1280, 720),
+            (854, 480),
+            (1366, 768),
+            (426, 240),
+            (1080, 1920),
+            (480, 854),
+            # Portrait frames scaled with the width rounded, as ffmpeg's scale=-2:720 does.
+            (406, 720),
+            (270, 480),
+        ],
     )
     def test_allows_a_listed_ratio_including_sizes_rounded_to_whole_pixels(self, width: int, height: int) -> None:
         assert check_aspect_ratio_exact(ImageInfo(width, height, None), subject=SUBJECT, ratios=self.RATIOS) is None
@@ -1156,6 +1168,36 @@ class TestCheckMimeType:
     def test_refuses_allowed_formats_given_as_one_string(self) -> None:
         with pytest.raises(TypeError, match="pass a tuple"):
             check_mime_type("image/gif", subject=SUBJECT, allowed="image/png, image/jpeg")
+
+    @pytest.mark.parametrize(
+        ("mime_type", "allowed"),
+        [
+            ("audio/mpeg", ("audio/mp3",)),
+            ("audio/wav", ("audio/x-wav", "audio/mpeg")),
+            ("audio/wav", ("audio/wave",)),
+            ("audio/mp4", ("audio/x-m4a",)),
+            ("audio/flac", ("audio/x-flac",)),
+            ("image/heif", ("image/heic",)),
+        ],
+    )
+    def test_accepts_a_format_under_another_name_a_provider_writes(
+        self, mime_type: str, allowed: tuple[str, ...]
+    ) -> None:
+        assert check_mime_type(mime_type, subject=SUBJECT, allowed=allowed) is None
+
+    def test_still_refuses_a_different_format_under_an_alias(self) -> None:
+        error = check_mime_type("audio/flac", subject=SUBJECT, allowed=("audio/mp3", "audio/x-wav"))
+        assert str(error) == f"{SUBJECT} is in FLAC format. Convert it to MP3 or WAV."
+
+    def test_lists_each_format_once_under_the_name_the_provider_wrote(self) -> None:
+        assert (
+            str(check_mime_type("image/gif", subject=SUBJECT, allowed=("image/jpeg", "image/heic", "image/heif")))
+            == f"{SUBJECT} is in GIF format. Convert it to JPEG, HEIC or HEIF."
+        )
+        assert (
+            str(check_mime_type("audio/flac", subject=SUBJECT, allowed=("audio/wav", "audio/x-wav", "audio/mp3")))
+            == f"{SUBJECT} is in FLAC format. Convert it to WAV or MP3."
+        )
 
 
 class TestCheckDuration:

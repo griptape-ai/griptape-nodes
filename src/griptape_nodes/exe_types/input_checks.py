@@ -180,7 +180,7 @@ def local_image_info(value: Any) -> ImageInfo | None:
 
     Reads only the image header (Pillow reads a WebP or AVIF file in full, without decoding it), and
     reports the size as displayed, so a phone photo stored landscape with an EXIF rotation reads as
-    portrait. Returns None for a remote URL, for a format Pillow can't open (HEIC, say), and for an
+    portrait. Returns None for a remote URL, for a format Pillow can't open (a RAW camera file, say), and for an
     image over Pillow's decompression-bomb limit (about 179 megapixels), which Pillow refuses to open
     without decoding anything. The checks that use it then skip, rather than reject a valid image or
     override a process-wide Pillow setting.
@@ -550,8 +550,8 @@ def check_aspect_ratio_exact(
     """An error when an image or video frame isn't one of the exact aspect ratios the provider accepts.
 
     For a provider that takes only certain shapes, such as "16:9 or 9:16", rather than a range. A
-    frame matches a ratio when its height is that ratio's height for its width, give or take a pixel,
-    so a size rounded to whole pixels such as 854x480 still reads as 16:9.
+    frame matches a ratio when either side is within a pixel of what the ratio makes it from the other,
+    so a size rounded to whole pixels, such as 854x480 for 16:9 or 406x720 for 9:16, still matches.
 
     Args:
         info: The pixel size, from `local_image_info` or a `local_video_probe` result's `info`. None skips
@@ -568,7 +568,9 @@ def check_aspect_ratio_exact(
     if info is None or info.height == 0:
         return None
     for name in ratios:
-        if abs(info.width / _parse_ratio(name) - info.height) <= 1:
+        ratio = _parse_ratio(name)
+        # Allow a pixel of rounding on whichever side was derived from the other.
+        if abs(info.width / ratio - info.height) <= 1 or abs(info.height * ratio - info.width) <= 1:
             return None
     return _error(
         f"{subject} is {info.width}x{info.height}, and its aspect ratio must be {_join_or(list(ratios))}. Crop it.",
@@ -593,7 +595,8 @@ def check_mime_type(
     _require_mime_type_sequence(allowed)
     if mime_type is None or _is_allowed(mime_type, allowed):
         return None
-    formats = _join_or([_format_name(name) for name in allowed])
+    # Names that differ but read the same, such as audio/wav and audio/x-wav, are listed once.
+    formats = _join_or(list(dict.fromkeys(_format_name(name) for name in allowed)))
     current = _format_name(mime_type)
     return _error(f"{subject} is in {current} format. Convert it to {formats}.", docs_url)
 
@@ -613,16 +616,7 @@ def check_video_codec(
     Raises:
         TypeError: If `allowed` is a single string rather than a sequence of codecs.
     """
-    if isinstance(allowed, str):
-        msg = (
-            "Attempted to check a video codec. Failed because the allowed codecs were one string; "
-            "pass a tuple such as ('h264',)."
-        )
-        raise TypeError(msg)
-    if codec is None or codec in allowed:
-        return None
-    codecs = _join_or([_codec_name(name) for name in allowed])
-    return _error(f"{subject} is encoded as {_codec_name(codec)}. Re-encode it as {codecs}.", docs_url)
+    return _codec_error(codec, kind="a video", example="h264", subject=subject, allowed=allowed, docs_url=docs_url)
 
 
 def check_audio_codec(
@@ -640,16 +634,7 @@ def check_audio_codec(
     Raises:
         TypeError: If `allowed` is a single string rather than a sequence of codecs.
     """
-    if isinstance(allowed, str):
-        msg = (
-            "Attempted to check an audio codec. Failed because the allowed codecs were one string; "
-            "pass a tuple such as ('mp3',)."
-        )
-        raise TypeError(msg)
-    if codec is None or codec in allowed:
-        return None
-    codecs = _join_or([_codec_name(name) for name in allowed])
-    return _error(f"{subject} is encoded as {_codec_name(codec)}. Re-encode it as {codecs}.", docs_url)
+    return _codec_error(codec, kind="an audio", example="mp3", subject=subject, allowed=allowed, docs_url=docs_url)
 
 
 def check_duration(  # noqa: PLR0913
@@ -1027,6 +1012,22 @@ def audio_errors(  # noqa: PLR0913
     return [error for error in errors if error]
 
 
+def _codec_error(  # noqa: PLR0913
+    codec: str | None, *, kind: str, example: str, subject: str, allowed: Sequence[str], docs_url: str | None
+) -> NodeError | None:
+    """`check_video_codec` and `check_audio_codec`: `kind` and `example` only shape the TypeError."""
+    if isinstance(allowed, str):
+        msg = (
+            f"Attempted to check {kind} codec. Failed because the allowed codecs were one string; "
+            f"pass a tuple such as ('{example}',)."
+        )
+        raise TypeError(msg)
+    if codec is None or codec in allowed:
+        return None
+    codecs = _join_or([_codec_name(name) for name in allowed])
+    return _error(f"{subject} is encoded as {_codec_name(codec)}. Re-encode it as {codecs}.", docs_url)
+
+
 def _encoding_errors(
     probe: VideoProbe | None,
     *,
@@ -1120,16 +1121,19 @@ def _frame_rates(probe: VideoProbe | None) -> list[float]:
 
 
 def _is_allowed(mime_type: str, allowed: Sequence[str]) -> bool:
-    """Whether a MIME type is one the provider accepts.
+    """Whether a MIME type is one the provider accepts, under any name the provider writes it as.
 
-    HEIC and HEIF share one container, which Pillow names HEIF, and providers list one, the other or
-    both, so either name accepts a HEIF image.
+    Providers and Python's `mimetypes` give some formats other names than the readers return, such
+    as "audio/mp3" for "audio/mpeg" or "image/heic" for "image/heif", so both sides are compared by
+    their usual name.
     """
-    if mime_type in allowed:
-        return True
-    if mime_type in _HEIF_MIME_TYPES:
-        return any(name in _HEIF_MIME_TYPES for name in allowed)
-    return False
+    canonical = _canonical_mime_type(mime_type)
+    return any(_canonical_mime_type(name) == canonical for name in allowed)
+
+
+def _canonical_mime_type(mime_type: str) -> str:
+    """A MIME type's usual name, so its other names compare equal to it."""
+    return _MIME_ALIASES.get(mime_type, mime_type)
 
 
 def _require_mime_type_sequence(allowed: Sequence[str]) -> None:
@@ -1292,7 +1296,7 @@ def _local_path(location: str) -> Path | None:
 
 
 def _first_stream(data: dict[str, Any]) -> dict[str, Any]:
-    """The first video stream in ffprobe's JSON, or an empty dict when there is none."""
+    """The first stream ffprobe selected, or an empty dict when there is none."""
     streams = data.get("streams")
     if not streams:
         return {}
@@ -1526,7 +1530,21 @@ def _format_past(value: float, limit: float, decimals: int) -> str:
 
 
 # Formats whose MIME subtype isn't the name an artist knows them by.
-_HEIF_MIME_TYPES = frozenset({"image/heic", "image/heif"})
+# Other names providers and `mimetypes` use for a format, mapped to the one the readers return.
+# HEIC and HEIF share one container, which Pillow names HEIF.
+_MIME_ALIASES = {
+    "image/heic": "image/heif",
+    "audio/mp3": "audio/mpeg",
+    "audio/x-mpeg": "audio/mpeg",
+    "audio/x-wav": "audio/wav",
+    "audio/wave": "audio/wav",
+    "audio/vnd.wave": "audio/wav",
+    "audio/x-m4a": "audio/mp4",
+    "audio/m4a": "audio/mp4",
+    "audio/x-flac": "audio/flac",
+    "audio/x-aiff": "audio/aiff",
+    "audio/x-aac": "audio/aac",
+}
 
 # Video codecs a WebM file may carry; Matroska with any other codec is an MKV.
 _WEBM_VIDEO_CODECS = frozenset({"vp8", "vp9", "av1"})
@@ -1568,6 +1586,12 @@ _FORMAT_NAMES = {
     "audio/mp4": "M4A",
     "audio/wav": "WAV",
     "audio/x-wav": "WAV",
+    "audio/wave": "WAV",
+    "audio/vnd.wave": "WAV",
+    "audio/mp3": "MP3",
+    "audio/x-mpeg": "MP3",
+    "audio/x-m4a": "M4A",
+    "audio/m4a": "M4A",
     "audio/ogg": "OGG",
     "audio/webm": "WebM",
     "audio/aiff": "AIFF",
