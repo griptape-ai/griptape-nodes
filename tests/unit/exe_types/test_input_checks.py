@@ -1390,6 +1390,12 @@ CODEC_SPELLINGS_ACCEPTED = [
     ("speex", "SPEEX_WITH_HEADER_BYTE"),
     ("pcm_s16le", "Linear PCM (WAV)"),
     ("pcm_s16le", "16-bit PCM"),
+    ("opus", "ogg-opus"),
+    ("pcm_mulaw", "μ-law"),
+    ("pcm_mulaw", "8-bit μ-law"),
+    ("pcm_mulaw", "PCMU"),
+    ("pcm_alaw", "PCMA"),
+    ("pcm_s16le", "L16"),
 ]
 CODEC_SPELLINGS_REFUSED = [
     ("mpeg4", "H.264 (MPEG-4 AVC)"),
@@ -1421,6 +1427,10 @@ CODEC_SPELLINGS_REFUSED = [
     ("pcm_mulaw", "16-bit PCM"),
     ("pcm_s16le", "g711_ulaw"),
     ("h264", "H.263"),
+    ("vorbis", "ogg-opus"),
+    ("pcm_alaw", "μ-law"),
+    ("pcm_mulaw", "PCMA"),
+    ("pcm_mulaw", "L16"),
 ]
 
 
@@ -1432,6 +1442,10 @@ class TestCodecSpellings:
     @pytest.mark.parametrize(("codec", "written"), CODEC_SPELLINGS_REFUSED)
     def test_refuses_a_codec_it_does_not_name(self, codec: str, written: str) -> None:
         assert not input_checks._codec_matches(codec, written)
+
+    def test_shows_a_provider_written_name_with_non_ascii_letters_as_written(self) -> None:
+        error = check_audio_codec("flac", subject=SUBJECT, allowed=("μ-law",))
+        assert str(error) == f"{SUBJECT} is encoded as FLAC. Re-encode it as G.711 μ-law."
 
 
 class TestCheckMimeType:

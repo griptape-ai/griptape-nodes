@@ -1819,6 +1819,8 @@ _CODEC_ALIASES = {
     "mpeglayer3": "mp3",
     "dnxhr": "dnxhd",
     "pcm16": "pcm_s16le",
+    "pcmu": "pcm_mulaw",
+    "pcma": "pcm_alaw",
     "mpegaudiolayeriii": "mp3",
     "mpeg2audiolayeriii": "mp3",
     "mpeg1layeriii": "mp3",
@@ -1837,7 +1839,7 @@ _CODEC_ALIASES = {
 # Words a provider writes for PCM without naming a bit depth or byte order. "PCM" and "WAV" accept any
 # PCM codec; the "linear" ones exclude companded PCM (G.711 mu-law and A-law), which isn't linear.
 _GENERIC_PCM_WORDS = frozenset({"pcm", "wav", "wave", "uncompressed"})
-_LINEAR_PCM_WORDS = frozenset({"lpcm", "linearpcm", "linear16"})
+_LINEAR_PCM_WORDS = frozenset({"lpcm", "linearpcm", "linear16", "l16"})
 # ffprobe's prefixes for linear PCM: signed, unsigned and float samples.
 _LINEAR_PCM_PREFIXES = ("pcm_s", "pcm_u", "pcm_f")
 _LINEAR_PCM_PHRASE = re.compile(r"linear[\s_-]*pcm", re.IGNORECASE)
@@ -1962,6 +1964,10 @@ def _codecs_named_by_words(written: str) -> set[str]:
         candidate = _canonical_codec(word)
         if _is_known_codec(candidate):
             named.add(candidate)
+        elif "-" in word:
+            # A hyphenated word that isn't one codec ("ogg-opus", as Deepgram and AWS write it) is
+            # read part by part. Whole names such as "AC-3" and "AAC-LC" matched above first.
+            named |= _codecs_named_by_words(word.replace("-", " "))
     return named
 
 
@@ -1983,8 +1989,11 @@ def _canonical_codec(name: str) -> str:
 
 
 def _squash(name: str) -> str:
-    """A name without case, spaces or punctuation, so "AC-3", "ac3" and "AC 3" compare equal."""
-    return _NON_ALPHANUMERIC.sub("", name.lower())
+    """A name without case, spaces or punctuation, so "AC-3", "ac3" and "AC 3" compare equal.
+
+    The micro sign and Greek mu read as "mu", so "μ-law" squashes to "mulaw" rather than "law".
+    """
+    return _NON_ALPHANUMERIC.sub("", name.lower().replace("μ", "mu").replace("µ", "mu"))
 
 
 def _codec_name(codec: str) -> str:
@@ -1992,8 +2001,9 @@ def _codec_name(codec: str) -> str:
     known = _CODEC_NAMES.get(_canonical_codec(codec))
     if known:
         return known
-    # ffprobe writes codecs in lowercase ("vp9"); a name a provider wrote ("Apple ProRes") keeps its case.
-    if codec == codec.lower():
+    # ffprobe writes codecs in lowercase ASCII ("vp9"); a name a provider wrote ("Apple ProRes",
+    # "μ-law") keeps its case.
+    if codec == codec.lower() and codec.isascii():
         return codec.upper()
     return codec
 
