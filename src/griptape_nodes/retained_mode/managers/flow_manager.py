@@ -37,6 +37,7 @@ from griptape_nodes.exe_types.node_types import (
 )
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder, DagNodeCategories, NodeState
+from griptape_nodes.machines.upfront_validation import validate_nodes_with_known_inputs
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType
 from griptape_nodes.retained_mode.engine import EngineScoped
@@ -73,6 +74,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     GetIsFlowRunningResultFailure,
     GetIsFlowRunningResultSuccess,
     InvolvedNodesEvent,
+    NodeErrorEvent,
     SingleExecutionStepRequest,
     SingleExecutionStepResultFailure,
     SingleExecutionStepResultSuccess,
@@ -143,6 +145,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
     SetFlowMetadataResultFailure,
     SetFlowMetadataResultSuccess,
 )
+from griptape_nodes.retained_mode.events.node_error_details import build_node_error_details
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     DeleteNodeRequest,
@@ -3298,11 +3301,27 @@ class FlowManager(EngineScoped):
         else:
             nodes = flow.nodes.values()
         # If we're just running the whole flow
+        nodes = list(nodes)
         all_exceptions = []
         for node in nodes:
             exceptions = node.validate_before_workflow_run()
             if exceptions:
                 all_exceptions = all_exceptions + exceptions
+        # Nodes whose inputs are already known are checked now, so a bad input stops the run before
+        # anything runs, and every such problem is reported at once, each on its node.
+        for failure in validate_nodes_with_known_inputs(nodes, self.get_connections()):
+            all_exceptions = all_exceptions + failure.exceptions
+            await self.engine.event_manager.aput_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(
+                        payload=NodeErrorEvent(
+                            node_name=failure.node.name,
+                            error_message=str(failure.exceptions),
+                            error=build_node_error_details(failure.node.name, failure.exceptions),
+                        )
+                    )
+                )
+            )
         return ValidateFlowDependenciesResultSuccess(
             validation_succeeded=len(all_exceptions) == 0,
             exceptions=all_exceptions,

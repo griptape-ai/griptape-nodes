@@ -133,6 +133,11 @@ _in_aprocess: ContextVar[bool] = ContextVar("_node_types_in_aprocess", default=F
 # node, and on that node the value is an ordinary authored one, not something it produced.
 _running_node: ContextVar[BaseNode | None] = ContextVar("_node_types_running_node", default=None)
 
+# Input values handed to a node's validation without being stored on it, keyed by node name and then
+# parameter name. Set only inside `BaseNode.reading_inputs`, so a check before the flow starts can see
+# the values its upstream nodes will give it without marking anything unresolved.
+_provided_inputs: ContextVar[dict[str, dict[str, Any]] | None] = ContextVar("_node_types_provided_inputs", default=None)
+
 
 class _PreservedTemplate(NamedTuple):
     """A stored {VAR} template that must survive a resolved output value.
@@ -1255,6 +1260,11 @@ class BaseNode(ABC):
         value rather than storing it overrides this rather than the public wrapper -- an override there
         would be bypassed by every one of them.
         """
+        provided = _provided_inputs.get()
+        if provided is not None:
+            node_values = provided.get(self.name)
+            if node_values is not None and param_name in node_values:
+                return node_values[param_name]
         param = self.get_parameter_by_name(param_name)
         if param is None:
             return None
@@ -1415,6 +1425,27 @@ class BaseNode(ABC):
                     )
                     break
         return None
+
+    @contextmanager
+    def reading_inputs(self, values: dict[str, Any]) -> Iterator[None]:
+        """Read `values` as these parameters' values inside the block, without storing them.
+
+        Lets the engine run this node's validation before the flow starts against the values its
+        upstream nodes will give it. Nothing is set: no node is marked unresolved, no value is passed
+        downstream, and `after_value_set` doesn't fire. Every read goes through
+        `_get_raw_parameter_value`, so `get_parameter_value`, `get_parameter_list_value` and a list's
+        rows all see the provided values.
+
+        Args:
+            values: Parameter name to the value to read for it. A list's row is keyed by the row's
+                own parameter name.
+        """
+        current = _provided_inputs.get() or {}
+        token = _provided_inputs.set({**current, self.name: {**current.get(self.name, {}), **values}})
+        try:
+            yield
+        finally:
+            _provided_inputs.reset(token)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Runs on the ORCHESTRATOR, immediately before this node is dispatched.
