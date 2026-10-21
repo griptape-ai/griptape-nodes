@@ -8,6 +8,8 @@ from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.files.path_utils import canonicalize_for_identity
 from griptape_nodes.node_library.workflow_registry import (
     DuplicateWorkflowIdError,
+    UnknownWorkflowAddressError,
+    WorkflowAddressError,
     WorkflowMetadata,
     WorkflowMetadataError,
     WorkflowRegistryError,
@@ -276,7 +278,8 @@ class ContextManager(EngineScoped):
     def on_set_workflow_context_request(self, request: SetWorkflowContextRequest) -> ResultPayload:
         # As of today, we only allow a single Workflow context at a time. This may change in the future.
         if self.has_current_workflow():
-            msg = f"Attempted to set the Workflow '{request.workflow_name}' as the Current Context. Failed because an existing workflow, '{self.get_current_workflow_name()}', is already in the Current Context. In order to clear the existing workflow and remove all objects and references to it, issue a ClearAllObjectState request."
+            requested = request.workflow_id or request.workflow_name
+            msg = f"Attempted to set the Workflow '{requested}' as the Current Context. Failed because an existing workflow, '{self.get_current_workflow_name()}', is already in the Current Context. In order to clear the existing workflow and remove all objects and references to it, issue a ClearAllObjectState request."
             return SetWorkflowContextFailure(result_details=msg)
 
         # Normalized here rather than at read time so `workflow_dir` never has to care whether
@@ -309,31 +312,37 @@ class ContextManager(EngineScoped):
             workflow_name=workflow.name, workflow_id=workflow.workflow_id, result_details=msg
         )
 
-    def _resolve_workflow_to_set(
+    def _resolve_workflow_to_set(  # noqa: PLR0911
         self, request: SetWorkflowContextRequest, working_directory: str | None
     ) -> Workflow | str:
         """Find or register the workflow a SetWorkflowContextRequest names, or say why it cannot.
 
-        No name registers a new unsaved workflow, so the engine owns the id namespace: callers
-        doing "create a new workflow" omit the name and read it off the success result. An
-        unregistered "unsaved:<id>" name registers an unsaved workflow with that id, so a
-        client that kept the name of a workflow it created gets the same workflow back. Any
-        other name must already be registered.
+        Neither an id nor a name registers a new unsaved workflow, so the engine owns the id
+        namespace: callers doing "create a new workflow" omit both and read them off the success
+        result. An id must be registered. An unregistered "unsaved:<id>" name registers an
+        unsaved workflow with that id, so a client that kept the name of a workflow it created
+        gets the same workflow back. Any other name must already be registered.
         """
         registry = self.engine.workflow_registry
         display_name = request.display_name or "Untitled"
-        if request.workflow_name is None:
+        if request.workflow_id is None and request.workflow_name is None:
             return registry.register_unsaved(display_name, working_directory)
 
-        workflow = registry.find_by_name(request.workflow_name)
-        if workflow is not None:
-            return workflow
-
-        if not request.workflow_name.startswith(registry.UNSAVED_KEY_PREFIX):
-            return (
-                f"Attempted to set the Workflow '{request.workflow_name}' as the Current Context. "
-                "Failed because no workflow has that name."
+        try:
+            return registry.resolve_address(
+                workflow_id=request.workflow_id,
+                workflow_name=request.workflow_name,
+                operation="set the Current Context to",
             )
+        except UnknownWorkflowAddressError as err:
+            unknown_address_error = str(err)
+        except WorkflowAddressError as err:
+            return str(err)
+
+        if request.workflow_name is None or request.workflow_id is not None:
+            return unknown_address_error
+        if not request.workflow_name.startswith(registry.UNSAVED_KEY_PREFIX):
+            return unknown_address_error
         requested_id = registry.unsaved_name_workflow_id(request.workflow_name)
         if requested_id is None:
             return (
@@ -379,6 +388,20 @@ class ContextManager(EngineScoped):
             CreateFlowRequest,
             CreateFlowResultSuccess,
         )
+
+        # An id names one workflow, so a different workflow in context is not an answer. A name
+        # keeps the older, lenient rule: the workflow in context is reused.
+        if (
+            request.workflow_id is not None
+            and self.has_current_workflow()
+            and self.get_current_workflow_id() != request.workflow_id
+        ):
+            return EnsureWorkflowAndFlowResultFailure(
+                result_details=(
+                    f"Attempted to ensure workflow '{request.workflow_id}'. Failed because workflow "
+                    f"'{self.get_current_workflow_name()}' is in the Current Context."
+                )
+            )
 
         created_workflow = False
         if self.has_current_workflow():
@@ -436,12 +459,19 @@ class ContextManager(EngineScoped):
     def _set_workflow_request_for_ensure(self, request: EnsureWorkflowAndFlowRequest) -> SetWorkflowContextRequest:
         """The SetWorkflowContextRequest that creates or enters the workflow an Ensure names.
 
-        A name that is registered, or is an "unsaved:<id>" name, is entered as is. Any other
-        name is the name for a new workflow: Ensure creates one, so it becomes the new unsaved
-        workflow's display name (unless one was given), and the result reports the workflow's
-        own "unsaved:<id>" name.
+        An id is entered as is, and so is a name that is registered or is an "unsaved:<id>"
+        name. Any other name is the name for a new workflow: Ensure creates one, so it becomes
+        the new unsaved workflow's display name (unless one was given), and the result reports
+        the workflow's own "unsaved:<id>" name.
         """
         workflow_name = request.workflow_name
+        if request.workflow_id is not None:
+            return SetWorkflowContextRequest(
+                workflow_id=request.workflow_id,
+                workflow_name=workflow_name,
+                display_name=request.display_name,
+                working_directory=request.working_directory,
+            )
         if workflow_name is None:
             return SetWorkflowContextRequest(
                 display_name=request.display_name, working_directory=request.working_directory

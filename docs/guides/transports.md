@@ -99,9 +99,26 @@ Every transport carries the same requests: the ones the editor sends to create n
 - `request_type` names the request, and `request` holds its fields. For example, `StartFlowRequest` with `{}` runs the flow that's currently open, and `ListFlowsInCurrentContextRequest` lists the flows you can name instead.
 - `request_id` is any string you choose. The result carries it back so you can match the two.
 - `response_topic` is where the result is sent. Choose a name for your program and listen on it (see the next section).
-- `workflow_id` is optional. The editor uses it to name the workflow open in the tab that sent the request, next to `request_id` and never inside `request`. The engine does not act on it yet, and never refuses a request for carrying one, so you can leave it out.
+- `workflow_id` is optional. The editor uses it to name the workflow open in the tab that sent the request, next to `request_id` and never inside `request`. The engine does not act on it yet, and never refuses a request for carrying one, so you can leave it out. A request that works on a saved workflow, such as `RenameWorkflowRequest`, names that workflow with a `workflow_id` inside `request` instead: the id `ListAllWorkflowsRequest` reports for each workflow.
 
 [Retained Mode Scripting](../development/retained_mode.md) describes the same operations from Python inside the editor.
+
+### Naming a saved workflow
+
+Requests that act on a saved workflow name it inside `request` by its `workflow_id`, the id each entry of the `ListAllWorkflowsRequest` result reports. Give the id or the older name field, not both; a request that gives both must name the same workflow. The name fields are deprecated, and are removed once every engine the editor supports reports workflow ids.
+
+| Request                                                                                                                             | Id field                             | Deprecated name field                    |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ---------------------------------------- |
+| `RenameWorkflowRequest`, `MoveWorkflowRequest`, `BranchWorkflowRequest`, `MergeWorkflowBranchRequest`, `ResetWorkflowBranchRequest` | `workflow_id`                        | `workflow_name`                          |
+| `GetWorkflowMetadataRequest`, `SetWorkflowMetadataRequest`, `GetWorkflowInfoRequest`                                                | `workflow_id`                        | `workflow_name`                          |
+| `RunWorkflowFromRegistryRequest`, `GetWorkflowRunCommandRequest`                                                                    | `workflow_id`                        | `workflow_name`                          |
+| `GetPublishOptionsRequest`, `PublishWorkflowRequest`, `SaveSubflowToWorkflowRequest`                                                | `workflow_id`                        | `workflow_name`                          |
+| `SetWorkflowContextRequest`, `EnsureWorkflowAndFlowRequest`                                                                         | `workflow_id`                        | `workflow_name`                          |
+| `DeleteWorkflowRequest`                                                                                                             | `workflow_id`                        | `name`                                   |
+| `CompareWorkflowsRequest`                                                                                                           | `workflow_id`, `compare_workflow_id` | `workflow_name`, `compare_workflow_name` |
+| `CreateWorkflowFromTemplateRequest`                                                                                                 | `template_workflow_id`               | `template_name`                          |
+
+`ImportWorkflowAsReferencedSubFlowRequest` accepts `workflow_id` too, and keeps `workflow_name`: saved workflow files reference their subflows by name.
 
 ### Getting results back
 

@@ -393,6 +393,14 @@ class UnreadableWorkflowHeaderError(WorkflowRegistryError):
     """The workflow's metadata is a placeholder for a header that could not be read, so it must not be written."""
 
 
+class WorkflowAddressError(ValueError):
+    """A request's workflow address names no workflow, or names two different ones."""
+
+
+class UnknownWorkflowAddressError(WorkflowAddressError):
+    """No registered workflow has the id or name a request gave."""
+
+
 class _IndexKeys(NamedTuple):
     """Where an entry sits in the path and name indexes."""
 
@@ -485,6 +493,68 @@ class _WorkflowRegistry:
             if workflow_id is not None:
                 return self._by_id[workflow_id]
         return None
+
+    def resolve_address(
+        self,
+        *,
+        workflow_id: str | None,
+        workflow_name: str | None,
+        operation: str,
+        id_field: str = "workflow_id",
+        name_field: str = "workflow_name",
+    ) -> Workflow:
+        """Return the workflow a request addresses by id, by legacy name, or by both.
+
+        The one place a request's address becomes a registry entry. It never picks: an id or a
+        name nobody holds fails, and so do both given for two different workflows, or neither.
+        A name is looked up as the registry knows it ("unsaved:<id>" included), never as a
+        display name. `operation` completes "Attempted to <operation> workflow ..." in the
+        messages, and `id_field` / `name_field` are the request's spelling of the two fields.
+
+        Raises:
+            UnknownWorkflowAddressError: No workflow has the id, or the name.
+            WorkflowAddressError: Neither is given, or the two name different workflows.
+        """
+        by_id = None
+        if workflow_id is not None:
+            by_id = self._find_by_requested_id(workflow_id)
+            if by_id is None:
+                msg = f"Attempted to {operation} workflow '{workflow_id}'. Failed because no workflow has that id."
+                raise UnknownWorkflowAddressError(msg)
+
+        by_name = None
+        if workflow_name is not None:
+            by_name = self.find_by_name(workflow_name)
+            if by_name is None and by_id is None:
+                msg = f"Attempted to {operation} workflow '{workflow_name}'. Failed because no workflow has that name."
+                raise UnknownWorkflowAddressError(msg)
+            if by_id is not None and by_name is not by_id:
+                named = "no workflow"
+                if by_name is not None:
+                    named = f"another workflow (id '{by_name.workflow_id}')"
+                msg = (
+                    f"Attempted to {operation} workflow '{workflow_id}'. Failed because {id_field} '{workflow_id}' "
+                    f"names '{by_id.name}', and {name_field} '{workflow_name}' names {named}. Send only {id_field}."
+                )
+                raise WorkflowAddressError(msg)
+
+        resolved = by_id
+        if resolved is None:
+            resolved = by_name
+        # Only a request that gives neither field gets here with nothing resolved.
+        if resolved is None:
+            msg = f"Attempted to {operation} a workflow. Failed because the request names no workflow. Pass {id_field}."
+            raise WorkflowAddressError(msg)
+
+        if by_id is None:
+            logger.debug(
+                "A request to %s addressed workflow '%s' by %s. Addressing by name is deprecated; send %s.",
+                operation,
+                workflow_name,
+                name_field,
+                id_field,
+            )
+        return resolved
 
     def register_file(
         self,
@@ -707,6 +777,13 @@ class _WorkflowRegistry:
     def get_branches_of_workflow(self, workflow_name: str) -> list[str]:
         """Get the names of all workflows that are branches of the specified workflow."""
         return [workflow.name for workflow in self._by_id.values() if workflow.metadata.branched_from == workflow_name]
+
+    def _find_by_requested_id(self, workflow_id: str) -> Workflow | None:
+        """The entry a request's id names. A request may spell it any way `parse_workflow_id` accepts, such as a dashed UUID."""
+        parsed_id = parse_workflow_id(workflow_id)
+        if parsed_id is None:
+            return None
+        return self._by_id.get(parsed_id)
 
     def _is_in_directory(self, workflow: Workflow, directory: Path) -> bool:
         """Whether the workflow's file is inside `directory`. An unsaved workflow is in none."""

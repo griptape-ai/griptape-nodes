@@ -13,6 +13,7 @@ import anyio
 from griptape_nodes.files.path_utils import (
     resolve_workspace_path,
 )
+from griptape_nodes.node_library.workflow_registry import WorkflowAddressError
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.base_events import ResultDetail, ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
@@ -54,6 +55,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from griptape_nodes.node_library.workflow_registry import (
+        Workflow,
         WorkflowShape,
     )
     from griptape_nodes.retained_mode.engine import Engine
@@ -214,11 +216,13 @@ class WorkflowRunner(EngineScoped):
     async def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
         await self.engine.workflow_manager.wait_for_workflows_loaded()
 
-        # get workflow from registry
-        workflow = self.engine.workflow_registry.find_by_name(request.workflow_name)
-        if workflow is None:
-            details = f"Failed to get workflow '{request.workflow_name}' from registry."
-            return RunWorkflowFromRegistryResultFailure(result_details=details)
+        try:
+            workflow = self.engine.workflow_registry.resolve_address(
+                workflow_id=request.workflow_id, workflow_name=request.workflow_name, operation="run"
+            )
+        except WorkflowAddressError as err:
+            return RunWorkflowFromRegistryResultFailure(result_details=str(err))
+        workflow_name = workflow.name
 
         # RunWorkflowFromRegistry is file-based (it re-executes the serialized .py on disk).
         # Unsaved workflows have no file; callers should use StartFlowRequest against the
@@ -227,7 +231,7 @@ class WorkflowRunner(EngineScoped):
         relative_file_path = workflow.file_path
         if relative_file_path is None:
             details = (
-                f"Cannot run unsaved workflow '{request.workflow_name}' from the registry because it has no file on disk. "
+                f"Cannot run unsaved workflow '{workflow_name}' from the registry because it has no file on disk. "
                 "Save the workflow first, or use StartFlowRequest to execute the current in-memory flow."
             )
             return RunWorkflowFromRegistryResultFailure(result_details=details)
@@ -239,7 +243,7 @@ class WorkflowRunner(EngineScoped):
         # only warn when clobbering the context was NOT asked for.
         context_warning = None
         if not request.run_with_clean_slate and self.engine.context_manager.has_current_workflow():
-            context_warning = f"Started a new workflow '{request.workflow_name}' but a workflow '{self.engine.context_manager.get_current_workflow_name()}' was already in the Current Context. Replacing the old with the new."
+            context_warning = f"Started a new workflow '{workflow_name}' but a workflow '{self.engine.context_manager.get_current_workflow_name()}' was already in the Current Context. Replacing the old with the new."
 
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it.
         with self.engine.workflow_manager.squelch_workflow_altered():
@@ -248,7 +252,9 @@ class WorkflowRunner(EngineScoped):
                 clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
                 clear_all_result = await self.engine.ahandle_request(clear_all_request)
                 if not clear_all_result.succeeded():
-                    details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
+                    details = (
+                        f"Failed to clear the existing object state when preparing to run workflow '{workflow_name}'."
+                    )
                     return RunWorkflowFromRegistryResultFailure(result_details=details)
 
             # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
@@ -282,42 +288,46 @@ class WorkflowRunner(EngineScoped):
 
     @handles(GetWorkflowRunCommandRequest)
     async def on_get_workflow_run_command_request(self, request: GetWorkflowRunCommandRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
-        workflow_name = request.workflow_name
         file_path = request.file_path
+        names_a_workflow = request.workflow_id is not None or request.workflow_name is not None
 
-        # Failure: no identifier and no current context
-        if workflow_name is None and file_path is None:
-            context_manager = self.engine.context_manager
-            if not context_manager.has_current_workflow():
-                return GetWorkflowRunCommandResultFailure(
-                    result_details=(
-                        "Attempted to get workflow run command. Failed with workflow_name=None, file_path=None "
-                        "because no workflow is loaded in the current context. Provide workflow_name or file_path, or load a workflow."
-                    )
-                )
-            # When neither workflow_name nor file_path is provided, use the workflow in the current context as a fallback.
-            workflow_name = context_manager.get_current_workflow_name()
-
-        # Failure: both workflow_name and file_path provided
-        if workflow_name is not None and file_path is not None:
+        # Failure: both a workflow and file_path provided
+        if names_a_workflow and file_path is not None:
+            given_field = "workflow_id"
+            if request.workflow_id is None:
+                given_field = "workflow_name"
             return GetWorkflowRunCommandResultFailure(
                 result_details=(
-                    "Attempted to get workflow run command. Failed with both workflow_name and file_path provided "
-                    "because only one may be provided. Provide workflow_name or file_path, not both."
+                    f"Attempted to get workflow run command. Failed with both {given_field} and file_path provided "
+                    f"because only one may be provided. Provide {given_field} or file_path, not both."
                 )
             )
 
         # Resolve relative_file_path and workflow_shape (or fail)
-        workflow_shape: WorkflowShape | None = None
-        if workflow_name is not None:
-            workflow = self.engine.workflow_registry.find_by_name(workflow_name)
-            if workflow is None:
+        workflow: Workflow | None = None
+        if names_a_workflow:
+            try:
+                workflow = self.engine.workflow_registry.resolve_address(
+                    workflow_id=request.workflow_id,
+                    workflow_name=request.workflow_name,
+                    operation="get the run command for",
+                )
+            except WorkflowAddressError as err:
+                return GetWorkflowRunCommandResultFailure(result_details=str(err))
+        elif file_path is None:
+            # Neither a workflow nor a file named: the documented answer is the workflow in the current context.
+            context_manager = self.engine.context_manager
+            if not context_manager.has_current_workflow():
                 return GetWorkflowRunCommandResultFailure(
                     result_details=(
-                        f"Attempted to get workflow run command. Failed with workflow_name='{workflow_name}' "
-                        "because the workflow was not found in the registry. Save the workflow first, or provide file_path."
+                        "Attempted to get workflow run command. Failed with workflow_id=None, file_path=None "
+                        "because no workflow is loaded in the current context. Provide workflow_id or file_path, or load a workflow."
                     )
                 )
+            workflow = context_manager.get_current_workflow()
+
+        workflow_shape: WorkflowShape | None = None
+        if workflow is not None:
             relative_file_path = workflow.file_path
             workflow_shape = workflow.metadata.workflow_shape
         else:
@@ -328,7 +338,7 @@ class WorkflowRunner(EngineScoped):
             return GetWorkflowRunCommandResultFailure(
                 result_details=(
                     "Attempted to get workflow run command. Failed with no resolvable file path "
-                    "because neither workflow_name nor file_path was provided. Provide workflow_name or file_path."
+                    "because the workflow is unsaved. Save the workflow first, or provide file_path."
                 )
             )
 

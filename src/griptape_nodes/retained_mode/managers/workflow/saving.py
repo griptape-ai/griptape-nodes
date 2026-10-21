@@ -20,6 +20,7 @@ from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.files.situation_resolver import SITUATION_TO_FILE_POLICY
 from griptape_nodes.node_library.workflow_registry import (
     Workflow,
+    WorkflowAddressError,
     WorkflowMetadata,
     WorkflowShape,
     new_workflow_id,
@@ -609,14 +610,15 @@ class WorkflowSaver(EngineScoped):
     @handles(SaveSubflowToWorkflowRequest)
     async def on_save_subflow_to_workflow(self, request: SaveSubflowToWorkflowRequest) -> ResultPayload:
         """Save a subflow back to its original workflow file."""
-        registry_key = request.workflow_name
-
-        workflow = self.engine.workflow_registry.find_by_name(registry_key)
-        if workflow is None:
-            details = (
-                f"Attempted to save subflow '{request.flow_name}'. Workflow '{registry_key}' not found in registry."
+        try:
+            workflow = self.engine.workflow_registry.resolve_address(
+                workflow_id=request.workflow_id,
+                workflow_name=request.workflow_name,
+                operation=f"save subflow '{request.flow_name}' into",
             )
-            return SaveSubflowToWorkflowResultFailure(result_details=details)
+        except WorkflowAddressError as err:
+            return SaveSubflowToWorkflowResultFailure(result_details=str(err))
+        registry_key = workflow.name
 
         if workflow.absolute_path is None:
             # Saving a subflow back into its parent requires that parent to have a file.
@@ -666,16 +668,15 @@ class WorkflowSaver(EngineScoped):
             msg = f"The workflow {registry_key} is being saved without Start and End Flow parameters. It will no longer be a callable workflow."
             logger.warning(msg)
 
-        # Preserve existing metadata from the registry.
-        existing = self._get_existing_metadata(registry_key)
-        resolved_display_name = existing.display_name
+        # Preserve the workflow's existing metadata.
+        existing = workflow.metadata
 
         # Delegate file generation and writing to the existing lower-level handler.
         save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
             serialized_flow_commands=commands,
             file_name=file_name,
             file_path=file_path,
-            display_name=resolved_display_name,
+            display_name=existing.name,
             description=existing.description,
             image_path=existing.image,
             is_template=existing.is_template,

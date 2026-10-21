@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import uuid
 from pathlib import Path
+from typing import NamedTuple
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,7 +16,9 @@ from griptape_nodes.files.path_utils import derive_registry_key
 from griptape_nodes.node_library.workflow_registry import (
     DuplicateWorkflowIdError,
     OpenWorkflowRemovalError,
+    UnknownWorkflowAddressError,
     Workflow,
+    WorkflowAddressError,
     WorkflowMetadata,
     WorkflowPathTakenError,
     WorkflowRegistry,
@@ -26,6 +30,9 @@ from griptape_nodes.retained_mode.engine import (
     current_engine,
     engine_scope,
 )
+
+_ID_A = uuid.UUID(int=0xA).hex
+_ID_B = uuid.UUID(int=0xB).hex
 
 
 class TestDeriveRegistryKey:
@@ -545,6 +552,133 @@ class TestWorkflowRegistryOperations:
 
         assert engine.workflow_registry.has_workflow_with_name(workflow.name)
         assert not other.workflow_registry.has_workflow_with_name(workflow.name)
+
+
+class _TwoWorkflows(NamedTuple):
+    registry: _WorkflowRegistry
+    shot_a: Workflow
+    shot_b: Workflow
+
+
+class TestResolveAddress:
+    """`resolve_address` turns a request's id and legacy name into one entry, and never picks."""
+
+    def _two_workflows(self, tmp_path: Path) -> _TwoWorkflows:
+        registry = _registry(tmp_path)
+        _workflow_file(tmp_path / "shot_a.py")
+        _workflow_file(tmp_path / "shot_b.py")
+        shot_a = registry.register_file("shot_a.py", _metadata(workflow_id=_ID_A))
+        shot_b = registry.register_file("shot_b.py", _metadata(workflow_id=_ID_B))
+        return _TwoWorkflows(registry=registry, shot_a=shot_a, shot_b=shot_b)
+
+    def test_id_alone_finds_its_workflow(self, tmp_path: Path) -> None:
+        registry, _shot_a, shot_b = self._two_workflows(tmp_path)
+
+        assert registry.resolve_address(workflow_id=_ID_B, workflow_name=None, operation="rename") is shot_b
+
+    def test_name_alone_finds_its_workflow_and_logs_at_debug(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        registry, shot_a, _shot_b = self._two_workflows(tmp_path)
+
+        with caplog.at_level(logging.DEBUG, logger="griptape_nodes"):
+            resolved = registry.resolve_address(workflow_id=None, workflow_name="shot_a", operation="rename")
+
+        assert resolved is shot_a
+        records = [record for record in caplog.records if "by workflow_name" in record.getMessage()]
+        assert [record.levelno for record in records] == [logging.DEBUG]
+
+    def test_unsaved_name_finds_the_unsaved_workflow(self, tmp_path: Path) -> None:
+        registry = _registry(tmp_path)
+        unsaved = registry.register_unsaved("Untitled")
+
+        resolved = registry.resolve_address(workflow_id=None, workflow_name=unsaved.name, operation="delete")
+
+        assert resolved is unsaved
+
+    def test_id_and_name_of_the_same_workflow_agree(self, tmp_path: Path) -> None:
+        registry, shot_a, _shot_b = self._two_workflows(tmp_path)
+
+        resolved = registry.resolve_address(workflow_id=_ID_A, workflow_name="shot_a", operation="rename")
+
+        assert resolved is shot_a
+
+    def test_id_and_name_of_different_workflows_fail_naming_both(self, tmp_path: Path) -> None:
+        registry, _shot_a, _shot_b = self._two_workflows(tmp_path)
+
+        with pytest.raises(WorkflowAddressError) as raised:
+            registry.resolve_address(workflow_id=_ID_A, workflow_name="shot_b", operation="rename")
+
+        assert not isinstance(raised.value, UnknownWorkflowAddressError)
+        message = str(raised.value)
+        assert message.startswith(f"Attempted to rename workflow '{_ID_A}'.")
+        assert "'shot_a'" in message
+        assert "'shot_b'" in message
+        assert _ID_B in message
+
+    def test_id_with_an_unknown_name_fails(self, tmp_path: Path) -> None:
+        registry, _shot_a, _shot_b = self._two_workflows(tmp_path)
+
+        with pytest.raises(WorkflowAddressError, match="names no workflow"):
+            registry.resolve_address(workflow_id=_ID_A, workflow_name="missing", operation="move")
+
+    def test_neither_fails_asking_for_the_id(self, tmp_path: Path) -> None:
+        registry, _shot_a, _shot_b = self._two_workflows(tmp_path)
+
+        with pytest.raises(WorkflowAddressError) as raised:
+            registry.resolve_address(
+                workflow_id=None,
+                workflow_name=None,
+                operation="create a workflow from",
+                id_field="template_workflow_id",
+            )
+
+        assert not isinstance(raised.value, UnknownWorkflowAddressError)
+        assert str(raised.value) == (
+            "Attempted to create a workflow from a workflow. Failed because the request names no workflow. "
+            "Pass template_workflow_id."
+        )
+
+    def test_unknown_id_fails(self, tmp_path: Path) -> None:
+        registry, _shot_a, _shot_b = self._two_workflows(tmp_path)
+
+        with pytest.raises(UnknownWorkflowAddressError) as raised:
+            registry.resolve_address(workflow_id="id_missing", workflow_name=None, operation="delete")
+
+        assert str(raised.value) == "Attempted to delete workflow 'id_missing'. Failed because no workflow has that id."
+
+    def test_unknown_name_fails(self, tmp_path: Path) -> None:
+        registry, _shot_a, _shot_b = self._two_workflows(tmp_path)
+
+        with pytest.raises(UnknownWorkflowAddressError) as raised:
+            registry.resolve_address(workflow_id=None, workflow_name="missing", operation="delete")
+
+        assert str(raised.value) == "Attempted to delete workflow 'missing'. Failed because no workflow has that name."
+
+    def test_display_name_is_never_an_address(self, tmp_path: Path) -> None:
+        registry = _registry(tmp_path)
+        _workflow_file(tmp_path / "shot_a.py")
+        registry.register_file("shot_a.py", _metadata(name="Shot A", workflow_id=_ID_A))
+
+        with pytest.raises(UnknownWorkflowAddressError):
+            registry.resolve_address(workflow_id=None, workflow_name="Shot A", operation="open")
+
+    def test_dashed_spellings_of_an_id_name_the_same_workflow(self, tmp_path: Path) -> None:
+        registry = _registry(tmp_path)
+        unsaved = registry.register_unsaved("Untitled")
+        dashed_id = str(uuid.UUID(hex=unsaved.workflow_id))
+
+        by_name = registry.resolve_address(workflow_id=None, workflow_name=f"unsaved:{dashed_id}", operation="open")
+        by_id = registry.resolve_address(workflow_id=dashed_id, workflow_name=None, operation="open")
+
+        assert by_name is unsaved
+        assert by_id is unsaved
+
+    def test_an_id_that_is_not_a_uuid_names_no_workflow(self, tmp_path: Path) -> None:
+        registry, _shot_a, _shot_b = self._two_workflows(tmp_path)
+
+        with pytest.raises(UnknownWorkflowAddressError):
+            registry.resolve_address(workflow_id="not-a-uuid", workflow_name=None, operation="open")
 
 
 class TestWorkflowRegistryShim:

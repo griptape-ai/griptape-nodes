@@ -38,6 +38,9 @@ class SetWorkflowContextRequest(RequestPayload):
                       (not the project base directory, which may sit one level above). Optional:
                       when None, `{workflow_dir}` answers the folder this workflow's first save
                       would land in, read from the project's `save_workflow` situation.
+        workflow_id: Permanent id of a registered workflow to set as current context. When
+                      given, workflow_name may be left out; if both are given they must name
+                      the same workflow. Giving neither registers a new unsaved workflow.
 
     Results: SetWorkflowContextSuccess (carries the resolved workflow_name and workflow_id) |
              SetWorkflowContextFailure (workflow not found, working_directory names an
@@ -47,6 +50,7 @@ class SetWorkflowContextRequest(RequestPayload):
     workflow_name: str | None = None
     display_name: str | None = None
     working_directory: str | None = None
+    workflow_id: str | None = None
 
 
 @dataclass
@@ -131,6 +135,10 @@ class EnsureWorkflowAndFlowRequest(RequestPayload):
         working_directory: Folder the workflow belongs to until it is saved, forwarded to
             SetWorkflowContextRequest. Ignored when a workflow is already in context. See
             SetWorkflowContextRequest for what the value means and how it is normalized.
+        workflow_id: Permanent id of a registered workflow to enter. When a workflow is
+            already in context it must be that workflow, or the request fails. Otherwise it is
+            entered as SetWorkflowContextRequest enters it, and workflow_name, if also given,
+            must name the same workflow.
 
     Results: EnsureWorkflowAndFlowResultSuccess | EnsureWorkflowAndFlowResultFailure
     """
@@ -139,6 +147,7 @@ class EnsureWorkflowAndFlowRequest(RequestPayload):
     display_name: str | None = None
     flow_name: str | None = None
     working_directory: str | None = None
+    workflow_id: str | None = None
 
 
 @dataclass

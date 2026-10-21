@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from griptape_nodes.files.path_utils import derive_registry_key
+from griptape_nodes.node_library.workflow_registry import WorkflowAddressError
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.base_events import ResultDetail, ResultDetails
 from griptape_nodes.retained_mode.events.workflow_events import (
@@ -41,6 +43,22 @@ class WorkflowPublishing(EngineScoped):
 
     @handles(GetPublishOptionsRequest)
     def on_get_publish_options_request(self, request: GetPublishOptionsRequest) -> ResultPayload:
+        try:
+            workflow = self.engine.workflow_registry.resolve_address(
+                workflow_id=request.workflow_id,
+                workflow_name=request.workflow_name,
+                operation="get publish options for",
+            )
+        except WorkflowAddressError as err:
+            return GetPublishOptionsResultFailure(exception=err, result_details=str(err))
+        # Publishers read the open graph, so they can only publish the open workflow.
+        if not self.engine.workflow_registry.is_open(workflow.workflow_id):
+            details = (
+                f"Attempted to get publish options for workflow '{workflow.name}'. "
+                "Failed because it is not open. Open it, then publish it."
+            )
+            return GetPublishOptionsResultFailure(exception=ValueError(details), result_details=details)
+
         event_handler_mappings = self.engine.library_manager.get_registered_event_handlers(
             request_type=PublishWorkflowRequest
         )
@@ -51,7 +69,10 @@ class WorkflowPublishing(EngineScoped):
 
         event_data = publishing_handler.event_data
         if isinstance(event_data, PublishWorkflowRegisteredEventData) and event_data.get_publish_options is not None:
-            return event_data.get_publish_options(request)
+            # Publishers read the workflow's name, so they get a copy with it filled in.
+            return event_data.get_publish_options(
+                dataclasses.replace(request, workflow_name=workflow.name, workflow_id=workflow.workflow_id)
+            )
 
         return GetPublishOptionsResultSuccess(
             fields=[],
@@ -60,6 +81,23 @@ class WorkflowPublishing(EngineScoped):
 
     @handles(PublishWorkflowRequest)
     async def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
+        try:
+            workflow = self.engine.workflow_registry.resolve_address(
+                workflow_id=request.workflow_id, workflow_name=request.workflow_name, operation="publish"
+            )
+        except WorkflowAddressError as err:
+            return PublishWorkflowResultFailure(exception=err, result_details=str(err))
+        # Publishers read the open graph (its nodes, shape and StartFlow settings), so publishing
+        # any other workflow would package a mix of the two.
+        if not self.engine.workflow_registry.is_open(workflow.workflow_id):
+            details = f"Attempted to publish workflow '{workflow.name}'. Failed because it is not open. Open it, then publish it."
+            return PublishWorkflowResultFailure(exception=ValueError(details), result_details=details)
+        # Unsaved (registry-only) workflows cannot be published because publish emits a file
+        # reference to the engine-registered workflow; the user must choose a save name first.
+        if workflow.file_path is None:
+            details = f"Cannot publish unsaved workflow '{workflow.name}'. Save the workflow before publishing."
+            return PublishWorkflowResultFailure(exception=ValueError(details), result_details=details)
+
         try:
             publisher_name = request.publisher_name
             event_handler_mappings = self.engine.library_manager.get_registered_event_handlers(
@@ -71,35 +109,30 @@ class WorkflowPublishing(EngineScoped):
                 msg = f"No publishing handler found for '{publisher_name}' in request type '{type(request).__name__}'."
                 raise ValueError(msg)  # noqa: TRY301
 
-            # Save the workflow before publishing to ensure the latest changes in memory are included.
-            # Unsaved (registry-only) workflows cannot be published because publish emits a file
-            # reference to the engine-registered workflow; the user must choose a save name first.
-            workflow_file_name = request.workflow_name
-            workflow = self.engine.workflow_registry.find_by_name(request.workflow_name)
-            if workflow is not None:
-                if workflow.file_path is None:
-                    msg = (
-                        f"Cannot publish unsaved workflow '{request.workflow_name}'. "
-                        "Save the workflow before publishing."
-                    )
-                    raise ValueError(msg)  # noqa: TRY301
-                workflow_file_name = derive_registry_key(workflow.file_path)
-            else:
+            # Save before publishing, so the latest changes in memory are included. A failed save
+            # would leave the publisher packaging the stale file.
+            save_result = await self.engine.ahandle_request(
+                SaveWorkflowRequest(file_name=derive_registry_key(workflow.file_path))
+            )
+            if save_result.failed():
                 details = (
-                    f"While publishing, workflow '{request.workflow_name}' had not been saved or could not be found in the Workflow Registry. "
-                    "Saving as a new and registered workflow before proceeding on publish attempt."
+                    f"Attempted to publish workflow '{workflow.name}'. Failed because it could not be saved "
+                    f"first: {save_result.result_details}"
                 )
-                logger.info(details)
-            await self.engine.ahandle_request(SaveWorkflowRequest(file_name=workflow_file_name))
+                return PublishWorkflowResultFailure(result_details=details)
 
-            result = await asyncio.to_thread(publishing_handler.handler, request)
+            # Publishers read the workflow's name, so they get a copy with it filled in.
+            publisher_request = dataclasses.replace(
+                request, workflow_name=workflow.name, workflow_id=workflow.workflow_id
+            )
+            result = await asyncio.to_thread(publishing_handler.handler, publisher_request)
             if isinstance(result, PublishWorkflowResultSuccess) and not result.skip_published_workflow_registration:
                 workflow_file = Path(result.published_workflow_file_path)
                 result = await self._register_published_workflow_file(workflow_file, result)
 
             return result  # noqa: TRY300
         except Exception as e:
-            details = f"Failed to publish workflow '{request.workflow_name}': {e!s}"
+            details = f"Failed to publish workflow '{workflow.name}': {e!s}"
             logger.exception(details)
             return PublishWorkflowResultFailure(exception=e, result_details=details)
 

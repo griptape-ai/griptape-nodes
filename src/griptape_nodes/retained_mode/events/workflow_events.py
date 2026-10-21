@@ -129,18 +129,20 @@ class RunWorkflowWithCurrentStateResultFailure(ResultPayloadFailure):
 class RunWorkflowFromRegistryRequest(RequestPayload):
     """Run a workflow from the registry.
 
-    Use when: Executing registered workflows, running workflows by name,
+    Use when: Executing registered workflows, running workflows by id,
     using workflow templates, automated workflow execution.
 
     Args:
-        workflow_name: Name of the workflow in the registry to execute
+        workflow_name: Deprecated: the workflow's registry name. Send workflow_id instead.
         run_with_clean_slate: Whether to start with a clean state (default: True)
+        workflow_id: Permanent id of the workflow to run. Give this or workflow_name, not both.
 
     Results: RunWorkflowFromRegistryResultSuccess | RunWorkflowFromRegistryResultFailure (workflow not found, execution error)
     """
 
-    workflow_name: str
+    workflow_name: str | None = None
     run_with_clean_slate: bool = True
+    workflow_id: str | None = None
 
 
 @dataclass
@@ -315,12 +317,14 @@ class DeleteWorkflowRequest(RequestPayload):
     unregistering workflows, workflow management.
 
     Args:
-        name: Name of the workflow to delete from the registry
+        name: Deprecated: the workflow's registry name. Send workflow_id instead.
+        workflow_id: Permanent id of the workflow to delete. Give this or name, not both.
 
     Results: DeleteWorkflowResultSuccess | DeleteWorkflowResultFailure (workflow not found, deletion error)
     """
 
-    name: str
+    name: str | None = None
+    workflow_id: str | None = None
 
 
 @dataclass
@@ -357,7 +361,7 @@ class RenameDisplayNameBehavior(StrEnum):
     OVERRIDE = "override"
 
 
-@dataclass
+@dataclass(kw_only=True)
 @PayloadRegistry.register
 class RenameWorkflowRequest(RequestPayload):
     """Rename a workflow in the registry.
@@ -366,7 +370,9 @@ class RenameWorkflowRequest(RequestPayload):
     fixing naming conflicts, workflow management.
 
     Args:
-        workflow_name: Current name of the workflow
+        workflow_name: Deprecated: the workflow's current registry name. Send workflow_id instead.
+        workflow_id: Permanent id of the workflow to rename. Give this or workflow_name, not both.
+            The workflow need not be open; a workflow that is not open has its file moved.
         requested_name: New name for the workflow (drives the on-disk filename)
         display_name_behavior: How to treat ``WorkflowMetadata.name`` on rename. Defaults to
             ``MATCH_FILE_NAME`` to preserve historical wire behavior — callers who want the
@@ -379,7 +385,8 @@ class RenameWorkflowRequest(RequestPayload):
     Results: RenameWorkflowResultSuccess | RenameWorkflowResultFailure (workflow not found, name conflict)
     """
 
-    workflow_name: str
+    workflow_name: str | None = None
+    workflow_id: str | None = None
     requested_name: str
     display_name_behavior: RenameDisplayNameBehavior = RenameDisplayNameBehavior.MATCH_FILE_NAME
     display_name: str | None = None
@@ -528,18 +535,20 @@ class GetWorkflowRunCommandRequest(RequestPayload):
     Use when: Showing users how to run a workflow from a terminal, copying a run command,
     scripting workflow execution from the command line.
 
-    Provide workflow_name (from registry), file_path (path to workflow file), or neither to use
-    the workflow in the current context.
+    Provide workflow_id (or the deprecated workflow_name), file_path (path to workflow file), or
+    none of them to use the workflow in the current context.
 
     Args:
-        workflow_name: Name of the workflow in the registry (optional if file_path or current context)
-        file_path: Path to the workflow file, relative to workspace or absolute (optional if workflow_name or current context)
+        workflow_name: Deprecated: the workflow's registry name. Send workflow_id instead.
+        file_path: Path to the workflow file, relative to workspace or absolute (optional if workflow_id or current context)
+        workflow_id: Permanent id of the workflow in the registry (optional if file_path or current context)
 
     Results: GetWorkflowRunCommandResultSuccess (with run_command) | GetWorkflowRunCommandResultFailure
     """
 
     workflow_name: str | None = None
     file_path: str | None = None
+    workflow_id: str | None = None
 
 
 @dataclass
@@ -587,7 +596,7 @@ class PublishOptionField(BaseModel):
     hidden: bool = False
 
 
-@dataclass
+@dataclass(kw_only=True)
 @PayloadRegistry.register
 class GetPublishOptionsRequest(RequestPayload):
     """Get publisher-specific options to display in the publish dialog before publishing.
@@ -595,10 +604,17 @@ class GetPublishOptionsRequest(RequestPayload):
     Use when: Opening the publish dialog for a specific publisher, refreshing dependent
     options after a selection change.
 
+    Args:
+        workflow_name: Deprecated: the workflow's registry name. Send workflow_id instead. The
+            publisher always receives the request with workflow_name filled in.
+        workflow_id: Permanent id of the workflow to publish. Give this or workflow_name, not both.
+            It must be the open workflow: publishers read the open graph.
+
     Results: GetPublishOptionsResultSuccess (with fields) | GetPublishOptionsResultFailure
     """
 
-    workflow_name: str
+    workflow_name: str | None = None
+    workflow_id: str | None = None
     publisher_name: str
     current_selections: dict | None = None  # current user selections; used for dependent field resolution
 
@@ -661,7 +677,7 @@ class PublishWorkflowRegisteredEventData:
     icon: str | None = None
 
 
-@dataclass
+@dataclass(kw_only=True)
 @PayloadRegistry.register
 class PublishWorkflowRequest(RequestPayload):
     """Publish a workflow for distribution.
@@ -669,10 +685,17 @@ class PublishWorkflowRequest(RequestPayload):
     Use when: Sharing workflows with others, creating workflow packages,
     distributing workflow templates, workflow publishing.
 
+    Args:
+        workflow_name: Deprecated: the workflow's registry name. Send workflow_id instead. The
+            publisher always receives the request with workflow_name filled in.
+        workflow_id: Permanent id of the workflow to publish. Give this or workflow_name, not both.
+            It must be the open workflow, which is saved first: publishers read the open graph.
+
     Results: PublishWorkflowResultSuccess (with file path) | PublishWorkflowResultFailure (publish error)
     """
 
-    workflow_name: str
+    workflow_name: str | None = None
+    workflow_id: str | None = None
     publisher_name: str
     # This can be removed after GUI release
     execute_on_publish: bool | None = None
@@ -725,7 +748,8 @@ class BranchWorkflowRequest(RequestPayload):
     creating personal copies of shared workflows, preparing for workflow collaboration.
 
     Args:
-        workflow_name: Name of the workflow to branch
+        workflow_name: Deprecated: the registry name of the workflow to branch. Send workflow_id instead.
+        workflow_id: Permanent id of the workflow to branch. Give this or workflow_name, not both.
         branched_workflow_name: Registry key for the branched workflow (None for auto-generated)
         branched_workflow_display_name: Human-readable label (``metadata.name``) for the branch.
             None derives one from the source workflow's display name, e.g. branching
@@ -734,9 +758,10 @@ class BranchWorkflowRequest(RequestPayload):
     Results: BranchWorkflowResultSuccess (with branch name) | BranchWorkflowResultFailure (branch error)
     """
 
-    workflow_name: str
+    workflow_name: str | None = None
     branched_workflow_name: str | None = None
     branched_workflow_display_name: str | None = None
+    workflow_id: str | None = None
 
 
 @dataclass
@@ -773,14 +798,16 @@ class CreateWorkflowFromTemplateRequest(RequestPayload):
     a unique name.
 
     Args:
-        template_name: Registry name of the template workflow
+        template_name: Deprecated: the template's registry name. Send template_workflow_id instead.
         file_name: Base name for new file (None = use template stem)
+        template_workflow_id: Permanent id of the template workflow. Give this or template_name, not both.
 
     Results: CreateWorkflowFromTemplateResultSuccess (with workflow_name, file_path) | CreateWorkflowFromTemplateResultFailure
     """
 
-    template_name: str
+    template_name: str | None = None
     file_name: str | None = None
+    template_workflow_id: str | None = None
 
 
 @dataclass
@@ -814,12 +841,14 @@ class MergeWorkflowBranchRequest(RequestPayload):
     successful branch experiments, applying approved branch modifications to source.
 
     Args:
-        workflow_name: Name of the branch workflow to merge back into its source
+        workflow_name: Deprecated: the branch's registry name. Send workflow_id instead.
+        workflow_id: Permanent id of the branch workflow to merge. Give this or workflow_name, not both.
 
     Results: MergeWorkflowBranchResultSuccess (with merge details) | MergeWorkflowBranchResultFailure (merge error)
     """
 
-    workflow_name: str
+    workflow_name: str | None = None
+    workflow_id: str | None = None
 
 
 @dataclass
@@ -851,12 +880,14 @@ class ResetWorkflowBranchRequest(RequestPayload):
     abandoning branch experiments, syncing branch with latest source changes.
 
     Args:
-        workflow_name: Name of the branch workflow to reset to its source
+        workflow_name: Deprecated: the branch's registry name. Send workflow_id instead.
+        workflow_id: Permanent id of the branch workflow to reset. Give this or workflow_name, not both.
 
     Results: ResetWorkflowBranchResultSuccess (with reset details) | ResetWorkflowBranchResultFailure (reset error)
     """
 
-    workflow_name: str
+    workflow_name: str | None = None
+    workflow_id: str | None = None
 
 
 @dataclass
@@ -888,14 +919,21 @@ class CompareWorkflowsRequest(RequestPayload):
     managing workflow synchronization, preparing for merge operations.
 
     Args:
-        workflow_name: Name of the workflow to evaluate
-        compare_workflow_name: Name of the workflow to compare against
+        workflow_name: Deprecated: the registry name of the workflow to evaluate. Send workflow_id instead.
+        compare_workflow_name: Deprecated: the registry name of the workflow to compare against.
+            Send compare_workflow_id instead.
+        workflow_id: Permanent id of the workflow to evaluate. Give this or workflow_name, not both.
+        compare_workflow_id: Permanent id of the workflow to compare against. Give this or
+            compare_workflow_name, not both. A workflow that no longer exists is reported as
+            status "no_source".
 
     Results: CompareWorkflowsResultSuccess (with status details) | CompareWorkflowsResultFailure (evaluation error)
     """
 
-    workflow_name: str
-    compare_workflow_name: str
+    workflow_name: str | None = None
+    compare_workflow_name: str | None = None
+    workflow_id: str | None = None
+    compare_workflow_id: str | None = None
 
 
 @dataclass
@@ -926,7 +964,7 @@ class CompareWorkflowsResultFailure(ResultPayloadFailure):
     """Workflow comparison failed. Common causes: workflow not found, source not accessible, comparison error."""
 
 
-@dataclass
+@dataclass(kw_only=True)
 @PayloadRegistry.register
 class MoveWorkflowRequest(RequestPayload):
     """Move a workflow to a different directory in the workspace.
@@ -935,13 +973,15 @@ class MoveWorkflowRequest(RequestPayload):
     moving workflows to categorized folders, cleaning up workspace organization.
 
     Args:
-        workflow_name: Name of the workflow to move
+        workflow_name: Deprecated: the registry name of the workflow to move. Send workflow_id instead.
+        workflow_id: Permanent id of the workflow to move. Give this or workflow_name, not both.
         target_directory: Target directory path relative to workspace root
 
     Results: MoveWorkflowResultSuccess (with new path) | MoveWorkflowResultFailure (move error)
     """
 
-    workflow_name: str
+    workflow_name: str | None = None
+    workflow_id: str | None = None
     target_directory: str
 
 
@@ -970,9 +1010,15 @@ class MoveWorkflowResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetWorkflowMetadataRequest(RequestPayload):
-    """Get selected metadata for a workflow by name from the registry."""
+    """Get a workflow's metadata from the registry.
 
-    workflow_name: str
+    Args:
+        workflow_name: Deprecated: the workflow's registry name. Send workflow_id instead.
+        workflow_id: Permanent id of the workflow. Give this or workflow_name, not both.
+    """
+
+    workflow_name: str | None = None
+    workflow_id: str | None = None
 
 
 @dataclass
@@ -1026,12 +1072,14 @@ class GetWorkflowInfoRequest(RequestPayload):
     has compatibility issues before loading it, showing dependency status.
 
     Args:
-        workflow_name: Registry key for the workflow.
+        workflow_name: Deprecated: the workflow's registry name. Send workflow_id instead.
+        workflow_id: Permanent id of the workflow. Give this or workflow_name, not both.
 
     Results: GetWorkflowInfoResultSuccess (with status and details) | GetWorkflowInfoResultFailure (not found)
     """
 
-    workflow_name: str
+    workflow_name: str | None = None
+    workflow_id: str | None = None
 
 
 @dataclass
@@ -1114,12 +1162,19 @@ class ListAllWorkflowInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
     """Workflow info listing failed."""
 
 
-@dataclass
+@dataclass(kw_only=True)
 @PayloadRegistry.register
 class SetWorkflowMetadataRequest(RequestPayload):
-    """Replace the workflow's metadata entirely and persist to file."""
+    """Replace the workflow's metadata entirely and persist to file.
 
-    workflow_name: str
+    Args:
+        workflow_name: Deprecated: the workflow's registry name. Send workflow_id instead.
+        workflow_id: Permanent id of the workflow. Give this or workflow_name, not both.
+        workflow_metadata: The new metadata. A workflow_id in it must be the workflow's own.
+    """
+
+    workflow_name: str | None = None
+    workflow_id: str | None = None
     workflow_metadata: WorkflowMetadata
 
 
@@ -1272,13 +1327,16 @@ class SaveSubflowToWorkflowRequest(RequestPayload):
 
     Args:
         flow_name: The engine flow name of the subflow to serialize
-        workflow_name: Registry key for the target workflow (used to derive file path and metadata)
+        workflow_name: Deprecated: the target workflow's registry name. Send workflow_id instead.
+        workflow_id: Permanent id of the workflow whose file the subflow is written into. Give
+            this or workflow_name, not both. The file keeps the workflow's id.
 
     Results: SaveSubflowToWorkflowResultSuccess | SaveSubflowToWorkflowResultFailure
     """
 
     flow_name: str
-    workflow_name: str
+    workflow_name: str | None = None
+    workflow_id: str | None = None
 
 
 @dataclass
