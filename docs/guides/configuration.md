@@ -209,7 +209,7 @@ A value of `0` scans only the top-level directory (no subdirectories).
 
 You can run a library's nodes on another computer running Griptape Nodes, such as a shared GPU machine, while you keep working in the editor on your own workstation. Results, progress, logs, and previews come back to your editor just as they do when the nodes run locally.
 
-The GPU machine has to accept connections from your workstation. It must serve its `websocket_direct` transport on an address your workstation can reach, and publish that address in `transports.websocket_direct.advertise_url`. This is the only way the two machines connect. On the GPU machine:
+The GPU machine has to accept connections from your workstation. It must serve its `websocket_direct` transport on an address your workstation can reach, and publish that address in `transports.websocket_direct.advertise_url`. The two machines connect to each other directly, so this works without Griptape Cloud; connecting them through `websocket_api` is not supported yet. On the GPU machine:
 
 ```json
 {
