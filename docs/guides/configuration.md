@@ -205,6 +205,12 @@ GTN_CONFIG_DISCOVERY_MAX_DEPTH=20 gtn   # scan deeper-nested layouts
 
 A value of `0` scans only the top-level directory (no subdirectories).
 
+## Queueing Runs
+
+This is a beta feature. Turn on **Queue runs** on the Beta settings page. Without it, starting a run while another is in progress is refused. With it, the new run waits for the one in progress to finish, then starts. A run is what one click starts: running a workflow, a subflow, or a single node. Runs wait in the order they were started.
+
+Cancelling a flow whose run is waiting removes that run from the line without starting it, and leaves the run in progress alone.
+
 ## Running a Library's Nodes on Another Machine
 
 This is a beta feature. Turn on **Distributed execution** on the Beta settings page on both machines: the artist's workstation and the machine that runs the nodes, such as a shared GPU machine. Then, on the workstation, assign each library to the machine that runs it with `distributed_execution.libraries`, a map of library name to that machine's engine ID:
