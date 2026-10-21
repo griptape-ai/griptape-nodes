@@ -110,8 +110,8 @@ LIMITS_LINK_LABEL = "Provider limits"
 FRAME_RATE_TOLERANCE = 0.01
 
 # Validation runs on the engine's event loop, so every probe blocks it. A local probe takes tens of
-# milliseconds; one that takes longer than this is abandoned and the checks that need it (frame
-# size, duration, frame rate) are skipped.
+# milliseconds; one that takes longer than this is abandoned and the checks that need it (container,
+# codec, frame size, duration, frame rate) are skipped.
 FFPROBE_TIMEOUT_SECONDS = 2
 
 # How long after a node's validation starts it may still probe videos. The engine opens one
@@ -297,7 +297,7 @@ _PROBE_NOT_GIVEN = VideoProbe(info=None, seconds=None)
 
 @contextmanager
 def input_check_budget(seconds: float = VALIDATION_PROBE_BUDGET_SECONDS) -> Iterator[None]:
-    """Stop the video probes inside this block once `seconds` have passed since it opened.
+    """Stop the video and audio probes inside this block once `seconds` have passed since it opened.
 
     The engine opens one around each node's `validate_before_node_run`, so a node checking several
     videos probes for at most `seconds` in all. The time counts from when the block opens, so it
@@ -596,7 +596,19 @@ def check_mime_type(
         TypeError: If `allowed` is a single string rather than a sequence of MIME types.
     """
     _require_mime_type_sequence(allowed)
-    if mime_type is None or _is_allowed(mime_type, allowed):
+    return _mime_type_error(mime_type, subject=subject, allowed=allowed, docs_url=docs_url)
+
+
+def _mime_type_error(
+    mime_type: str | None,
+    *,
+    subject: str,
+    allowed: Sequence[str],
+    docs_url: str | None,
+    also_matching: Sequence[str] = (),
+) -> NodeError | None:
+    """`check_mime_type`, with `also_matching` names that widen the match but aren't listed in the message."""
+    if mime_type is None or _is_allowed(mime_type, (*allowed, *also_matching)):
         return None
     # Names that differ but read the same, such as audio/wav and audio/x-wav, are listed once.
     formats = _join_or(list(dict.fromkeys(_format_name(name) for name in allowed)))
@@ -1002,7 +1014,15 @@ def audio_errors(  # noqa: PLR0913
         mime_type = probe.mime_type
         codec = probe.codec
     if allowed_mime_types:
-        errors.append(check_mime_type(mime_type, subject=subject, allowed=allowed_mime_types, docs_url=docs_url))
+        errors.append(
+            _mime_type_error(
+                mime_type,
+                subject=subject,
+                allowed=allowed_mime_types,
+                docs_url=docs_url,
+                also_matching=_mp4_audio_reading(allowed_mime_types),
+            )
+        )
     if allowed_codecs:
         errors.append(check_audio_codec(codec, subject=subject, allowed=allowed_codecs, docs_url=docs_url))
     errors.extend(
@@ -1031,8 +1051,24 @@ def _codec_error(  # noqa: PLR0913
         raise TypeError(msg)
     if codec is None or codec in allowed:
         return None
-    codecs = _join_or([_codec_name(name) for name in allowed])
-    return _error(f"{subject} is encoded as {_codec_name(codec)}. Re-encode it as {codecs}.", docs_url)
+    shown = _codec_name(codec)
+    # A name that reads the same as the input's also matches, such as "H.264" for ffprobe's "h264", so
+    # a refusal never asks for the input's own codec. Names that read the same are listed once.
+    if any(_codec_name(name) == shown for name in allowed):
+        return None
+    codecs = _join_or(list(dict.fromkeys(_codec_name(name) for name in allowed)))
+    return _error(f"{subject} is encoded as {shown}. Re-encode it as {codecs}.", docs_url)
+
+
+def _mp4_audio_reading(allowed: Sequence[str]) -> tuple[str, ...]:
+    """The extra name an audio check matches when a provider lists video/mp4.
+
+    An MP4's audio reads as audio/mp4, and a provider listing video/mp4 takes that file. The name
+    widens the match only; a refusal lists just the names the provider wrote.
+    """
+    if any(_canonical_mime_type(name) == "video/mp4" for name in allowed):
+        return ("audio/mp4",)
+    return ()
 
 
 def _encoding_errors(
@@ -1581,6 +1617,8 @@ _MIME_ALIASES = {
     "audio/x-aiff": "audio/aiff",
     "audio/x-aac": "audio/aac",
     "audio/x-ogg": "audio/ogg",
+    # A .opus file is Ogg. Listing only audio/opus then also accepts Ogg Vorbis, which refuses less.
+    "audio/opus": "audio/ogg",
     "audio/aif": "audio/aiff",
     "audio/x-aif": "audio/aiff",
     "audio/mp4a-latm": "audio/mp4",
@@ -1628,6 +1666,7 @@ _FORMAT_NAMES = {
     "video/mpg": "MPEG",
     "video/wmv": "WMV",
     "audio/x-ogg": "OGG",
+    "audio/opus": "Opus",
     "audio/aif": "AIFF",
     "audio/x-aif": "AIFF",
     "audio/mp4a-latm": "M4A",

@@ -1168,6 +1168,32 @@ class TestAudio:
             f"{SUBJECT} is encoded as 16-bit PCM (big-endian). Re-encode it as MP3 or 16-bit PCM (little-endian)."
         )
 
+    def test_accepts_an_mp4_videos_audio_where_video_mp4_is_listed(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        probe = AudioProbe(mime_type="audio/mp4", codec="aac", profile="LC", seconds=3.0)
+        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: probe)
+        assert audio_errors(str(clip), subject=SUBJECT, allowed_mime_types=("audio/mpeg", "video/mp4")) == []
+
+    def test_lists_only_the_names_the_provider_wrote_when_refusing(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        probe = AudioProbe(mime_type="audio/flac", codec="flac", profile=None, seconds=3.0)
+        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: probe)
+        errors = audio_errors(str(clip), subject=SUBJECT, allowed_mime_types=("audio/mpeg", "video/mp4"))
+        assert [str(e) for e in errors] == [f"{SUBJECT} is in FLAC format. Convert it to MP3 or MP4."]
+
+    def test_accepts_an_ogg_opus_file_listed_as_audio_opus(self) -> None:
+        assert check_mime_type("audio/ogg", subject=SUBJECT, allowed=("audio/opus", "audio/mpeg")) is None
+
+    @pytest.mark.parametrize("allowed", [("H.264", "H.265"), ("h264",), ("AVC", "H.264")])
+    def test_accepts_a_codec_written_the_way_provider_docs_do(self, allowed: tuple[str, ...]) -> None:
+        assert check_video_codec("h264", subject=SUBJECT, allowed=allowed) is None
+
+    def test_lists_a_codec_once_when_the_provider_names_it_twice(self) -> None:
+        error = check_video_codec("vp9", subject=SUBJECT, allowed=("hevc", "H.265"))
+        assert str(error) == f"{SUBJECT} is encoded as VP9. Re-encode it as H.265."
+
 
 class TestCheckMimeType:
     def test_allows_a_listed_type(self) -> None:

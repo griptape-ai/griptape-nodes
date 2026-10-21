@@ -389,8 +389,8 @@ at least 300 pixels. Use a larger one." and a "Provider limits" link.
 The checks follow these rules:
 
 - **Skip what can't be read locally, don't fail it.** A remote URL, a format Pillow can't open, an
-    image over Pillow's decompression-bomb limit (about 179 megapixels), a video when ffprobe isn't
-    installed, or a probe that runs out of time (see "No network calls, and a cap on blocking"
+    image over Pillow's decompression-bomb limit (about 179 megapixels), a video or audio input when
+    ffprobe isn't installed, or a probe that runs out of time (see "No network calls, and a cap on blocking"
     below) is left for the provider to judge. A check refuses only an input it has read and found
     outside the limit.
 - **Pass the provider's limits and a docs link for the selected model.** The checks know nothing
@@ -400,8 +400,8 @@ The checks follow these rules:
     event loop. The checks never download an input or a tool: they measure files on this machine
     and data URIs, and use ffprobe only when it is already installed. A local probe takes tens of
     milliseconds. Each one is given at most 2 seconds, and no probe starts more than 5 seconds after
-    the node's validation began, so its videos together block for at most that long; a video left
-    when the time runs out is skipped. The 5 seconds count the node's other checks too, and apply per
+    the node's validation began, so its video and audio probes together block for at most that long;
+    an input left when the time runs out is skipped. The 5 seconds count the node's other checks too, and apply per
     node: when the engine starts several nodes at once, each can block for that long. An image given as a
     file path costs only a header read, except a WebP or AVIF file, which Pillow reads in full
     without decoding its pixels. One given as a data URI or an in-memory artifact is decoded in
