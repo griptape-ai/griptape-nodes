@@ -207,19 +207,9 @@ A value of `0` scans only the top-level directory (no subdirectories).
 
 ## Running a Library's Nodes on Another Machine
 
-This is a beta feature. Turn on **Distributed execution** on the Beta settings page on both machines: the artist's workstation and the machine that runs the nodes, such as a shared GPU machine. Then, on the workstation, assign each library to the machine that runs it with `distributed_execution.libraries`, a map of library name to that machine's engine ID:
+You can run a library's nodes on another computer running Griptape Nodes, such as a shared GPU machine, while you keep working in the editor on your own workstation. Results, progress, logs, and previews come back to your editor just as they do when the nodes run locally.
 
-```json
-{
-  "distributed_execution": {
-    "libraries": {
-      "Griptape Nodes Diffusers Library": "3f2c8e1a-5b7d-4c9e-a0f1-2b3c4d5e6f70"
-    }
-  }
-}
-```
-
-The workstation finds the other machine through the engine registry, at the admin server or Griptape Cloud its `GT_CLOUD_BASE_URL` names, where each engine with **Distributed execution** on reports where it listens. So the other machine must serve its `websocket_direct` transport on an address the workstation can reach, and name that address in `transports.websocket_direct.advertise_url`:
+The GPU machine has to accept connections from your workstation. It must serve its `websocket_direct` transport on an address your workstation can reach, and publish that address in `transports.websocket_direct.advertise_url`. This is the only way the two machines connect. On the GPU machine:
 
 ```json
 {
@@ -234,11 +224,26 @@ The workstation finds the other machine through the engine registry, at the admi
 }
 ```
 
-An engine keeps its ID across restarts, so the other machine can move to a new address without a change on the workstation. Its ID changes only if its data directory is deleted, unless `GTN_ENGINE_ID` sets it. Nodes from a library with no entry run on the workstation, as before. A change to the setting takes effect from the next session.
+On your workstation, list each library that should run elsewhere in `distributed_execution.libraries`, with the engine ID of the machine that runs it:
 
-Both machines must run the same engine version and the same version of each assigned library, and see the same workspace. A node from a library the other machine refuses, or cannot reach, fails with the reason, such as the two versions that differ. Its worker on the other machine runs under the workstation's Griptape Nodes license, and asks the workstation for secrets.
+```json
+{
+  "distributed_execution": {
+    "libraries": {
+      "Griptape Nodes Diffusers Library": "3f2c8e1a-5b7d-4c9e-a0f1-2b3c4d5e6f70"
+    }
+  }
+}
+```
 
-Library names are case-sensitive, so set this in a `griptape_nodes_config.json` file rather than an environment variable, whose name is lowercased before it becomes a config key.
+Your workstation looks the machine up by its engine ID in the engine registry, on the admin server or Griptape Cloud that `GT_CLOUD_BASE_URL` points to, so you never type its address. An engine keeps its ID when it restarts. The ID changes only if the machine's data directory is deleted, unless `GTN_ENGINE_ID` sets it. If the GPU machine moves to a new address, restart Griptape Nodes on your workstation so it looks the machine up again. Libraries you don't list run on your workstation. A change to this setting takes effect from the next session.
+
+A few things to know:
+
+- Both machines must run the same engine version and the same version of each library you send there, and see the same workspace, such as a shared network drive. If something doesn't match, or the machine can't be reached, the node fails with a message that says what is wrong.
+- The nodes run under your Griptape Nodes license, and ask your workstation for secrets.
+- Use one GPU machine per artist for now. Sharing a machine between artists is not supported yet: if two artists send work to the same machine, their nodes run there at the same time.
+- Library names are case-sensitive, so set this in a `griptape_nodes_config.json` file rather than an environment variable, whose name is lowercased before it becomes a config key.
 
 ## Workspace Directory
 

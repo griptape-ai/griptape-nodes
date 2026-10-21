@@ -17,7 +17,6 @@ import anyio
 
 from griptape_nodes.drivers.cloud_credentials import LICENSE_SECRET_NAME
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
-from griptape_nodes.retained_mode.beta_features import DISTRIBUTED_EXECUTION, is_beta_enabled
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events import converters, worker_events
 from griptape_nodes.retained_mode.events.app_events import (
@@ -40,8 +39,6 @@ from griptape_nodes.retained_mode.managers.external_environment import (
 from griptape_nodes.retained_mode.managers.machine_links import (
     DISTRIBUTED_EXECUTION_SCHEMA_VERSION,
     MachineNotFoundError,
-    engine_topic_prefix,
-    session_topic_prefix,
 )
 from griptape_nodes.retained_mode.managers.settings import (
     DISTRIBUTED_EXECUTION_LIBRARIES_KEY,
@@ -71,8 +68,8 @@ logger = logging.getLogger("griptape_nodes_app")
 # a fresh boot the spawn comes later, off AppSessionStartedEvent, by which point it is long settled.
 _STATIC_URL_SETTLE_TIMEOUT_S = 30.0
 
-# How long an orchestrator waits for another machine's orchestrator to answer a request. Starting a
-# worker answers once its process exists, so this bounds a machine that is down or unreachable.
+# How long an engine waits for another machine's engine to answer a request. Starting a worker
+# answers once its process exists, so this bounds a machine that is down or unreachable.
 _MACHINE_REQUEST_TIMEOUT_S = 60.0
 
 # The result type of a registration that never reached the machine it was for.
@@ -80,12 +77,33 @@ _MACHINE_NOT_FOUND = "MachineNotFound"
 
 
 @dataclass
-class _OriginatorRegistration:
-    """What a serving orchestrator knows about an orchestrator on another machine it runs work for."""
+class _SessionRegistration:
+    """What a machine knows about an artist's session on another machine it runs workers for."""
 
+    engine_id: str
     license_token: str | None
     static_server_base_url: str | None
     refused_libraries: dict[str, str]
+
+
+@dataclass
+class _RemoteStart:
+    """A worker the artist's engine asked another machine to start, until it registers, fails, or is withdrawn."""
+
+    machine: str
+    library_name: str
+
+
+@dataclass
+class _HostedWorker:
+    """A worker this machine runs for an artist's session on another machine."""
+
+    worker_key: str
+    engine_id: str
+    session_id: str
+    # None until the process exists. Stopping compares it to the managed process for the key, which a
+    # newer start for the same library may already have replaced.
+    process: asyncio.subprocess.Process | None = None
 
 
 def _result_details(result: dict) -> str:
@@ -117,7 +135,7 @@ class WorkerRegistration:
     # timeout charges the orchestrator's own latency to the worker and evicts one that was
     # never asked.
     unanswered_challenges: int = 0
-    # Address of the machine whose orchestrator started this worker, or None for a local worker.
+    # Engine ID of the machine that runs this worker, or None for a local worker.
     machine: str | None = None
 
 
@@ -187,23 +205,23 @@ class WorkerManager(EngineScoped):
         self._transport: _WorkerTransport | None = None
         self._machine_links: MachineLinks | None = None
 
-        # Libraries whose worker another machine's orchestrator was asked to start, by name, mapped
-        # to that machine's address. Their worker registers here like a local one.
-        self._remote_libraries: dict[str, str] = {}
+        # Workers another machine was asked to start, by the engine ID this engine chose for them,
+        # from sending the start until the worker registers, the start fails, or it is withdrawn.
+        # Their worker registers here like a local one.
+        self._remote_starts: dict[str, _RemoteStart] = {}
 
-        # This orchestrator's registration with each machine it sends work to, by (address, session).
+        # This engine's registration with each machine it sends work to, by (machine, session).
         self._machine_registrations: dict[tuple[str, str], asyncio.Task[dict]] = {}
 
-        # Orchestrators on other machines registered here, by their session id.
-        self._originators: dict[str, _OriginatorRegistration] = {}
+        # Artists' sessions on other machines registered here, by session id.
+        self._sessions: dict[str, _SessionRegistration] = {}
 
-        # Tasks waiting for a worker started for another machine to exit, held so they are not
-        # garbage-collected while they wait.
-        self._exit_watchers: set[asyncio.Task] = set()
+        # Workers this machine runs for artists' sessions on other machines, by worker engine ID.
+        self._hosted_workers: dict[str, _HostedWorker] = {}
 
-        # How many workers started for each other machine's session have not exited, which is how
-        # long this machine relays that session's topics.
-        self._session_relays: dict[str, int] = {}
+        # Requests telling a machine to stop a worker whose start was withdrawn, held so they are
+        # not garbage-collected while they wait for the answer.
+        self._stop_requests: set[asyncio.Task] = set()
 
         # Orchestrator-side registry: worker_engine_id → WorkerRegistration
         self._workers: dict[str, WorkerRegistration] = {}
@@ -344,9 +362,11 @@ class WorkerManager(EngineScoped):
     def attach_machine_links(self, machine_links: MachineLinks) -> None:
         """Bind the connections to other machines, for libraries the distribution settings send elsewhere.
 
-        Without them every library's worker runs on this machine, as before distributed execution.
+        Without them a library the distribution settings send elsewhere cannot run, and this machine
+        runs no workers for other machines.
         """
         self._machine_links = machine_links
+        machine_links.on_link_lost(self._on_machine_link_lost)
 
     @handles(worker_events.RegisterWorkerRequest)
     async def handle_register_worker_request(
@@ -363,10 +383,27 @@ class WorkerManager(EngineScoped):
                 "wire shape of every event is tied to the engine build."
             )
             return worker_events.RegisterWorkerResultFailure(result_details=details)
+        remote = self._remote_starts.get(wid)
+        assigned_machine = self._machine_for_library(request.library_name) if request.library_name else None
+        if remote is not None and remote.library_name != request.library_name:
+            details = (
+                f"Attempted to register worker {wid} for library '{request.library_name}'. Failed because "
+                f"this engine asked {remote.machine} to start that worker for library '{remote.library_name}'."
+            )
+            return worker_events.RegisterWorkerResultFailure(result_details=details)
+        if remote is None and assigned_machine is not None:
+            details = (
+                f"Attempted to register worker {wid} for library '{request.library_name}'. Failed because "
+                f"this engine did not ask {assigned_machine} to start a worker with that ID."
+            )
+            return worker_events.RegisterWorkerResultFailure(result_details=details)
+        machine = None
+        if remote is not None:
+            del self._remote_starts[wid]
+            machine = remote.machine
 
         session_id = self.engine.get_session_id()
         request_topic = f"sessions/{session_id}/workers/{wid}/request"
-        machine = self._remote_libraries.get(request.library_name) if request.library_name else None
         self._workers[wid] = WorkerRegistration(
             request_topic=request_topic, worker_key=request.library_name, machine=machine
         )
@@ -375,16 +412,11 @@ class WorkerManager(EngineScoped):
             logger.debug("Worker registered: %s → library '%s'", wid, request.library_name)
         else:
             logger.debug("Worker registered: %s (general-purpose)", wid)
+        if machine is not None:
+            logger.debug("Worker %s runs on machine %s", wid, machine)
 
         response_topic = f"sessions/{session_id}/workers/{wid}/response"
-        if machine is None:
-            await self._tx.subscribe_to_topic(response_topic)
-        else:
-            links = self._links_for(machine)
-            await links.subscribe(machine, response_topic)
-            # A reply to a request the worker forwarded is a broadcast on the worker's own topics.
-            await links.route(machine, engine_topic_prefix(wid))
-            logger.debug("Worker %s runs on machine %s", wid, machine)
+        await self._tx.subscribe_to_topic(response_topic)
         # Put the worker on this orchestrator's project rather than answering with it. One sender
         # and one adoption path, so a switch landing mid-registration is a second message on the
         # same channel instead of a reply racing a fan-out.
@@ -441,7 +473,7 @@ class WorkerManager(EngineScoped):
         worker_key = registration.worker_key if registration else None
         response_topic = f"sessions/{session_id}/workers/{wid}/response"
         await self._tx.unsubscribe_from_topic(response_topic)
-        await self._stop_routing(wid, registration)
+        await self._forget_if_remote(wid, registration)
         # Remove the managed process entry so a new worker can be spawned for this key.
         if registration is not None:
             removed = self._managed_worker_processes.pop(worker_key, None)
@@ -457,11 +489,11 @@ class WorkerManager(EngineScoped):
         logger.debug("Worker unregistered: %s", wid)
         return worker_events.UnregisterWorkerResultSuccess(worker_engine_id=wid, result_details="Worker unregistered.")
 
-    async def _stop_routing(self, worker_engine_id: str, registration: WorkerRegistration | None) -> None:
-        """Stop sending a gone worker's topics to the machine that ran it, if another machine did."""
+    async def _forget_if_remote(self, worker_engine_id: str, registration: WorkerRegistration | None) -> None:
+        """Stop sending a gone worker's traffic through the machine that ran it, if another machine did."""
         if registration is None or registration.machine is None:
             return
-        await self._links_for(registration.machine).unroute(registration.machine, engine_topic_prefix(worker_engine_id))
+        await self._links_for(registration.machine).forget(worker_engine_id)
 
     async def orchestrator_heartbeat_loop(self) -> None:
         """Challenge each registered worker on an interval; evict those that stop answering."""
@@ -488,7 +520,7 @@ class WorkerManager(EngineScoped):
                 # and both charging that to the worker and leaving nothing to evict it are the
                 # orchestrator's problem becoming the worker's.
                 try:
-                    await self._send_to_worker(wid, converters.engine.dumps(hb), registration.request_topic)
+                    await self._tx.send_message("EventRequest", converters.engine.dumps(hb), registration.request_topic)
                 except Exception:
                     logger.warning(
                         "Could not challenge worker %s on '%s'; not counting it against the worker.",
@@ -540,6 +572,10 @@ class WorkerManager(EngineScoped):
         if worker_key in self._requested_spawns:
             return True
         if worker_key in self._managed_worker_processes:
+            return True
+        # Another machine answering that it started the worker ends the request above, and the worker
+        # registers only later; a second start in between would replace the readiness gate.
+        if any(start.library_name == worker_key for start in self._remote_starts.values()):
             return True
         return self.get_worker_for_key(worker_key) is not None
 
@@ -797,17 +833,23 @@ class WorkerManager(EngineScoped):
                     await self._tx.unsubscribe_from_topic(response_topic)
                 except Exception as e:
                     logger.debug("Failed to unsubscribe from '%s' while stopping workers: %s", response_topic, e)
+        await self._forget_remote_workers(worker_ids, library_names=library_names)
         if library_names is None:
             self._managed_worker_processes.clear()
             self._workers.clear()
-            self._remote_libraries.clear()
             self._machine_registrations.clear()
             return
         for wid in worker_ids:
             self._workers.pop(wid, None)
-        self._remote_libraries = {
-            name: machine for name, machine in self._remote_libraries.items() if name not in library_names
-        }
+
+    async def _forget_remote_workers(self, worker_ids: list[str], *, library_names: set[str | None] | None) -> None:
+        """Forget the traffic routes of the stopped workers another machine runs, and of the named libraries' starts."""
+        for wid in worker_ids:
+            await self._forget_if_remote(wid, self._workers.get(wid))
+        for wid, start in list(self._remote_starts.items()):
+            if library_names is None or start.library_name in library_names:
+                del self._remote_starts[wid]
+                await self._links_for(start.machine).forget(wid)
 
     def _withdraw_spawn_requests(self, *, library_names: set[str | None] | None, action: str) -> None:
         """Forget the named libraries' spawn requests (every library's when None), so a later one is honored.
@@ -925,7 +967,7 @@ class WorkerManager(EngineScoped):
         lib_name = registration.worker_key if registration else None
         topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
         await self._tx.unsubscribe_from_topic(topic)
-        await self._stop_routing(worker_engine_id, registration)
+        await self._forget_if_remote(worker_engine_id, registration)
         logger.warning("Worker evicted: %s", worker_engine_id)
         # Terminate the managed subprocess for this worker, if any.
         if registration is not None:
@@ -1077,17 +1119,22 @@ class WorkerManager(EngineScoped):
         """Schedule a worker for the given library, unless one is already coming.
 
         Returns immediately; the worker is started once a session becomes available, on this machine
-        or on the one the distribution settings assign the library to. A request naming another
-        orchestrator's session comes from that orchestrator, and starts a worker that serves it.
+        or on the one the distribution settings assign the library to. A request naming a session
+        comes from the artist's engine on another machine, and starts a worker that serves it.
         """
-        if request.originator_session_id is not None:
+        if request.session_id is not None:
             # Another machine sends only the libraries assigned to this one; the general-purpose worker
             # serves the machine that runs it.
-            if request.library_name is None:
+            if request.library_name is None or request.engine_id is None or request.worker_engine_id is None:
                 return worker_events.StartWorkerResultFailure(
-                    result_details="Attempted to start a worker for another machine. Failed because it named no library."
+                    result_details=(
+                        "Attempted to start a worker for another machine. Failed because the request did not "
+                        "name its library, its engine, and the worker's engine ID."
+                    )
                 )
-            return await self._start_worker_for_originator(request.library_name, request.originator_session_id)
+            return await self._start_worker_for_session(
+                request.library_name, request.session_id, request.engine_id, request.worker_engine_id
+            )
         library_name = request.library_name
         # Checked, declared, and scheduled with no await between, so two requests cannot both pass.
         # Declaring again would be worse than redundant: expect_worker replaces the readiness gate, and
@@ -1143,11 +1190,11 @@ class WorkerManager(EngineScoped):
         await self.spawn_worker(resolved.args, library_name)
 
     async def _start_worker_on_machine(self, library_name: str, machine: str) -> None:
-        """Wait for an active session, then ask the orchestrator at `machine` to start the library's worker.
+        """Wait for an active session, then ask the engine of `machine` to start the library's worker.
 
-        The worker joins this orchestrator's session, so it registers here exactly as a local worker
-        does, and `machine`'s orchestrator relays everything between the two. Any refusal on the way
-        is recorded as the reason the library cannot run, so a run fails with it at once.
+        The worker joins this engine's session, so it registers here exactly as a local worker does,
+        and `machine`'s engine relays everything between the two. Any refusal on the way is recorded
+        as the reason the library cannot run, so a run fails with it at once.
         """
         session_id = await self._wait_for_session(library_name)
         if session_id is None:
@@ -1157,41 +1204,101 @@ class WorkerManager(EngineScoped):
             logger.error("Not starting a worker for library '%s': %s", library_name, reason)
             self.note_worker_unavailable(library_name, reason)
             return
-        result = await self._ask_machine_to_start_worker(library_name, machine, session_id)
-        if result is not None and result.get("result", {}).get("originator_unknown"):
-            # The machine restarted since this orchestrator registered with it, so register again, once.
+        engine_id = self.engine.get_engine_id()
+        if engine_id is None:
+            reason = f"its nodes are set to run on {machine}, but this engine has no engine ID to give that machine."
+            logger.error("Not starting a worker for library '%s': %s", library_name, reason)
+            self.note_worker_unavailable(library_name, reason)
+            return
+        result = await self._ask_machine_to_start_worker(library_name, machine, engine_id, session_id)
+        if result is not None and result.get("result", {}).get("session_unknown"):
+            # The machine restarted since this engine registered with it, so register again, once.
             self._machine_registrations.pop((machine, session_id), None)
-            result = await self._ask_machine_to_start_worker(library_name, machine, session_id)
+            result = await self._ask_machine_to_start_worker(library_name, machine, engine_id, session_id)
         if result is None or result.get("result_type") == worker_events.StartWorkerResultSuccess.__name__:
             return
         reason = f"{machine} did not start its worker: {_result_details(result)}"
         logger.error("Not starting a worker for library '%s': %s", library_name, reason)
-        self._remote_libraries.pop(library_name, None)
         self.note_worker_unavailable(library_name, reason)
 
-    async def _ask_machine_to_start_worker(self, library_name: str, machine: str, session_id: str) -> dict | None:
-        """Register with `machine` if needed, then ask it to start the library's worker.
+    async def _ask_machine_to_start_worker(
+        self, library_name: str, machine: str, engine_id: str, session_id: str
+    ) -> dict | None:
+        """Register with `machine` if needed, then ask it to start the library's worker under an ID chosen here.
 
-        Returns the machine's raw result, or None if it refused this orchestrator or the library,
-        which is then recorded as the reason the library cannot run.
+        Returns the machine's raw result, or None if it refused this engine or the library, could not
+        be reached, or did not answer, which is then recorded as the reason the library cannot run.
+        A start that did not succeed is forgotten; one that did is kept until its worker registers.
         """
-        refusal = await self._register_with_machine(machine, session_id)
+        refusal = await self._register_with_machine(machine, engine_id, session_id)
         if refusal is None:
             refusal = self._machine_refusals(machine, session_id).get(library_name)
         if refusal is not None:
             logger.error("Not starting a worker for library '%s' on %s: %s", library_name, machine, refusal)
             self.note_worker_unavailable(library_name, refusal)
             return None
-        self._remote_libraries[library_name] = machine
-        logger.info("Asking %s to start the worker for library '%s'.", machine, library_name)
-        return await self._request_machine(
-            machine,
-            session_id,
-            worker_events.StartWorkerRequest(library_name=library_name, originator_session_id=session_id),
+        links = self._links_for(machine)
+        worker_engine_id = str(uuid.uuid4())
+        self._remote_starts[worker_engine_id] = _RemoteStart(machine=machine, library_name=library_name)
+        logger.info("Asking %s to start worker %s for library '%s'.", machine, worker_engine_id, library_name)
+        request = worker_events.StartWorkerRequest(
+            library_name=library_name,
+            session_id=session_id,
+            engine_id=engine_id,
+            worker_engine_id=worker_engine_id,
         )
+        try:
+            await links.reach(worker_engine_id, via=machine)
+            result = await links.request(machine, request, timeout_s=_MACHINE_REQUEST_TIMEOUT_S)
+        except MachineNotFoundError as e:
+            await self._withdraw_remote_start(worker_engine_id, machine)
+            logger.error("Not starting a worker for library '%s': %s", library_name, e)
+            self.note_worker_unavailable(library_name, str(e))
+            return None
+        except asyncio.CancelledError:
+            # The machine may have started the worker before the start was withdrawn here.
+            self._schedule_remote_stop(worker_engine_id, machine, engine_id, session_id)
+            raise
+        if result.get("result_type") != worker_events.StartWorkerResultSuccess.__name__:
+            await self._withdraw_remote_start(worker_engine_id, machine)
+        return result
 
-    async def _register_with_machine(self, machine: str, session_id: str) -> str | None:
-        """Register this orchestrator with `machine` for `session_id`, once, and return why it refused, if it did.
+    async def _withdraw_remote_start(self, worker_engine_id: str, machine: str) -> None:
+        self._remote_starts.pop(worker_engine_id, None)
+        await self._links_for(machine).forget(worker_engine_id)
+
+    def _schedule_remote_stop(self, worker_engine_id: str, machine: str, engine_id: str, session_id: str) -> None:
+        """Forget a start withdrawn while `machine` was answering it, and tell the machine to stop that worker."""
+        self._remote_starts.pop(worker_engine_id, None)
+        task = asyncio.get_running_loop().create_task(
+            self._stop_remote_worker(worker_engine_id, machine, engine_id, session_id)
+        )
+        self._stop_requests.add(task)
+        task.add_done_callback(self._stop_requests.discard)
+
+    async def _stop_remote_worker(self, worker_engine_id: str, machine: str, engine_id: str, session_id: str) -> None:
+        links = self._links_for(machine)
+        await links.forget(worker_engine_id)
+        request = worker_events.StopWorkerRequest(
+            worker_engine_id=worker_engine_id, engine_id=engine_id, session_id=session_id
+        )
+        try:
+            result = await links.request(machine, request, timeout_s=_MACHINE_REQUEST_TIMEOUT_S)
+        except MachineNotFoundError as e:
+            logger.warning(
+                "Could not tell %s to stop worker %s, whose start was withdrawn: %s", machine, worker_engine_id, e
+            )
+            return
+        if result.get("result_type") != worker_events.StopWorkerResultSuccess.__name__:
+            logger.warning(
+                "%s did not stop worker %s, whose start was withdrawn: %s",
+                machine,
+                worker_engine_id,
+                _result_details(result),
+            )
+
+    async def _register_with_machine(self, machine: str, engine_id: str, session_id: str) -> str | None:
+        """Register this engine's session with `machine`, once, and return why it refused, if it did.
 
         Every library assigned to `machine` awaits the one registration, so the machine is asked once
         per session however many of its libraries start. Only an accepted registration is kept: a
@@ -1200,65 +1307,58 @@ class WorkerManager(EngineScoped):
         key = (machine, session_id)
         registration = self._machine_registrations.get(key)
         if registration is None:
-            registration = asyncio.get_running_loop().create_task(self._send_registration(machine, session_id))
+            registration = asyncio.get_running_loop().create_task(
+                self._send_registration(machine, engine_id, session_id)
+            )
             registration.add_done_callback(lambda task: self._forget_unaccepted_registration(key, task))
             self._machine_registrations[key] = registration
         result = await asyncio.shield(registration)
-        if result.get("result_type") == worker_events.RegisterOriginatorResultSuccess.__name__:
+        if result.get("result_type") == worker_events.RegisterSessionResultSuccess.__name__:
             return None
         if result.get("result_type") == _MACHINE_NOT_FOUND:
             return _result_details(result)
         return f"{machine} refused to run work for this machine: {_result_details(result)}"
 
     def _forget_unaccepted_registration(self, key: tuple[str, str], task: asyncio.Task[dict]) -> None:
-        # Forgetting is also what finds a machine again: the next start looks it up afresh, so a
-        # machine that moved to a new address is followed there.
         accepted = (
             not task.cancelled()
             and task.exception() is None
-            and task.result().get("result_type") == worker_events.RegisterOriginatorResultSuccess.__name__
+            and task.result().get("result_type") == worker_events.RegisterSessionResultSuccess.__name__
         )
         if not accepted and self._machine_registrations.get(key) is task:
             del self._machine_registrations[key]
 
     def _machine_refusals(self, machine: str, session_id: str) -> dict[str, str]:
-        """The libraries `machine` refused when this orchestrator registered with it, with the reasons."""
+        """The libraries `machine` refused when this engine registered with it, with the reasons."""
         result = self._machine_registrations[(machine, session_id)].result()
         refused: dict[str, str] = result.get("result", {}).get("refused_libraries", {})
         return {library: f"{machine} cannot run it: {reason}" for library, reason in refused.items()}
 
-    async def _send_registration(self, machine: str, session_id: str) -> dict:
+    async def _send_registration(self, machine: str, engine_id: str, session_id: str) -> dict:
         links = self._links_for(machine)
-        try:
-            await links.connect(machine)
-        except MachineNotFoundError as e:
-            return {"result_type": _MACHINE_NOT_FOUND, "result": {"result_details": str(e)}}
-        # Subscribed before anything is asked: the replies arrive as session responses, and once a
-        # worker starts, its registration and library load report arrive as session requests.
-        await links.subscribe(machine, f"sessions/{session_id}/request")
-        await links.subscribe(machine, f"sessions/{session_id}/response")
         assigned = self.engine.config_manager.get_config_value(DISTRIBUTED_EXECUTION_LIBRARIES_KEY, default={})
         library_versions: dict[str, str] = {}
         for library_name, assigned_machine in assigned.items():
             info = self.engine.library_manager.get_library_info_by_library_name(library_name)
             if assigned_machine == machine and info is not None and info.library_version is not None:
                 library_versions[library_name] = info.library_version
-        request = worker_events.RegisterOriginatorRequest(
-            originator_session_id=session_id,
+        request = worker_events.RegisterSessionRequest(
+            engine_id=engine_id,
+            session_id=session_id,
             schema_version=DISTRIBUTED_EXECUTION_SCHEMA_VERSION,
             engine_version=engine_version,
             library_versions=library_versions,
             license_token=self.engine.secrets_manager.get_secret(LICENSE_SECRET_NAME, should_error_on_not_found=False),
             static_server_base_url=await self._orchestrator_static_server_base_url(),
         )
-        result = await self._request_machine(machine, session_id, request)
+        try:
+            result = await links.request(machine, request, timeout_s=_MACHINE_REQUEST_TIMEOUT_S)
+        except MachineNotFoundError as e:
+            return {"result_type": _MACHINE_NOT_FOUND, "result": {"result_details": str(e)}}
         answered_as = result.get("result", {}).get("engine_id")
         # Catches a registry record or address that leads to the wrong machine. It cannot catch one
-        # that claims to be `machine`, since the answer is the serving orchestrator's own word.
-        if (
-            result.get("result_type") == worker_events.RegisterOriginatorResultSuccess.__name__
-            and answered_as != machine
-        ):
+        # that claims to be `machine`, since the answer is the machine's own word.
+        if result.get("result_type") == worker_events.RegisterSessionResultSuccess.__name__ and answered_as != machine:
             details = (
                 f"Attempted to reach machine {machine}. Failed because the engine at its address is "
                 f"{answered_as or 'one that did not say which engine it is'}."
@@ -1266,52 +1366,79 @@ class WorkerManager(EngineScoped):
             return {"result_type": _MACHINE_NOT_FOUND, "result": {"result_details": details}}
         return result
 
-    async def _request_machine(self, machine: str, session_id: str, request: RequestPayload) -> dict:
-        """Send `request` to the orchestrator at `machine` and return its raw result payload.
+    @handles(worker_events.WorkerExitedRequest)
+    async def handle_worker_exited_request(
+        self, request: worker_events.WorkerExitedRequest
+    ) -> worker_events.WorkerExitedResultSuccess | worker_events.WorkerExitedResultFailure:
+        """Settle a worker another machine ran for this engine, now that the machine reports it exited.
 
-        Bounded, unlike a request to a worker: a link queues what it is given while its machine is
-        unreachable, so an unbounded wait for a machine that is down would never end.
+        Handled like a local worker's exit: a start that never registered settles the library with the
+        reason, and a registered worker is removed at once. "exited" leaves the library unavailable
+        with the reason; "stopped" leaves it free to be started again.
         """
-        request_id = str(uuid.uuid4())
-        future = await self._tx.request_client.track_request(request_id, tag=machine, resolve_failures_as_payload=True)
-        event = EventRequest(request=request, request_id=request_id, response_topic=f"sessions/{session_id}/response")
-        try:
-            # Addressed to the machine's engine rather than the bare "request" topic, which on a
-            # transport shared by several engines would reach every one of them.
-            await self._links_for(machine).publish(
-                machine, "EventRequest", converters.engine.dumps(event), f"{engine_topic_prefix(machine)}request"
+        wid = request.worker_engine_id
+        if request.engine_id != self.engine.get_engine_id() or request.session_id != self.engine.get_session_id():
+            return worker_events.WorkerExitedResultFailure(
+                result_details=(
+                    f"Attempted to record that worker {wid} exited. Failed because it served session "
+                    f"{request.session_id} of engine {request.engine_id}, which this engine does not run."
+                )
             )
-            return await asyncio.wait_for(asyncio.wrap_future(future), timeout=_MACHINE_REQUEST_TIMEOUT_S)
-        except TimeoutError:
-            self._tx.request_client.discard_request(request_id)
-            return {
-                "result_type": "MachineDidNotAnswer",
-                "result": {
-                    "result_details": f"{machine} did not answer within {_MACHINE_REQUEST_TIMEOUT_S:.0f} seconds."
-                },
-            }
-        except BaseException:
-            self._tx.request_client.discard_request(request_id)
-            raise
+        start = self._remote_starts.pop(wid, None)
+        registration = self._workers.get(wid)
+        machine = None
+        library_name = None
+        if start is not None:
+            machine = start.machine
+            library_name = start.library_name
+        elif registration is not None and registration.machine is not None:
+            machine = registration.machine
+            library_name = registration.worker_key
+        if machine is None:
+            return worker_events.WorkerExitedResultSuccess(
+                result_details=f"This engine was not waiting on worker {wid}, so there was nothing to record."
+            )
+        registered = start is None
+        await self._links_for(machine).forget(wid)
+        if request.reason == "stopped":
+            reason = f"{machine} stopped the worker process that runs it."
+        elif not registered:
+            reason = (
+                f"the worker process that runs it on {machine} stopped while starting up (exit code "
+                f"{request.exit_code}). The engine log on that machine has the details."
+            )
+        else:
+            reason = (
+                f"the worker process that runs it on {machine} stopped (exit code {request.exit_code}). "
+                "The engine log on that machine has the details."
+            )
+        logger.warning("Worker %s for library '%s' on %s %s.", wid, library_name, machine, request.reason)
+        if registered:
+            del self._workers[wid]
+            await self._tx.unsubscribe_from_topic(f"sessions/{request.session_id}/workers/{wid}/response")
+            await self._tx.request_client.fail_requests_by_tag(
+                wid, worker_events.WorkerGoneError(f"worker '{wid}' on {machine} {request.reason}")
+            )
+        # The local rules: a worker that ended on its own leaves its library unavailable, and one that
+        # was stopped does so only if it never loaded, so whatever waits on it hears why.
+        if request.reason == "exited" or not self.has_settled(library_name):
+            self.note_worker_unavailable(library_name, reason)
+        return worker_events.WorkerExitedResultSuccess(result_details=f"Recorded that worker {wid} exited.")
 
-    @handles(worker_events.RegisterOriginatorRequest)
-    def handle_register_originator_request(
-        self, request: worker_events.RegisterOriginatorRequest
-    ) -> worker_events.RegisterOriginatorResultSuccess | worker_events.RegisterOriginatorResultFailure:
-        """Accept an orchestrator on another machine, whose libraries this machine will run, or refuse it."""
-        if not is_beta_enabled(DISTRIBUTED_EXECUTION, self.engine.config_manager):
-            return worker_events.RegisterOriginatorResultFailure(
-                result_details=f"the '{DISTRIBUTED_EXECUTION.name}' beta feature is off on this machine."
-            )
+    @handles(worker_events.RegisterSessionRequest)
+    def handle_register_session_request(
+        self, request: worker_events.RegisterSessionRequest
+    ) -> worker_events.RegisterSessionResultSuccess | worker_events.RegisterSessionResultFailure:
+        """Accept an artist's session from another machine, whose libraries this machine will run, or refuse it."""
         if request.schema_version != DISTRIBUTED_EXECUTION_SCHEMA_VERSION:
-            return worker_events.RegisterOriginatorResultFailure(
+            return worker_events.RegisterSessionResultFailure(
                 result_details=(
                     f"it speaks distributed execution version {request.schema_version}, and this machine "
                     f"speaks {DISTRIBUTED_EXECUTION_SCHEMA_VERSION}."
                 )
             )
         if request.engine_version != engine_version:
-            return worker_events.RegisterOriginatorResultFailure(
+            return worker_events.RegisterSessionResultFailure(
                 result_details=(
                     f"it runs engine version {request.engine_version}, and this machine runs {engine_version}. "
                     "Both machines must run the same engine version."
@@ -1327,55 +1454,55 @@ class WorkerManager(EngineScoped):
                     f"it has version {info.library_version} of the library, and this machine has {version}. "
                     "Both machines must have the same version."
                 )
-        self._originators[request.originator_session_id] = _OriginatorRegistration(
+        self._sessions[request.session_id] = _SessionRegistration(
+            engine_id=request.engine_id,
             license_token=request.license_token,
             static_server_base_url=request.static_server_base_url,
             refused_libraries=refused,
         )
-        return worker_events.RegisterOriginatorResultSuccess(
+        return worker_events.RegisterSessionResultSuccess(
             engine_id=self.engine.get_engine_id() or "",
             refused_libraries=refused,
-            result_details="Accepted the orchestrator from another machine.",
+            result_details=f"Accepted session {request.session_id} of engine {request.engine_id}.",
         )
 
-    async def _start_worker_for_originator(
-        self, library_name: str, originator_session_id: str
+    async def _start_worker_for_session(
+        self, library_name: str, session_id: str, engine_id: str, worker_engine_id: str
     ) -> worker_events.StartWorkerResultSuccess | worker_events.StartWorkerResultFailure:
-        """Start a worker for an orchestrator on another machine, in that orchestrator's session."""
-        worker_key = f"{originator_session_id}/{library_name}"
+        """Start a worker for an artist's session on another machine, in that session, under the ID it chose."""
+        worker_key = f"{session_id}/{library_name}"
         if worker_key in self._spawns_in_flight:
-            return worker_events.StartWorkerResultSuccess(
+            return worker_events.StartWorkerResultFailure(
                 result_details=f"A worker for library '{library_name}' is already starting for that session."
             )
-        refusal = self._refusal_to_serve(library_name, originator_session_id)
+        refusal = self._refusal_to_serve(library_name, session_id, engine_id)
         if refusal is not None:
             return worker_events.StartWorkerResultFailure(
-                result_details=refusal, originator_unknown=originator_session_id not in self._originators
+                result_details=refusal, session_unknown=session_id not in self._sessions
             )
-        resolved = self._worker_command(library_name, originator_session_id)
+        resolved = self._worker_command(library_name, session_id)
         if isinstance(resolved, WorkerCommandRefusal):
             return worker_events.StartWorkerResultFailure(result_details=resolved.reason)
-        # The originator asks only once it has no worker for the library, so a running one is a
+        # The artist's engine asks only once it has no worker for the library, so a running one is a
         # worker it already stopped using, such as after a library reset, and would never register.
         stale = self._managed_worker_processes.pop(worker_key, None)
         if stale is not None:
-            logger.info("Replacing the worker for key '%s' that its orchestrator stopped using.", worker_key)
+            logger.info("Replacing the worker for key '%s' that its session stopped using.", worker_key)
             await self._terminate_via_spawn_loop(worker_key, stale)
-        originator = self._originators[originator_session_id]
-        links = self._links_for("another machine")
+        session = self._sessions[session_id]
+        links = self._links_for(engine_id)
         environ_overrides: dict[str, str] = {}
         # The worker runs under the artist's license rather than this machine's.
-        if originator.license_token is not None:
-            environ_overrides[LICENSE_SECRET_NAME] = originator.license_token
-        # Its asset URLs are opened by the originator's editor, which reaches the originator's server.
-        if originator.static_server_base_url is not None:
-            environ_overrides[ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV] = originator.static_server_base_url
-        worker_engine_id = str(uuid.uuid4())
+        if session.license_token is not None:
+            environ_overrides[LICENSE_SECRET_NAME] = session.license_token
+        # Its asset URLs are opened by the artist's editor, which reaches the artist's engine's server.
+        if session.static_server_base_url is not None:
+            environ_overrides[ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV] = session.static_server_base_url
+        hosted = _HostedWorker(worker_key=worker_key, engine_id=engine_id, session_id=session_id)
+        self._hosted_workers[worker_engine_id] = hosted
         # Relayed before the worker exists, so its registration, sent the moment it connects, already
-        # reaches the originator. Counted first, so a worker of the session exiting meanwhile keeps it.
-        self._session_relays[originator_session_id] = self._session_relays.get(originator_session_id, 0) + 1
-        await links.relay(session_topic_prefix(originator_session_id))
-        await links.relay(engine_topic_prefix(worker_engine_id))
+        # reaches the artist's engine.
+        await links.relay(worker_engine_id, session_id=session_id)
         try:
             await self.spawn_worker(
                 resolved.args,
@@ -1385,56 +1512,126 @@ class WorkerManager(EngineScoped):
                 environ_overrides=environ_overrides,
             )
         except BaseException:
-            await self._stop_relaying(originator_session_id, worker_engine_id)
+            self._hosted_workers.pop(worker_engine_id, None)
+            await links.forget(worker_engine_id)
             raise
         proc = self._managed_worker_processes.get(worker_key)
         if proc is None:
-            await self._stop_relaying(originator_session_id, worker_engine_id)
-        else:
-            # It registers with the originator, not here, so its unregistration never reaches this
-            # engine. Watching the process is what lets a later request for the session start another.
-            watcher = asyncio.get_running_loop().create_task(
-                self._forget_when_exited(worker_key, proc, worker_engine_id)
+            self._hosted_workers.pop(worker_engine_id, None)
+            await links.forget(worker_engine_id)
+            return worker_events.StartWorkerResultFailure(
+                result_details=f"A worker for library '{library_name}' is already starting for that session."
             )
-            self._exit_watchers.add(watcher)
-            watcher.add_done_callback(self._exit_watchers.discard)
+        hosted.process = proc
+        # It registers with the artist's engine, not here, so its unregistration never reaches this
+        # engine. Watching the process is what reports its exit and lets another start for the session.
+        watcher = asyncio.get_running_loop().create_task(self._report_when_exited(worker_engine_id, hosted, proc))
+        self._exit_watchers.add(watcher)
+        watcher.add_done_callback(self._exit_watchers.discard)
         return worker_events.StartWorkerResultSuccess(
-            result_details=f"Started a worker for library '{library_name}' for another machine."
+            result_details=f"Started worker {worker_engine_id} for library '{library_name}' for another machine."
         )
 
-    def _refusal_to_serve(self, library_name: str, originator_session_id: str) -> str | None:
-        """Why this machine will not start `library_name`'s worker for that originator, or None if it will."""
-        if not is_beta_enabled(DISTRIBUTED_EXECUTION, self.engine.config_manager):
-            return f"the '{DISTRIBUTED_EXECUTION.name}' beta feature is off on this machine."
+    def _refusal_to_serve(self, library_name: str, session_id: str, engine_id: str) -> str | None:
+        """Why this machine will not start `library_name`'s worker for that session, or None if it will."""
         if self._machine_links is None:
             return "this engine has no connections to other machines."
-        originator = self._originators.get(originator_session_id)
-        if originator is None:
-            return "the orchestrator asking for it never registered with this machine."
-        return originator.refused_libraries.get(library_name)
+        session = self._sessions.get(session_id)
+        if session is None:
+            return "the session asking for it never registered with this machine."
+        if session.engine_id != engine_id:
+            return f"the session asking for it is registered to engine {session.engine_id}, not {engine_id}."
+        return session.refused_libraries.get(library_name)
 
-    async def _forget_when_exited(
-        self, worker_key: str, proc: asyncio.subprocess.Process, worker_engine_id: str
+    async def _report_when_exited(
+        self, worker_engine_id: str, hosted: _HostedWorker, proc: asyncio.subprocess.Process
     ) -> None:
-        await proc.wait()
-        if self._managed_worker_processes.get(worker_key) is proc:
-            del self._managed_worker_processes[worker_key]
-            logger.debug("Worker for key '%s' exited (pid %s)", worker_key, proc.pid)
-        await self._stop_relaying(worker_key.partition("/")[0], worker_engine_id)
-
-    async def _stop_relaying(self, originator_session_id: str, worker_engine_id: str) -> None:
-        """Stop relaying a gone worker's topics, and its session's once none of the session's workers is left."""
-        links = self._links_for("another machine")
-        await links.unrelay(engine_topic_prefix(worker_engine_id))
-        remaining = self._session_relays.get(originator_session_id, 0) - 1
-        if remaining > 0:
-            self._session_relays[originator_session_id] = remaining
+        """Tell the artist's engine that a worker this machine ran for it exited, and why."""
+        exit_code = await proc.wait()
+        reason = "stopped"
+        # A process this manager stopped itself was dropped from the records first.
+        if self._managed_worker_processes.get(hosted.worker_key) is proc:
+            del self._managed_worker_processes[hosted.worker_key]
+            reason = "exited"
+        logger.debug("Worker %s for key '%s' %s (exit code %s)", worker_engine_id, hosted.worker_key, reason, exit_code)
+        self._hosted_workers.pop(worker_engine_id, None)
+        links = self._links_for(hosted.engine_id)
+        await links.forget(worker_engine_id)
+        request = worker_events.WorkerExitedRequest(
+            worker_engine_id=worker_engine_id,
+            engine_id=hosted.engine_id,
+            session_id=hosted.session_id,
+            exit_code=exit_code,
+            reason=reason,
+        )
+        try:
+            result = await links.request(hosted.engine_id, request, timeout_s=_MACHINE_REQUEST_TIMEOUT_S)
+        except MachineNotFoundError as e:
+            logger.warning("Could not tell engine %s that worker %s exited: %s", hosted.engine_id, worker_engine_id, e)
             return
-        self._session_relays.pop(originator_session_id, None)
-        await links.unrelay(session_topic_prefix(originator_session_id))
-        # A worker started for the session while that awaited relayed the prefix itself, maybe first.
-        if originator_session_id in self._session_relays:
-            await links.relay(session_topic_prefix(originator_session_id))
+        if result.get("result_type") != worker_events.WorkerExitedResultSuccess.__name__:
+            logger.warning(
+                "Engine %s did not record that worker %s exited: %s",
+                hosted.engine_id,
+                worker_engine_id,
+                _result_details(result),
+            )
+
+    @handles(worker_events.StopWorkerRequest)
+    async def handle_stop_worker_request(
+        self, request: worker_events.StopWorkerRequest
+    ) -> worker_events.StopWorkerResultSuccess | worker_events.StopWorkerResultFailure:
+        """Stop a worker this machine runs for an artist's session, at that artist's engine's request."""
+        wid = request.worker_engine_id
+        hosted = self._hosted_workers.get(wid)
+        if hosted is None:
+            return worker_events.StopWorkerResultSuccess(result_details=f"This machine is not running worker {wid}.")
+        if hosted.engine_id != request.engine_id or hosted.session_id != request.session_id:
+            return worker_events.StopWorkerResultFailure(
+                result_details=(
+                    f"Attempted to stop worker {wid}. Failed because it serves session {hosted.session_id} of "
+                    f"engine {hosted.engine_id}, not session {request.session_id} of engine {request.engine_id}."
+                )
+            )
+        await self._stop_hosted_worker(hosted)
+        return worker_events.StopWorkerResultSuccess(result_details=f"Stopped worker {wid}.")
+
+    async def _stop_hosted_worker(self, hosted: _HostedWorker) -> None:
+        """Stop a worker this machine runs for another machine. Its exit watcher reports it stopped."""
+        proc = hosted.process
+        if proc is None or self._managed_worker_processes.get(hosted.worker_key) is not proc:
+            return
+        del self._managed_worker_processes[hosted.worker_key]
+        await self._terminate_via_spawn_loop(hosted.worker_key, proc)
+
+    async def _on_machine_link_lost(self, engine_id: str) -> None:
+        """Settle the starts sent to a machine whose link was lost, or forget an artist's engine whose link was.
+
+        On the artist's side, a start the machine accepted but whose worker never registered would
+        otherwise wait out the library load timeout. On the machine's side, that artist's sessions are
+        forgotten and the workers run for them stopped.
+        """
+        for wid, start in list(self._remote_starts.items()):
+            if start.machine != engine_id:
+                continue
+            del self._remote_starts[wid]
+            await self._links_for(engine_id).forget(wid)
+            self.note_worker_unavailable(
+                start.library_name, f"the connection to {engine_id}, which runs its worker, was lost."
+            )
+        lost_sessions = [session_id for session_id, session in self._sessions.items() if session.engine_id == engine_id]
+        for session_id in lost_sessions:
+            del self._sessions[session_id]
+        hosted = [worker for worker in self._hosted_workers.values() if worker.engine_id == engine_id]
+        if not lost_sessions and not hosted:
+            return
+        logger.warning(
+            "Lost the link to engine %s; forgetting its %d session(s) and stopping the %d worker(s) run for it.",
+            engine_id,
+            len(lost_sessions),
+            len(hosted),
+        )
+        await asyncio.gather(*(self._stop_hosted_worker(worker) for worker in hosted))
 
     async def _wait_for_session(self, library_name: str) -> str | None:
         """Return the active session's id once there is one, or None, recorded, if none came."""
@@ -1482,9 +1679,7 @@ class WorkerManager(EngineScoped):
         )
 
     def _machine_for_library(self, library_name: str) -> str | None:
-        """The address of the machine the distribution settings send `library_name` to, or None for here."""
-        if not is_beta_enabled(DISTRIBUTED_EXECUTION, self.engine.config_manager):
-            return None
+        """The engine ID of the machine the distribution settings send `library_name` to, or None for here."""
         libraries = self.engine.config_manager.get_config_value(DISTRIBUTED_EXECUTION_LIBRARIES_KEY, default={})
         return libraries.get(library_name)
 
@@ -1717,16 +1912,7 @@ class WorkerManager(EngineScoped):
         worker_response_topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
         forwarded = event.model_copy(update={"response_topic": worker_response_topic})
         logger.debug("Forwarding %s to worker %s", type(event.request).__name__, worker_engine_id)
-        await self._send_to_worker(worker_engine_id, converters.engine.dumps(forwarded), worker_request_topic)
-
-    async def _send_to_worker(self, worker_engine_id: str, payload: str, worker_request_topic: str) -> None:
-        """Send an EventRequest to a worker, over its machine's link when another machine hosts it."""
-        registration = self._workers.get(worker_engine_id)
-        if registration is not None and registration.machine is not None:
-            machine = registration.machine
-            await self._links_for(machine).publish(machine, "EventRequest", payload, worker_request_topic)
-            return
-        await self._tx.send_message("EventRequest", payload, worker_request_topic)
+        await self._tx.send_message("EventRequest", converters.engine.dumps(forwarded), worker_request_topic)
 
     async def _on_config_changed(self, _event: ConfigChanged) -> None:
         """Fan out a ReloadConfigRequest after the orchestrator's config mutation succeeded.

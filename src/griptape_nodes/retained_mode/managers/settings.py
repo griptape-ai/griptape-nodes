@@ -448,13 +448,11 @@ class DistributedExecutionSettings(BaseModel):
     libraries: dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "Where each library's nodes run, as a map of library name to the engine ID of the machine "
-            "that runs them, for example "
-            '{"Griptape Nodes Diffusers Library": "3f2c8e1a-5b7d-4c9e-a0f1-2b3c4d5e6f70"}. This engine '
-            "finds that machine through the engine registry, so the machine must set "
-            "transports.websocket_direct.advertise_url to an address this machine can reach. A library "
-            "with no entry runs on this machine. Needs the Distributed execution beta feature on both "
-            "machines."
+            "Which machine runs each library's nodes: a map of library name to that machine's engine ID, "
+            'for example {"Griptape Nodes Diffusers Library": "3f2c8e1a-5b7d-4c9e-a0f1-2b3c4d5e6f70"}. '
+            "That machine must serve websocket_direct on an address this one can reach, and publish it in "
+            "transports.websocket_direct.advertise_url, so this engine can find it in the engine registry. "
+            "Libraries not listed run on this machine."
         ),
     )
 

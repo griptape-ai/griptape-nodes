@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Literal
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -137,19 +138,24 @@ class StartWorkerRequest(RequestPayload):
     orchestrator. WorkerManager handles this by waiting for an active session then
     spawning the worker subprocess.
 
-    Also sent by an orchestrator to the machine its distribution settings assign the library
-    to, with `originator_session_id` set. That machine's orchestrator then starts the worker
-    in the originator's session, so the worker registers with the originator and serves it.
+    Also sent by the artist's engine to the machine its distribution settings assign the library
+    to, with `session_id`, `engine_id`, and `worker_engine_id` set. That machine's engine then
+    starts the worker in the artist's session under that id, so the worker registers with the
+    artist's engine and serves it.
 
     Args:
         library_name: The library the worker will serve, or None for the general-purpose worker,
             which serves no single library and runs the nodes of Isolated Execution groups.
-        originator_session_id: The session of the orchestrator on another machine that the
-            worker serves, or None for a worker of this orchestrator's own session.
+        session_id: The artist's session the worker serves, or None for a worker of this engine's
+            own session.
+        engine_id: The artist's engine, which owns `session_id`.
+        worker_engine_id: The engine ID the worker takes, chosen by the artist's engine.
     """
 
     library_name: str | None
-    originator_session_id: str | None = None
+    session_id: str | None = None
+    engine_id: str | None = None
+    worker_engine_id: str | None = None
     broadcast_result: bool = field(default=False, kw_only=True)
 
 
@@ -165,35 +171,37 @@ class StartWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Worker spawn could not be scheduled.
 
     Args:
-        originator_unknown: The request came from an orchestrator on another machine that has not
+        session_unknown: The request came from an artist's session on another machine that has not
             registered with this one, as after this machine restarts. It may register and ask again.
     """
 
-    originator_unknown: bool = False
+    session_unknown: bool = False
 
 
 @dataclass
 @PayloadRegistry.register
-class RegisterOriginatorRequest(RequestPayload):
-    """Sent by an orchestrator to another machine's orchestrator before asking it to start any worker.
+class RegisterSessionRequest(RequestPayload):
+    """Sent by the artist's engine to another machine's engine before asking it to start any worker.
 
     Sent once per session for each machine the distribution settings assign a library to. The
-    serving orchestrator refuses an originator whose engine version differs from its own, because
-    the wire shape of every event is tied to the engine build, and refuses each library whose
-    version differs or that it does not have.
+    machine refuses a session whose engine version differs from its own, because the wire shape of
+    every event is tied to the engine build, and refuses each library whose version differs or
+    that it does not have.
 
     Args:
-        originator_session_id: The originating orchestrator's session, which its workers there join.
-        schema_version: The version of the distributed execution contract the originator speaks.
-        engine_version: The originator's engine version.
-        library_versions: The version of each library the originator will send to that machine.
-        license_token: The originator's Griptape Nodes license, which workers started for it run
-            under, or None when it has none.
-        static_server_base_url: Where the originator serves the shared workspace, so the asset URLs
-            its workers mint are ones the originator's editor can open.
+        engine_id: The artist's engine.
+        session_id: The artist's session, which its workers on that machine join.
+        schema_version: The version of the distributed execution contract the artist's engine speaks.
+        engine_version: The artist's engine version.
+        library_versions: The version of each library the artist's engine will send to that machine.
+        license_token: The artist's Griptape Nodes license, which workers started for the session
+            run under, or None when it has none.
+        static_server_base_url: Where the artist's engine serves the shared workspace, so the asset
+            URLs its workers mint are ones the artist's editor can open.
     """
 
-    originator_session_id: str
+    engine_id: str
+    session_id: str
     schema_version: str
     engine_version: str
     library_versions: dict[str, str]
@@ -204,12 +212,12 @@ class RegisterOriginatorRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RegisterOriginatorResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """The serving orchestrator accepted the originator.
+class RegisterSessionResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """The machine accepted the artist's session.
 
     Args:
-        engine_id: The serving orchestrator's engine ID, so the originator can tell it reached the
-            machine its distribution settings name.
+        engine_id: The machine's engine ID, so the artist's engine can tell it reached the machine
+            its distribution settings name.
         refused_libraries: Each library it will not start workers for, with the reason.
     """
 
@@ -219,5 +227,75 @@ class RegisterOriginatorResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
 
 @dataclass
 @PayloadRegistry.register
-class RegisterOriginatorResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """The serving orchestrator refused the originator, and will start no workers for it."""
+class RegisterSessionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """The machine refused the artist's session, and will start no workers for it."""
+
+
+@dataclass
+@PayloadRegistry.register
+class StopWorkerRequest(RequestPayload):
+    """Sent by the artist's engine to the machine it asked to start a worker, to stop that worker.
+
+    Sent when the start is withdrawn after it was sent, as when the library is reset while the
+    machine has not answered yet. The machine reports the exit with `WorkerExitedRequest`.
+
+    Args:
+        worker_engine_id: The worker to stop, as named in the `StartWorkerRequest`.
+        engine_id: The artist's engine.
+        session_id: The artist's session the worker serves.
+    """
+
+    worker_engine_id: str
+    engine_id: str
+    session_id: str
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class StopWorkerResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """The machine stopped the worker, or was not running it."""
+
+
+@dataclass
+@PayloadRegistry.register
+class StopWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """The machine could not stop the worker."""
+
+
+@dataclass
+@PayloadRegistry.register
+class WorkerExitedRequest(RequestPayload):
+    """Sent by a machine to the artist's engine whenever a worker it runs for that artist exits.
+
+    Sent for every exit, whatever ended the worker, so the artist's engine settles a start that
+    never registered and removes a registered worker at once rather than after heartbeat eviction.
+
+    Args:
+        worker_engine_id: The worker that exited.
+        engine_id: The artist's engine, which the worker served.
+        session_id: The artist's session the worker served.
+        exit_code: The worker process's exit code.
+        reason: "stopped" when the machine stopped the worker on purpose, as when it shuts down or a
+            new start replaces it, so the worker may be started again. "exited" when the worker
+            ended on its own, as when it crashes or fails to start.
+    """
+
+    worker_engine_id: str
+    engine_id: str
+    session_id: str
+    exit_code: int
+    reason: Literal["stopped", "exited"]
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class WorkerExitedResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """The artist's engine recorded the exit."""
+
+
+@dataclass
+@PayloadRegistry.register
+class WorkerExitedResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """The exit was reported for a session this engine does not own."""
