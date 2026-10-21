@@ -74,6 +74,8 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         self._skip_library_loading = skip_library_loading
         self._workflows_to_register = workflows_to_register or []
         self._save_on_failure_path = save_on_failure_path
+        # The id of the workflow `_load_workflow_from_path` opened, so callers can address it.
+        self._loaded_workflow_id: str | None = None
 
     async def __aenter__(self) -> Self:
         """Async context manager entry: initialize queue and broadcast app initialization."""
@@ -219,6 +221,9 @@ class LocalWorkflowExecutor(WorkflowExecutor):
                 f"which cannot be executed: {result.result_details}"
             )
             _raise_load_error(msg)
+
+        if isinstance(result, RunWorkflowFromScratchResultSuccess):
+            self._loaded_workflow_id = result.workflow_id
 
     async def _handle_event_request(self, event: EventRequest) -> None:
         """Handle EventRequest objects by processing them through GriptapeNodes."""

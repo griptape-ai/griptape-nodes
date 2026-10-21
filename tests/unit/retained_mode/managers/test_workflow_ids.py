@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from griptape_nodes.bootstrap.workflow_publishers.local_workflow_publisher import LocalWorkflowPublisher
 from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
 from griptape_nodes.files.path_utils import canonicalize_for_identity_preserving_symlinks
 from griptape_nodes.node_library.workflow_registry import (
@@ -1395,6 +1396,38 @@ class TestPublishingAddressesAWorkflowById:
         assert isinstance(published, PublishWorkflowResultFailure)
         assert "could not be saved first" in str(published.result_details)
         assert received == []
+
+    def test_the_local_publisher_publishes_the_workflow_it_loaded(self, project_engine: Engine, tmp_path: Path) -> None:
+        # A packaged node group is published in a subprocess that loads a copy of the file from a
+        # temporary folder, so the loaded workflow's name is not the name of the file it was copied from.
+        saved = _saved_workflow(project_engine, "packaged")
+        saved_content = Path(saved.file_path).read_text(encoding="utf-8")
+        copied_file = tmp_path / "subprocess" / "workflow.py"
+        copied_file.parent.mkdir()
+        shutil.copy(saved.file_path, copied_file)
+        received: list[object] = []
+        publisher = self._publisher(received)
+
+        with patch.object(
+            project_engine.library_manager, "get_registered_event_handlers", return_value={"lib": publisher}
+        ):
+            asyncio.run(
+                LocalWorkflowPublisher().arun(
+                    workflow_path=str(copied_file),
+                    publisher_name="lib",
+                    published_workflow_file_name="packaged_published",
+                )
+            )
+
+        loaded = project_engine.workflow_registry.find_by_path(copied_file)
+        assert loaded is not None
+        assert project_engine.context_manager.get_current_workflow_id() == loaded.workflow_id
+        assert [(request.workflow_name, request.workflow_id) for request in received] == [  # type: ignore[attr-defined]
+            (loaded.name, loaded.workflow_id)
+        ]
+        # The copy was saved where it was loaded from; the file it was copied from is untouched.
+        assert sorted(path.name for path in Path(saved.file_path).parent.glob("*.py")) == [Path(saved.file_path).name]
+        assert Path(saved.file_path).read_text(encoding="utf-8") == saved_content
 
 
 class TestRenameOfAWorkflowThatIsNotOpen:

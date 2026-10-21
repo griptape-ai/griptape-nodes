@@ -17,16 +17,16 @@ class LocalPublisherError(Exception):
 class LocalWorkflowPublisher(LocalWorkflowExecutor):
     async def arun(
         self,
-        workflow_name: str,
         workflow_path: str,
         publisher_name: str,
         published_workflow_file_name: str,
-        **kwargs: Any,  # noqa: ARG002 callers may still pass the deprecated pickle_control_flow_result
+        **kwargs: Any,  # noqa: ARG002 callers may still pass the deprecated pickle_control_flow_result or workflow_name
     ) -> None:
-        # Load the workflow into memory
+        # Load the workflow into memory, then publish the workflow that load opened. Its name
+        # depends on where the file was loaded from, so it is addressed by id.
         await self.aprepare_workflow_for_run(flow_input={}, workflow_path=workflow_path)
         publish_workflow_request = PublishWorkflowRequest(
-            workflow_name=workflow_name,
+            workflow_id=self._loaded_workflow_id,
             publisher_name=publisher_name,
             published_workflow_file_name=published_workflow_file_name,
         )
