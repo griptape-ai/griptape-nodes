@@ -536,17 +536,24 @@ class ExecuteNodeRequest(RequestPayload):
       not, the request fails; node_metadata is ignored on this path. The
       orchestrator is the sole source of truth for node identity and parameter
       values.
-    - **Worker**: a fresh transient node is constructed from node_metadata on
-      every call via LibraryRegistry.create_node, hydrated, run, and discarded.
-      The worker never persists nodes across requests. node_metadata is
-      therefore required on this path.
+    - **Worker**: a copy of the node is loaded into the worker's own graph the way a saved
+      workflow loads it -- created from node_metadata, given element_modification_commands,
+      then parameter_values with initial_setup -- run, and discarded. The worker never persists
+      nodes across requests, and nothing in the load reaches the orchestrator.
 
     Args:
         node_name: Name of the node to execute.
-        parameter_values: Input parameter values to set before execution.
+        parameter_values: On the orchestrator path, values to set on the node before execution. On
+            the worker path, the node's own stored values, which the orchestrator fills in when it
+            forwards the request: a list's rows by row name, and a list fed whole by a connection
+            under the list's name.
         node_metadata: Full node metadata from the orchestrator. Required when
-            the target library spawns a worker (used to construct the transient
-            worker-side node). Ignored on the orchestrator path.
+            the target library spawns a worker (used to create the worker's copy).
+            Ignored on the orchestrator path.
+        element_modification_commands: The groups and parameters the orchestrator's node has beyond
+            its ``__init__`` shape, as a saved workflow records them, list rows included. The
+            orchestrator fills them in when it forwards the request. Only the element request types a
+            save writes are accepted. Ignored on the orchestrator path.
         local_object_source: The orchestrator's identity for this node in the process-local object
             cache. The worker's transient node adopts it so the objects it caches land in the same slots
             across runs, and survive the node being renamed. Carried as its own field rather than inside
@@ -583,6 +590,7 @@ class ExecuteNodeRequest(RequestPayload):
     workflow_name: str | None = None
     workflow_file_path: str | None = None
     workflow_working_directory: str | None = None
+    element_modification_commands: list[RequestPayload] = field(default_factory=list)
 
 
 @dataclass

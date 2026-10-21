@@ -804,6 +804,14 @@ class FlowManager(EngineScoped):
         result = DeleteFlowResultSuccess(result_details=details)
         return result
 
+    def forget_empty_flow(self, flow_name: str) -> None:
+        """Drop an empty flow from the records, for a worker discarding the flow its copy of a node used.
+
+        Not a delete: ``DeleteFlowRequest`` deletes the flow's nodes as well, which releases what they cached.
+        """
+        self.engine.object_manager.del_obj_by_name(flow_name)
+        del self._name_to_parent_name[flow_name]
+
     @handles(GetIsFlowRunningRequest)
     def on_get_is_flow_running_request(self, request: GetIsFlowRunningRequest) -> ResultPayload:
         obj_mgr = self.engine.object_manager
@@ -1136,16 +1144,18 @@ class FlowManager(EngineScoped):
             return CreateConnectionResultFailure(result_details=details)
 
         # Let the source make any internal handling decisions now that the Connection has been made.
-        source_node.after_outgoing_connection(
-            source_parameter=source_param, target_node=target_node, target_parameter=target_param
-        )
+        with source_node._reporting_state_set_by("after_outgoing_connection"):
+            source_node.after_outgoing_connection(
+                source_parameter=source_param, target_node=target_node, target_parameter=target_param
+            )
 
         # And target.
-        target_node.after_incoming_connection(
-            source_node=source_node,
-            source_parameter=source_param,
-            target_parameter=target_param,
-        )
+        with target_node._reporting_state_set_by("after_incoming_connection"):
+            target_node.after_incoming_connection(
+                source_node=source_node,
+                source_parameter=source_param,
+                target_parameter=target_param,
+            )
 
         # Check if either node is in a NodeGroup and track connections
 
@@ -1414,16 +1424,18 @@ class FlowManager(EngineScoped):
                 except KeyError as e:
                     logger.warning(e)
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
-        source_node.after_outgoing_connection_removed(
-            source_parameter=source_param, target_node=target_node, target_parameter=target_param
-        )
+        with source_node._reporting_state_set_by("after_outgoing_connection_removed"):
+            source_node.after_outgoing_connection_removed(
+                source_parameter=source_param, target_node=target_node, target_parameter=target_param
+            )
 
         # And target.
-        target_node.after_incoming_connection_removed(
-            source_node=source_node,
-            source_parameter=source_param,
-            target_parameter=target_param,
-        )
+        with target_node._reporting_state_set_by("after_incoming_connection_removed"):
+            target_node.after_incoming_connection_removed(
+                source_node=source_node,
+                source_parameter=source_param,
+                target_parameter=target_param,
+            )
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
 
