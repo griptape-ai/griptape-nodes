@@ -1326,14 +1326,26 @@ class FlowManager(EngineScoped):
 
         # Cross-flow connections are now supported via global connection storage
 
-        # Now validate the parameters.
+        # Now validate the parameters. A node can remove a connected parameter without a request, which
+        # leaves the connection holding the only reference to it; that connection must still be deletable,
+        # or neither node nor their flow can be deleted.
+        stored_connection = self._connections.find_connection(
+            source_node=source_node_name,
+            source_parameter=request.source_parameter_name,
+            target_node=target_node_name,
+            target_parameter=request.target_parameter_name,
+        )
         source_param = source_node.get_parameter_by_name(request.source_parameter_name)
+        if source_param is None and stored_connection is not None:
+            source_param = stored_connection.source_parameter
         if source_param is None:
             details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" Not found.'
 
             return DeleteConnectionResultFailure(result_details=details)
 
         target_param = target_node.get_parameter_by_name(request.target_parameter_name)
+        if target_param is None and stored_connection is not None:
+            target_param = stored_connection.target_parameter
         if target_param is None:
             details = f'Connection not deleted "{target_node_name}.{request.target_parameter_name}" Not found.'
 
