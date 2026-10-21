@@ -3964,8 +3964,53 @@ class TestProvisionGitLibraryOverwriteDir:
 class TestLibraryManagerInitializationFlag:
     """Test the is_initializing flag reported on the engine heartbeat."""
 
-    def test_not_initializing_by_default(self, engine: Engine) -> None:
-        assert engine.library_manager.is_initializing() is False
+    def test_initializing_before_app_initialization(self) -> None:
+        """A fresh engine reports initializing until AppInitializationComplete has been handled."""
+        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
+        library_manager = LibraryManager(MagicMock(), worker_manager=MagicMock(), engine=MagicMock())
+
+        assert library_manager.is_initializing() is True
+
+    @pytest.mark.asyncio
+    async def test_app_initialization_clears_is_initializing(
+        self, engine: Engine, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+
+        library_manager = engine.library_manager
+        library_manager._is_initializing = True
+        observed: dict[str, bool] = {}
+
+        async def fake_run(_payload: AppInitializationComplete) -> None:
+            observed["during"] = library_manager.is_initializing()
+
+        monkeypatch.setattr(library_manager, "_run_app_initialization", fake_run)
+
+        await library_manager.on_app_initialization_complete(AppInitializationComplete())
+
+        assert observed["during"] is True
+        assert library_manager.is_initializing() is False
+
+    @pytest.mark.asyncio
+    async def test_app_initialization_clears_is_initializing_on_exception(
+        self, engine: Engine, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+
+        library_manager = engine.library_manager
+        library_manager._is_initializing = True
+
+        async def boom(_payload: AppInitializationComplete) -> None:
+            msg = "boom"
+            raise RuntimeError(msg)
+
+        monkeypatch.setattr(library_manager, "_run_app_initialization", boom)
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await library_manager.on_app_initialization_complete(AppInitializationComplete())
+
+        assert library_manager.is_initializing() is False
 
     @pytest.mark.asyncio
     async def test_reload_brackets_is_initializing(self, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
