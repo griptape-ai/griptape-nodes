@@ -1113,7 +1113,7 @@ class BaseNode(ABC):
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
         # cause a calling object to alter its assumptions/behavior. The value requested
         # to be assigned will NOT be set.
-        candidate_value = self._convert_and_validate(parameter, value)
+        candidate_value = self._list_rows.convert_and_validate(parameter, value)
         self._list_rows.check_row_within_max_items(parameter, candidate_value, initial_setup=initial_setup)
 
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
@@ -1141,24 +1141,13 @@ class BaseNode(ABC):
             if isinstance(container, ParameterContainer):
                 self._list_rows.rows_changed(container, initial_setup=initial_setup)
 
-    def _convert_and_validate(self, parameter: Parameter, value: Any) -> Any:
-        if not self._row_value_is_items(parameter, value):
-            candidate_value = self._convert_value(parameter, value)
-            for validator in parameter.validators:
-                validator(parameter, candidate_value)
-            return candidate_value
-
-        candidate_items = [self._convert_value(parameter, item) for item in value]
+    @staticmethod
+    def _convert_and_validate(parameter: Parameter, value: Any) -> Any:
+        """Run the parameter's converters on `value`, then its validators on the result."""
+        candidate_value = BaseNode._convert_value(parameter, value)
         for validator in parameter.validators:
-            for item in candidate_items:
-                validator(parameter, item)
-        return candidate_items
-
-    def _row_value_is_items(self, parameter: Parameter, value: Any) -> bool:
-        if parameter.parent_container_name is None:
-            return False
-        container = self.get_parameter_by_name(parameter.parent_container_name)
-        return isinstance(container, ParameterList) and container.row_value_is_items(value)
+            validator(parameter, candidate_value)
+        return candidate_value
 
     @staticmethod
     def _convert_value(parameter: Parameter, value: Any) -> Any:
@@ -1900,7 +1889,7 @@ class BaseNode(ABC):
         max_items = parameter_list.max_items
         if max_items is not None and len(value) > max_items:
             logger.warning(
-                "Node '%s' list '%s' received %d item(s) but accepts at most %d. The extra item(s) may be dropped.",
+                "Node '%s' list '%s' received %d item(s) but accepts at most %d. The node runs with all of them.",
                 self.name,
                 param_name,
                 len(value),

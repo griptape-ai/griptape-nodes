@@ -183,6 +183,7 @@ class TestWholeListSetOnAnUnconnectedList:
         result = _set_items(engine, [["x", "y"], "z"])
 
         assert isinstance(result, SetParameterValueResultFailure)
+        assert "Attempted to set list 'Lister.items' to 3 items" in str(result.result_details)
         assert node.get_parameter_value("items") == ["a"]
 
     def test_a_row_holding_a_list_validates_each_item(self, engine: Engine, flow_name: str) -> None:

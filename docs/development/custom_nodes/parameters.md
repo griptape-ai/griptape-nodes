@@ -601,9 +601,9 @@ receives a list adds its items to the list, so the list value is the concatenati
 those items. A row value exceeding `max_items` is refused. Over a connection, it fails the run with an error naming
 the list. When the list's own items may be lists (`list`, `any` or `all`), a list in a row is one item.
 
-**Setting a whole list:** a list nothing is connected to holds its items in rows, one per item, and has no value of
-its own: reading it builds it from the rows. Setting a whole list, with `SetParameterValueRequest` or with
-`self.set_parameter_value("images", [...])`, replaces the rows with one row per item. Three writes leave the rows
+**Setting a whole list:** a list nothing is connected to holds its items in rows and has no value of its own: reading
+it builds it from the rows. Setting a whole list, with `SetParameterValueRequest` or with
+`self.set_parameter_value("images", [...])`, replaces the rows with one row per entry. Three writes leave the rows
 alone: one made while the node is running (it is recorded as the node's result), one made while a workflow loads,
 and one made from `before_value_set` or `after_value_set` on the list or one of its rows, which logs a warning.
 Don't rewrite a list from those hooks to convert its items: use `item_converters`. A list fed by a connection to the list itself holds the whole list it was
