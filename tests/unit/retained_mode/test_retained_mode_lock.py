@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.events.node_events import (
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -95,7 +96,7 @@ class TestUnlockUnresolvesNodeLeftUnexecuted:
         )
         library = LibraryRegistry.generate_new_library(schema)
         library.register_new_node_type(_ValueNode, NodeMetadata(category="test", description="d", display_name="Value"))
-        engine.context_manager.push_workflow(workflow_name="lock_wf")
+        push_unsaved_workflow(engine, "lock_wf")
         flow = engine.handle_request(
             CreateFlowRequest(parent_flow_name=None, flow_name="main", set_as_new_context=True)
         )

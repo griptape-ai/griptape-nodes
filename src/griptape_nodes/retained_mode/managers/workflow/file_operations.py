@@ -216,15 +216,14 @@ class WorkflowFileOperations(EngineScoped):
             # Move the file
             Path(current_file_path).rename(new_absolute_path)
 
-            # Update workflow registry with new file path
-            workflow.file_path = new_relative_path
+            # Update workflow registry with new file path, and with it the registry key
+            self.engine.workflow_registry.set_file_path(workflow, new_relative_path)
 
             # Remove old config entry if it existed (e.g. workflow was externally imported)
             config_manager.delete_user_workflow(old_relative_path)
 
-            # Update registry key if directory changed
+            # Update the rest of the bookkeeping if the registry key changed
             if old_registry_key != new_registry_key:
-                self.engine.workflow_registry.rekey_workflow(old_registry_key, new_registry_key)
                 self.engine.workflow_manager.variable_substitution.rekey(old_registry_key, new_registry_key)
                 context_manager = self.engine.context_manager
                 if (

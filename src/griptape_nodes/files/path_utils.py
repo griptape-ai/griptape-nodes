@@ -1000,6 +1000,14 @@ def canonicalize_for_io(path: str | Path, *, base: Path | None = None) -> Path:
     return Path(prefixed)
 
 
+def is_same_file(first: Path, second: Path) -> bool:
+    """Whether two paths name one file on disk (``os.path.samefile``). False if either cannot be read."""
+    try:
+        return first.samefile(second)
+    except OSError:
+        return False
+
+
 def relative_to_keeping_or_following_links(
     path: str | Path, root: str | Path, *, base: Path | None = None
 ) -> Path | None:
