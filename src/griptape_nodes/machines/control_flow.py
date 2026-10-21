@@ -55,7 +55,7 @@ class ControlFlowContext(EngineScoped):
     is_isolated: bool
     # perf_counter() when the current run started, for the run_seconds the run's end events carry.
     run_started_at: float | None = None
-    # Names the current run in spend attribution, so Griptape Cloud can total what one run cost.
+    # Names the current run in spend attribution, so Griptape Cloud can total its direct provider spend.
     # Only a top-level run has one; an isolated subflow's spend reads the global machine's.
     run_id: str | None = None
     # Set when the run is cancelled, whatever its nodes do about it, so its end event is the
