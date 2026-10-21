@@ -133,11 +133,6 @@ class ListRows:
         return True
 
     def check_row_within_max_items(self, row: Parameter, value: Any, *, initial_setup: bool) -> None:
-        """Refuse a value for `row` that would take its list over `max_items`, counting a list's items.
-
-        Raises:
-            ValueError: if the list would hold more than `max_items` items.
-        """
         if initial_setup or row.parent_container_name is None:
             return
         node = self._node
@@ -150,8 +145,7 @@ class ListRows:
             held_count += len(_items_of_row(container, child_value))
         if held_count <= container.max_items:
             return
-        # Refused over a connection too. A worker rebuilds the rows from the list's items, one row per item,
-        # and over `max_items` it could not.
+        # Workers rebuild one row per item, so values over `max_items` cannot be restored.
         msg = f"Attempted to set an item of list '{node.name}.{container.name}'. Failed because the list would hold {held_count} items, counting the items of any list in a row, and holds at most {container.max_items} items."
         raise ValueError(msg)
 
@@ -306,6 +300,5 @@ def _items_of_row(container: ParameterContainer, value: Any) -> list[Any]:
     if value is None:
         return []
     if isinstance(container, ParameterList) and container.row_value_is_items(value):
-        # Dropped like an empty row.
         return [item for item in value if item is not None]
     return [value]

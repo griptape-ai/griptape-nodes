@@ -7,7 +7,6 @@ from .mocks import MockNode
 
 @pytest.fixture
 def node() -> MockNode:
-    """A node with an input-only list `refs` of `ImageUrlArtifact`."""
     node = MockNode()
     node.add_parameter(
         ParameterList(

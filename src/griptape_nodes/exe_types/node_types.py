@@ -1142,7 +1142,6 @@ class BaseNode(ABC):
                 self._list_rows.rows_changed(container, initial_setup=initial_setup)
 
     def _convert_and_validate(self, parameter: Parameter, value: Any) -> Any:
-        """Concatenated rows use item-level converters and validators."""
         if not self._row_value_is_items(parameter, value):
             candidate_value = self._convert_value(parameter, value)
             for validator in parameter.validators:

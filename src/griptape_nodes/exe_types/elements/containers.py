@@ -328,7 +328,6 @@ class ParameterList(ParameterContainer):
         self._widen_all_row_input_types()
 
     def _custom_getter_for_property_input_types(self) -> list[str]:
-        # The container accepts only lists. Rows accept items and lists of them, from `_with_list_variants`.
         base_input_types = super()._custom_getter_for_property_input_types()
         result = []
         for base_input_type in base_input_types:
@@ -537,11 +536,7 @@ class ParameterList(ParameterContainer):
 
     @staticmethod
     def _with_list_variants(item_types: list[str]) -> list[str]:
-        """Each item type, then its `list[...]` form, then a bare `list`, so a row takes one item or a whole list.
-
-        A bare `list` is accepted for the reason the container accepts it: a runtime-built list cannot always
-        declare one item type.
-        """
+        """Accept bare `list` because runtime-built lists cannot always declare one item type."""
         return [*item_types, *(f"list[{item_type}]" for item_type in item_types), "list"]
 
 
