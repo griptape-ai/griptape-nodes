@@ -150,6 +150,13 @@ class TestLocalImageInfo:
         damaged = data[:item_locations] + bytes(16) + data[item_locations + 16 :]
         assert local_image_info(_data_uri(damaged, "image/avif")) is None
 
+    @pytest.mark.parametrize("orientation", [1, 6])
+    def test_reads_a_heic_photo_as_displayed(self, orientation: int) -> None:
+        # pillow-heif applies a HEIC's rotation itself and resets the tag, so it isn't turned twice.
+        heic = _data_uri(_rotated_jpeg_bytes(400, 200, orientation, "HEIF"), "image/heic")
+        expected = (400, 200) if orientation == 1 else (200, 400)
+        assert local_image_info(heic) == ImageInfo(*expected, "image/heif")
+
     def test_does_not_decode_a_png_without_exif(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Pillow's PNG plugin decodes the whole image to look for EXIF after the pixel data.
         def no_decode(*_args: Any, **_kwargs: Any) -> None:
@@ -482,6 +489,13 @@ class TestCheckSize:
     def test_allows_the_maximum(self) -> None:
         assert check_size(7 * 1024 * 1024, maximum_bytes=7 * 1024 * 1024, subject=SUBJECT) is None
 
+    def test_refuses_exactly_the_maximum_when_strict(self) -> None:
+        error = check_size(30 * 1024 * 1024, maximum_bytes=30 * 1024 * 1024, subject=SUBJECT, strict=True)
+        assert str(error) == f"{SUBJECT} is 30.0 MB and it must be under 30 MB. Use a smaller file."
+
+    def test_allows_just_under_the_maximum_when_strict(self) -> None:
+        assert check_size(30 * 1024 * 1024 - 1, maximum_bytes=30 * 1024 * 1024, subject=SUBJECT, strict=True) is None
+
     def test_skips_an_unknown_size(self) -> None:
         assert check_size(None, maximum_bytes=1, subject=SUBJECT) is None
 
@@ -678,6 +692,23 @@ class TestImageErrors:
     def test_refuses_allowed_formats_given_as_one_string(self) -> None:
         with pytest.raises(TypeError, match="pass a tuple"):
             image_errors("https://example.com/image.png", subject=SUBJECT, allowed_mime_types="image/png")
+
+    @pytest.mark.parametrize("listed", [("image/heic",), ("image/heif",), ("image/heic", "image/heif")])
+    def test_accepts_a_heic_photo_under_either_heif_name(self, listed: tuple[str, ...]) -> None:
+        heic = _data_uri(_rotated_jpeg_bytes(400, 200, 1, "HEIF"), "image/heic")
+        assert image_errors(heic, subject=SUBJECT, allowed_mime_types=("image/jpeg", *listed)) == []
+
+    def test_refuses_a_heic_photo_where_heif_is_not_allowed(self) -> None:
+        heic = _data_uri(_rotated_jpeg_bytes(400, 200, 1, "HEIF"), "image/heic")
+        errors = image_errors(heic, subject=SUBJECT, allowed_mime_types=("image/jpeg", "image/png"))
+        assert [str(e) for e in errors] == [f"{SUBJECT} is in HEIF format. Convert it to JPEG or PNG."]
+
+    def test_passes_a_strict_size_limit_through(self) -> None:
+        image = _data_uri(_png_bytes(40, 30))
+        size = local_size_bytes(image, kind="image")
+        assert size is not None
+        assert image_errors(image, subject=SUBJECT, maximum_bytes=size) == []
+        assert len(image_errors(image, subject=SUBJECT, maximum_bytes=size, strict_maximum_bytes=True)) == 1
 
 
 class TestVideoErrors:

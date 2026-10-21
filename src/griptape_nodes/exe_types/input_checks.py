@@ -55,6 +55,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from PIL import Image, UnidentifiedImageError
+from pillow_heif import register_heif_opener
 from static_ffmpeg import run as static_ffmpeg_run
 
 from griptape_nodes.exe_types.node_error import NodeError, NodeErrorLink
@@ -66,6 +67,10 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
 logger = logging.getLogger("griptape_nodes")
+
+# Teaches Pillow to read HEIC and HEIF headers, the format phones save photos in, so they can be
+# checked like any other image instead of skipped.
+register_heif_opener()
 
 __all__ = [
     "ImageInfo",
@@ -346,24 +351,36 @@ def check_count(
     )
 
 
-def check_size(
+def check_size(  # noqa: PLR0913
     size_bytes: int | None,
     *,
     maximum_bytes: int,
     subject: str,
     fix: str = "Use a smaller file.",
+    strict: bool = False,
     docs_url: str | None = None,
 ) -> NodeError | None:
     """An error when an input file is larger than the provider accepts.
 
     Args:
         size_bytes: The file's size, from `local_size_bytes`. None skips the check.
-        maximum_bytes: The largest file the provider accepts.
+        maximum_bytes: The largest file the provider accepts, or with `strict`, the size every file
+            must be under.
         subject: The input, from `input_subject`.
         fix: What the artist can do about it.
+        strict: For a provider that writes "less than 30 MB": a file of exactly `maximum_bytes` is
+            refused too.
         docs_url: The provider's page documenting the limit.
     """
-    if size_bytes is None or size_bytes <= maximum_bytes:
+    if size_bytes is None:
+        return None
+    if strict and size_bytes >= maximum_bytes:
+        return _error(
+            f"{subject} is {_format_past(size_bytes / BYTES_PER_MB, maximum_bytes / BYTES_PER_MB, 1)} MB and it must "
+            f"be under {_format_limit(maximum_bytes / BYTES_PER_MB)} MB. {fix}",
+            docs_url,
+        )
+    if size_bytes <= maximum_bytes:
         return None
     return _error(
         f"{subject} is {_format_past(size_bytes / BYTES_PER_MB, maximum_bytes / BYTES_PER_MB, 1)} MB and the limit "
@@ -470,7 +487,7 @@ def check_mime_type(
         TypeError: If `allowed` is a single string rather than a sequence of MIME types.
     """
     _require_mime_type_sequence(allowed)
-    if mime_type is None or mime_type in allowed:
+    if mime_type is None or _is_allowed(mime_type, allowed):
         return None
     formats = _join_or([_format_name(name) for name in allowed])
     current = _format_name(mime_type)
@@ -558,6 +575,7 @@ def image_errors(  # noqa: PLR0913
     subject: str,
     allowed_mime_types: Sequence[str] = (),
     maximum_bytes: int | None = None,
+    strict_maximum_bytes: bool = False,
     min_side: int | None = None,
     max_side: int | None = None,
     min_megapixels: float | None = None,
@@ -578,6 +596,8 @@ def image_errors(  # noqa: PLR0913
         subject: The input, from `input_subject`.
         allowed_mime_types: The formats the provider accepts, such as ("image/jpeg", "image/png").
         maximum_bytes: The largest file the provider accepts.
+        strict_maximum_bytes: For a provider that writes "less than": a file of exactly
+            `maximum_bytes` is refused too.
         min_side: The fewest pixels accepted for the width and for the height.
         max_side: The most pixels accepted for the width and for the height.
         min_megapixels: The fewest pixels accepted in total, in millions.
@@ -607,6 +627,7 @@ def image_errors(  # noqa: PLR0913
                 local_size_bytes(location, kind="image"),
                 maximum_bytes=maximum_bytes,
                 subject=subject,
+                strict=strict_maximum_bytes,
                 docs_url=docs_url,
             )
         )
@@ -634,6 +655,7 @@ def video_errors(  # noqa: PLR0913
     *,
     subject: str,
     maximum_bytes: int | None = None,
+    strict_maximum_bytes: bool = False,
     min_seconds: float | None = None,
     max_seconds: float | None = None,
     min_side: int | None = None,
@@ -660,6 +682,8 @@ def video_errors(  # noqa: PLR0913
         video: The video input.
         subject: The input, from `input_subject`.
         maximum_bytes: The largest file the provider accepts.
+        strict_maximum_bytes: For a provider that writes "less than": a file of exactly
+            `maximum_bytes` is refused too.
         min_seconds: The shortest clip accepted.
         max_seconds: The longest clip accepted.
         min_side: The fewest pixels accepted for the width and for the height.
@@ -685,7 +709,11 @@ def video_errors(  # noqa: PLR0913
     if maximum_bytes is not None:
         errors.append(
             check_size(
-                local_size_bytes(video, kind="video"), maximum_bytes=maximum_bytes, subject=subject, docs_url=docs_url
+                local_size_bytes(video, kind="video"),
+                maximum_bytes=maximum_bytes,
+                subject=subject,
+                strict=strict_maximum_bytes,
+                docs_url=docs_url,
             )
         )
     needs_frame = (
@@ -771,6 +799,19 @@ def _frame_rates(probe: VideoProbe | None) -> list[float]:
     if probe is None:
         return []
     return [rate for rate in (probe.fps, probe.nominal_fps) if rate is not None]
+
+
+def _is_allowed(mime_type: str, allowed: Sequence[str]) -> bool:
+    """Whether a MIME type is one the provider accepts.
+
+    HEIC and HEIF share one container, which Pillow names HEIF, and providers list one, the other or
+    both, so either name accepts a HEIF image.
+    """
+    if mime_type in allowed:
+        return True
+    if mime_type in _HEIF_MIME_TYPES:
+        return any(name in _HEIF_MIME_TYPES for name in allowed)
+    return False
 
 
 def _require_mime_type_sequence(allowed: Sequence[str]) -> None:
@@ -1075,6 +1116,8 @@ def _format_past(value: float, limit: float, decimals: int) -> str:
 
 
 # Formats whose MIME subtype isn't the name an artist knows them by.
+_HEIF_MIME_TYPES = frozenset({"image/heic", "image/heif"})
+
 _FORMAT_NAMES = {
     "image/vnd.adobe.photoshop": "PSD",
     "image/x-portable-anymap": "PPM",
