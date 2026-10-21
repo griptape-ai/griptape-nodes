@@ -28,6 +28,8 @@ from griptape_nodes.retained_mode.events.app_events import (
 from griptape_nodes.retained_mode.events.workflow_events import (
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultSuccess,
+    MoveWorkflowRequest,
+    MoveWorkflowResultFailure,
 )
 from griptape_nodes.retained_mode.managers.library.common import LibraryFitness, LibraryInfo, LibraryLifecycleState
 
@@ -36,7 +38,9 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
 
 
-# Fixed workflow id for files the tests write themselves.
+# Fixed workflow ids for files the tests write themselves.
+MOVER_ID = "00000000000000000000000000000001"
+STALE_ID = "00000000000000000000000000000002"
 SHARED_ID = "00000000000000000000000000000004"
 
 
@@ -387,3 +391,22 @@ class TestRegistryRefresh:
         listing = _run(engine, ListAllWorkflowsRequest())
         assert isinstance(listing, ListAllWorkflowsResultSuccess)
         assert listing.workflows[unsaved.name]["workflow_id"] == unsaved.workflow_id
+
+
+class TestMoveWorkflow:
+    def test_move_onto_a_path_another_entry_holds_puts_the_file_back(self, workspace: Path) -> None:
+        engine = current_engine()
+        engine.config_manager.workspace_path = workspace
+        mover = _write_workflow_file(workspace / "a" / "foo.py", workflow_id=MOVER_ID)
+        stale = _write_workflow_file(workspace / "b" / "foo.py", workflow_id=STALE_ID)
+        _scan(engine, workspace)
+        # Deleted outside the engine: its entry stays until the next scan.
+        stale.unlink()
+
+        moved = engine.handle_request(MoveWorkflowRequest(workflow_name="a/foo", target_directory="b"))
+
+        assert isinstance(moved, MoveWorkflowResultFailure)
+        assert "Rolled back" in str(moved.result_details)
+        assert mover.is_file()
+        assert not stale.exists()
+        assert engine.workflow_registry.get(MOVER_ID).absolute_path == mover
