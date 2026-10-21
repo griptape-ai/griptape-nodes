@@ -547,8 +547,7 @@ async def _adopt_on_engine_loop(
 
     ActivateProjectRequest arrives on the transport loop, which also answers heartbeats. Adoption is a
     whole project switch, with file I/O and synchronous requests that block the loop they run on, so it
-    runs on the engine loop and is only awaited here. The shield keeps an abandoned wait from cancelling a
-    half-applied switch.
+    runs on the engine loop and is only awaited here.
     """
     engine_loop = event_manager.event_loop
     if engine_loop is None:
@@ -558,11 +557,8 @@ async def _adopt_on_engine_loop(
         )
         return ActivateProjectResultFailure(result_details=details)
 
-    if engine_loop is asyncio.get_running_loop():
-        result = await adopt(request)
-    else:
-        adoption = asyncio.run_coroutine_threadsafe(adopt(request), engine_loop)
-        result = await asyncio.shield(asyncio.wrap_future(adoption))
+    adoption = asyncio.run_coroutine_threadsafe(adopt(request), engine_loop)
+    result = await asyncio.wrap_future(adoption)
 
     # Set on this loop, not the engine loop: worker startup waits on it here, and asyncio.Event is not
     # safe to set from another thread.
