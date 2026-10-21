@@ -162,11 +162,12 @@ def local_size_bytes(value: Any, *, kind: MediaKind) -> int | None:
 def local_image_info(value: Any) -> ImageInfo | None:
     """The pixel size and MIME type of an image input, or None if it can't be read locally.
 
-    Reads only the image header, and reports the size as displayed, so a phone photo stored landscape
-    with an EXIF rotation reads as portrait. Returns None for a remote URL, for a format Pillow can't open
-    (HEIC, say), and for an image over Pillow's decompression-bomb limit (about 179 megapixels),
-    which Pillow refuses to open without decoding anything. The checks that use it then skip,
-    rather than reject a valid image or override a process-wide Pillow setting.
+    Reads only the image header (Pillow reads a WebP or AVIF file in full, without decoding it), and
+    reports the size as displayed, so a phone photo stored landscape with an EXIF rotation reads as
+    portrait. Returns None for a remote URL, for a format Pillow can't open (HEIC, say), and for an
+    image over Pillow's decompression-bomb limit (about 179 megapixels), which Pillow refuses to open
+    without decoding anything. The checks that use it then skip, rather than reject a valid image or
+    override a process-wide Pillow setting.
     """
     location = coerce_media_url_or_data_uri(value, kind="image")
     if not location:

@@ -1425,8 +1425,8 @@ class BaseNode(ABC):
         by a worker is held there and cannot be read from here.
 
         The one exception is a media input's file limits: `griptape_nodes.exe_types.input_checks` reads
-        files and data URIs on this machine and skips any value it can't read here. A file costs only a
-        header read, and each video probe is time-limited; an image passed as a data URI or in memory is
+        files and data URIs on this machine and skips any value it can't read here. A file costs a header
+        read (a full read for WebP and AVIF), and each video probe is time-limited; an image passed as a data URI or in memory is
         decoded in full, so its cost grows with its size.
 
         For anything that needs the real thing -- a loaded model, a tensor an upstream node produced --

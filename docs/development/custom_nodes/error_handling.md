@@ -394,8 +394,9 @@ The checks follow these rules:
     and data URIs, and use ffprobe only when it is already installed. A local probe takes tens of
     milliseconds. Each one is given at most 2 seconds, and one node's validation at most 5 seconds of
     probing across all its videos; a video left when that runs out is skipped. An image given as a
-    file path costs only a header read. One given as a data URI or an in-memory artifact is decoded
-    in full, so its check takes longer the larger it is; pass file paths where you can.
+    file path costs only a header read, except a WebP or AVIF file, which Pillow reads in full
+    without decoding its pixels. One given as a data URI or an in-memory artifact is decoded in
+    full, so its check takes longer the larger it is; pass file paths where you can.
 - **Where a limit is ambiguous, refuse less.** Sizes are in MiB. A maximum length is checked
     against the shorter of the video stream and the whole file, and a minimum against the longer.
     Frame rates work the same way, with 1% leeway so 23.976 fps passes a 24 fps minimum.
