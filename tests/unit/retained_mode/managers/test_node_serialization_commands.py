@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.local_objects import cache_outputs_for_egress
 from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
 from griptape_nodes.exe_types.node_groups.subflow_node_group import SubflowNodeGroup
@@ -25,6 +25,7 @@ from griptape_nodes.exe_types.node_types import (
     BaseNode,
     DataNode,
     NodeDependencies,
+    NodeResolutionState,
     aprocess_scope,
 )
 from griptape_nodes.node_library.library_registry import (
@@ -198,6 +199,23 @@ class _ComputedValueNode(DataNode):
         pass
 
 
+class _ListNode(DataNode):
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata)
+        self.add_parameter(
+            ParameterList(
+                name="items",
+                input_types=["str"],
+                type="str",
+                tooltip="",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+    def process(self) -> None:
+        return None
+
+
 class _GroupNode(BaseNodeGroup):
     """Minimal concrete BaseNodeGroup (not a SubflowNodeGroup) for group-serialization coverage."""
 
@@ -271,6 +289,7 @@ def library_name(engine: Engine) -> Generator[str, None, None]:
         _RunGrownParameterNode, NodeMetadata(category="test", description="d", display_name="Run Grown")
     )
     library.register_new_node_type(_GroupNode, NodeMetadata(category="test", description="d", display_name="Group"))
+    library.register_new_node_type(_ListNode, NodeMetadata(category="test", description="d", display_name="List"))
     engine.handle_request(
         EnsureWorkflowAndFlowRequest(workflow_name="serialization_wf", flow_name="serialization_flow")
     )
@@ -370,6 +389,17 @@ class TestSerializeNodeToCommandsBasics:
 
         assert isinstance(result, SerializeNodeToCommandsResultFailure)
 
+    def test_reference_node_broadcasts_no_events(
+        self, engine: Engine, library_name: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        node_name = _create_text_node(engine, library_name, "N1")
+        events: list[object] = []
+        monkeypatch.setattr(engine.event_manager, "put_event", events.append)
+
+        _serialize(engine, node_name)
+
+        assert events == []
+
 
 class TestElementModificationCommands:
     """User-defined parameters replay via AddParameterToNodeRequest; library ones only diff."""
@@ -399,6 +429,21 @@ class TestElementModificationCommands:
             if isinstance(command, AddParameterToNodeRequest) and command.parameter_name == "extra"
         ]
         assert len(add_commands) == 1
+
+    def test_user_defined_parameter_keeps_serializable_false_across_a_round_trip(
+        self, engine: Engine, library_name: str
+    ) -> None:
+        node_name = _create_text_node(engine, library_name, "N1")
+        add_result = engine.handle_request(
+            AddParameterToNodeRequest(node_name=node_name, parameter_name="extra", tooltip="", serializable=False)
+        )
+        assert isinstance(add_result, AddParameterToNodeResultSuccess), add_result
+
+        restored = _round_trip(engine, node_name)
+
+        parameter = restored.get_parameter_by_name("extra")
+        assert parameter is not None
+        assert parameter.serializable is False
 
     def test_unchanged_library_parameter_is_not_re_added(self, engine: Engine, library_name: str) -> None:
         node_name = _create_text_node(engine, library_name, "N1")
@@ -646,6 +691,32 @@ class TestLockState:
 
         assert isinstance(result, SerializeNodeToCommandsResultSuccess)
         assert result.serialized_node_commands.lock_node_command is None
+
+    @pytest.mark.parametrize(
+        ("resolved_while_locked", "expected_state"),
+        [
+            pytest.param(True, NodeResolutionState.UNRESOLVED, id="resolved-by-passing-through"),
+            pytest.param(False, NodeResolutionState.RESOLVED, id="resolved-by-executing"),
+        ],
+    )
+    def test_locked_resolved_node_saves_resolved_only_if_it_executed(
+        self,
+        engine: Engine,
+        library_name: str,
+        *,
+        resolved_while_locked: bool,
+        expected_state: NodeResolutionState,
+    ) -> None:
+        node_name = _create_text_node(engine, library_name, "N1")
+        engine.handle_request(SetLockNodeStateRequest(node_name=node_name, lock=True))
+        node = engine.node_manager.get_node_by_name(node_name)
+        node.state = NodeResolutionState.RESOLVED
+        node.resolved_while_locked = resolved_while_locked
+
+        result, _ = _serialize(engine, node_name)
+
+        assert result.serialized_node_commands.lock_node_command is not None
+        assert result.serialized_node_commands.create_node_command.resolution == expected_state.value
 
 
 class TestNodeUuidFreshness:
@@ -1008,3 +1079,22 @@ class TestLocalObjectIdentityIsNeverCopied:
 
         assert released == []
         assert engine.resource_manager.get_local_object(key, owner=original.local_objects.owner) is not None
+
+
+class TestAListRoundTrip:
+    """A list keeps no value of its own, so its rows alone have to carry it through a save."""
+
+    def test_its_items_come_back(self, engine: Engine, library_name: str) -> None:
+        result = engine.handle_request(
+            CreateNodeRequest(node_type="_ListNode", specific_library_name=library_name, node_name="Lister")
+        )
+        assert isinstance(result, CreateNodeResultSuccess), result
+        set_result = engine.handle_request(
+            SetParameterValueRequest(node_name="Lister", parameter_name="items", value=["a", "b"])
+        )
+        assert isinstance(set_result, SetParameterValueResultSuccess), set_result
+
+        copy = _round_trip(engine, "Lister")
+
+        assert copy.get_parameter_value("items") == ["a", "b"]
+        assert "items" not in copy.parameter_values

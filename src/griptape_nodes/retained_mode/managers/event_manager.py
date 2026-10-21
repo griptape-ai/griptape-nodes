@@ -14,11 +14,8 @@ from typing import TYPE_CHECKING, Any, cast
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
-from griptape_nodes.common.strict_mode import STRICT_MODE
-from griptape_nodes.common.strict_mode_checks import RULES
-from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.engine import EngineScoped, engine_scope
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     BaseEvent,
@@ -41,7 +38,6 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointFailure,
 )
 from griptape_nodes.retained_mode.request_handlers import handled_request_types
-from griptape_nodes.serialization.converter import converter
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 if TYPE_CHECKING:
@@ -64,6 +60,11 @@ EP = TypeVar("EP", bound=ExecutionPayload, default=ExecutionPayload)
 _active_request_type: ContextVar[type[RequestPayload] | None] = ContextVar(
     "_event_manager_active_request_type", default=None
 )
+
+# The node the current logical chain is rebuilding from the values it was sent, if any. Per chain rather
+# than process-wide, unlike the node-execution refcount: another node's aprocess can run in this
+# process at the same time, and its requests are not part of the rebuild.
+_hydrating_node_name: ContextVar[str | None] = ContextVar("_event_manager_hydrating_node_name", default=None)
 
 # (request_type, callback) pairs for the post-dispatch hooks running above this point
 # in the current logical chain. A hook task is created with this marker set, and every
@@ -155,38 +156,6 @@ def current_request_type() -> type[RequestPayload] | None:
     this ContextVar.
     """
     return _active_request_type.get()
-
-
-def reentrant_bus_in_init_would_report() -> bool:
-    """Whether a bus request issued right now would fire ``reentrant-bus-in-init``.
-
-    Both halves of the detector's condition (see
-    ``EventManager._report_reentrant_bus_in_init``), exposed so code that runs
-    inside a node ``__init__`` can ask BEFORE issuing a request and skip it
-    rather than commit the violation. The detector and every such caller read
-    this one predicate, so "we deferred" and "it would have been reported"
-    cannot drift apart as the scopes change.
-
-    Being inside a node ``__init__`` is not sufficient on its own. ``STRICT_MODE.report``
-    no-ops when no scope is active, and scopes open in exactly two places: around the
-    worker's schema probe (LOAD_PROBE, where a violation drops the class from the worker
-    schema) and around node execution (RUNTIME_EXECUTE, where a worker violation promotes
-    the result to a failure). An ordinary ``CreateNodeRequest`` -- an editor drop, a
-    workflow load, any single-process engine, where no probe runs at all -- opens neither,
-    so a read from ``__init__`` there is free and callers should just do it. Keying a
-    deferral off ``is_constructing_node()`` alone instead makes every node in every
-    deployment pay for a hazard only the worker's probe has.
-
-    When strict mode is disabled the scope is detached (``open_scope`` keeps it off the
-    stack), so this cannot tell a probe from an editor drop. It answers True while
-    constructing in that case: with the checker off, the conservative answer is the
-    safe one.
-    """
-    if not LibraryRegistry.is_constructing_node():
-        return False
-    if not STRICT_MODE.enabled:
-        return True
-    return STRICT_MODE.current_scope() is not None
 
 
 # Result types that should NOT trigger a flush request.
@@ -924,31 +893,23 @@ class EventManager(EngineScoped):
         with self._node_execution_lock:
             return self._node_execution_depth > 0
 
-    def _report_reentrant_bus_in_init(self, request: RequestPayload) -> None:
-        """Detect the reentrant-bus-in-init rule.
+    @contextmanager
+    def hydration_scope(self, node_name: str) -> Iterator[None]:
+        """Mark the current chain as rebuilding `node_name` from the values it was sent.
 
-        A node class that issues an event-bus request from its __init__
-        deadlocks the worker's schema probe, which calls __init__ on
-        the worker thread during library load. LibraryRegistry sets a
-        ContextVar around create_node so every __init__ body in the
-        hierarchy is covered.
-
-        The condition lives in ``reentrant_bus_in_init_would_report`` rather
-        than inline, because engine components that legitimately read state
-        from a node ``__init__`` consult the same predicate to decide whether
-        to defer. One owner, so the two answers cannot disagree.
+        Hydration replays each value through `set_parameter_value`, so a node's value hooks run as if a
+        user had edited it. On a worker the node is a copy, and the worker-side RemoteHandler reads this
+        to keep those hooks from repeating their edits on the orchestrator's node.
         """
-        if not reentrant_bus_in_init_would_report():
-            return
-        rule = RULES["reentrant-bus-in-init"]
-        # Subject attribution lives on the violation's ``subject`` field,
-        # set from the surrounding strict-mode scope (class name under
-        # LOAD_PROBE, instance name under RUNTIME_EXECUTE). The message
-        # only needs the request type.
-        STRICT_MODE.report(
-            rule_id=rule.rule_id,
-            message=rule.render(request_type=type(request).__name__),
-        )
+        token = _hydrating_node_name.set(node_name)
+        try:
+            yield
+        finally:
+            _hydrating_node_name.reset(token)
+
+    def hydrating_node_name(self) -> str | None:
+        """The node the current chain is rebuilding, or None outside a hydration scope."""
+        return _hydrating_node_name.get()
 
     def get_manager_for_request_type(self, request_type: type[RP]) -> Callable | None:
         """Return the currently-registered handler callback for a request type, or None."""
@@ -1015,7 +976,7 @@ class EventManager(EngineScoped):
             msg = f"Forwarded response 'result_type' is not registered: {result_type_name}"
             raise RuntimeError(msg)
 
-        result_payload = cast("ResultPayload", converter.structure(result_data, resolved_result_type))
+        result_payload = cast("ResultPayload", converters.engine.structure(result_data, resolved_result_type))
 
         event_cls: type[EventResultSuccess | EventResultFailure]
         event_cls = EventResultSuccess if event_type == "EventResultSuccess" else EventResultFailure
@@ -1185,8 +1146,6 @@ class EventManager(EngineScoped):
         if result_context is None:
             result_context = ResultContext()
 
-        self._report_reentrant_bus_in_init(request)
-
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -1241,8 +1200,6 @@ class EventManager(EngineScoped):
         operation_depth_mgr = self.engine.operation_depth_manager
         if result_context is None:
             result_context = ResultContext()
-
-        self._report_reentrant_bus_in_init(request)
 
         # Notify the manager of the event type
         request_type = type(request)
@@ -1499,13 +1456,8 @@ class EventManager(EngineScoped):
             )
 
     def _flush_tracked_parameter_changes(self) -> None:
-        obj_manager = self.engine.object_manager
-        # Get all flows and their nodes
-        nodes = obj_manager.get_filtered_subset(type=BaseNode)
-        for node in nodes.values():
-            # Only flush if there are actually tracked parameters
-            if node._tracked_parameters:
-                node.emit_parameter_changes()
+        for node in self.engine.object_manager.take_nodes_with_queued_changes():
+            node.emit_parameter_changes()
 
 
 class EventSuppressionContext:

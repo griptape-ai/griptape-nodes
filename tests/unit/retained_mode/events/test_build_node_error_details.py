@@ -15,16 +15,19 @@ import pytest
 from griptape_nodes.common.node_executor import ExecuteNodeFailedError, NodeExecutor
 from griptape_nodes.exe_types.core_types import NodeError, NodeErrorLink
 from griptape_nodes.retained_mode.engine import Engine
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.base_events import ForwardedException
 from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeResultFailure, NodeErrorEvent
 from griptape_nodes.retained_mode.events.node_error_details import (
     MAX_RESPONSE_BYTES,
+    MAX_RESPONSE_DEPTH,
     RESPONSE_DROPPED_FIELD,
     NodeErrorDetails,
     build_node_error_details,
 )
 from griptape_nodes.retained_mode.events.worker_events import WorkerGoneError
-from griptape_nodes.serialization.converter import converter
+
+converter = converters.engine
 
 NODE_NAME = "Get Dictionary Value by Key"
 
@@ -47,8 +50,8 @@ def _raised(exc: Exception) -> Exception:
 
 def _across_worker(result: ExecuteNodeResultFailure) -> ExecuteNodeResultFailure:
     """Send a result through the converter the way a worker sends it back."""
-    wire = json.loads(json.dumps(converter.unstructure(result)))
-    return converter.structure(wire, ExecuteNodeResultFailure)
+    sent = json.loads(json.dumps(converter.unstructure(result)))
+    return converter.structure(sent, ExecuteNodeResultFailure)
 
 
 def _executor_error(result: ExecuteNodeResultFailure) -> ExecuteNodeFailedError:
@@ -242,7 +245,7 @@ class TestValidation:
 
     def test_dropped_marker_is_removed_when_another_response_is_kept(self) -> None:
         kept = NodeError("Kept", response={"status": "A"})
-        dropped = NodeError("Dropped", response={"image": "A" * MAX_RESPONSE_BYTES})
+        dropped = NodeError("Dropped", response=_unshrinkable_response())
 
         orders: list[list[Exception]] = [[kept, dropped], [dropped, kept]]
         for exceptions in orders:
@@ -252,12 +255,28 @@ class TestValidation:
             assert RESPONSE_DROPPED_FIELD not in details.fields
 
     def test_dropped_marker_stays_when_no_response_is_kept(self) -> None:
-        dropped = NodeError("Dropped", response={"image": "A" * MAX_RESPONSE_BYTES})
+        dropped = NodeError("Dropped", response=_unshrinkable_response())
 
         details = build_node_error_details(NODE_NAME, [ValueError("Prompt is required."), dropped])
 
         assert details.response is None
         assert details.fields == {RESPONSE_DROPPED_FIELD: "true"}
+
+
+def _nested(depth: int) -> dict[str, Any]:
+    """A dict nested `depth` levels deep, counting the outermost one, with a value in the innermost."""
+    nested: dict[str, Any] = {}
+    innermost = nested
+    for _ in range(depth - 1):
+        innermost["next"] = {}
+        innermost = innermost["next"]
+    innermost["status"] = "ERRORED"
+    return nested
+
+
+def _unshrinkable_response() -> dict[str, str]:
+    """A response over the cap whose strings are each too short to cut."""
+    return {f"key_{index}": "A" * 1000 for index in range(MAX_RESPONSE_BYTES // 1000 + 1)}
 
 
 class TestErrorMessageUnchanged:
@@ -297,11 +316,27 @@ class TestNodeErrorAttachments:
         assert details.fields == {"status_code": "400"}
 
     def test_oversized_response_is_dropped_with_a_marker(self, failed_while_running: Any) -> None:
-        result = failed_while_running(self._node_error(response={"image": "A" * MAX_RESPONSE_BYTES}))
+        result = failed_while_running(self._node_error(response=_unshrinkable_response()))
 
         for details in _both_paths(result):
             assert details.response is None
             assert details.fields == {RESPONSE_DROPPED_FIELD: "true"}
+
+    def test_oversized_response_keeps_the_start_of_long_strings(self) -> None:
+        response = {
+            "status": "ERRORED",
+            "image": "A" * MAX_RESPONSE_BYTES,
+            "inline": "data:image/png;base64," + "B" * 50_000,
+        }
+
+        details = build_node_error_details(NODE_NAME, self._node_error(response=response))
+
+        assert details.response is not None
+        assert details.response["status"] == "ERRORED"
+        assert details.response["image"].startswith("A" * 2000)
+        assert details.response["image"].endswith(f"[{MAX_RESPONSE_BYTES} chars total]")
+        assert details.response["inline"] == "data:image/png;base64,[50000 chars]"
+        assert RESPONSE_DROPPED_FIELD not in details.fields
 
     def test_unserializable_response_is_dropped_without_failing(self) -> None:
         details = build_node_error_details(NODE_NAME, self._node_error(response={"when": object()}))
@@ -314,6 +349,19 @@ class TestNodeErrorAttachments:
         for details in _both_paths(result):
             assert details.response is None
             assert details.fields == {RESPONSE_DROPPED_FIELD: "true"}
+
+    def test_response_nested_past_the_depth_limit_is_dropped_with_a_marker(self) -> None:
+        details = build_node_error_details(NODE_NAME, self._node_error(response=_nested(MAX_RESPONSE_DEPTH + 1)))
+
+        assert details.response is None
+        assert details.fields == {RESPONSE_DROPPED_FIELD: "true"}
+
+    def test_response_at_the_depth_limit_is_kept(self) -> None:
+        response = _nested(MAX_RESPONSE_DEPTH)
+
+        details = build_node_error_details(NODE_NAME, self._node_error(response=response))
+
+        assert details.response == response
 
     def test_deeply_nested_response_is_dropped_without_failing(self) -> None:
         # Deep enough to exceed the C JSON encoder's own recursion limit, which is higher than
@@ -387,8 +435,8 @@ class TestEventWireForm:
             node_name=NODE_NAME, error_message=str(exc), error=build_node_error_details(NODE_NAME, exc)
         )
 
-        wire = json.loads(json.dumps(converter.unstructure(event)))
-        rebuilt = converter.structure(wire, NodeErrorEvent)
+        sent = json.loads(json.dumps(converter.unstructure(event)))
+        rebuilt = converter.structure(sent, NodeErrorEvent)
 
         assert rebuilt == event
 

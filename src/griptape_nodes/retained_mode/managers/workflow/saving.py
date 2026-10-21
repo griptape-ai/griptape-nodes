@@ -23,7 +23,6 @@ from griptape_nodes.node_library.workflow_registry import (
     WorkflowShape,
 )
 from griptape_nodes.retained_mode.engine import EngineScoped
-from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
     GetTopLevelFlowRequest,
@@ -454,12 +453,48 @@ class WorkflowSaver(EngineScoped):
         # Ensure file_path is populated even for pre-existing entries (defensive).
         if existing_workflow.file_path is None:
             existing_workflow.file_path = relative_file_path
+
+        # Saving an open library workflow wrote a copy instead of the library's file. Move the
+        # current context onto the copy, so the next save lands in it rather than in yet another copy.
+        if current_workflow_name is not None and self._is_open_library_workflow(
+            save_target.scenario, current_workflow_name, registry_key
+        ):
+            # The library workflow stays registered, so its substitution flag is copied, not moved.
+            self.engine.workflow_manager.variable_substitution.copy(current_workflow_name, registry_key)
+            for workflow_context_state in self.engine.context_manager._workflow_stack:
+                if workflow_context_state._name == current_workflow_name:
+                    workflow_context_state._name = registry_key
+                    workflow_context_state._file_path = str(save_file_result.file_path)
+
         details = f"Successfully saved workflow to: {save_file_result.file_path}"
         return SaveWorkflowResultSuccess(
             file_path=save_file_result.file_path,
             workflow_name=registry_key,
-            result_details=ResultDetails(message=details, level=logging.INFO),
+            result_details=details,
         )
+
+    def _is_open_library_workflow(
+        self, scenario: SaveWorkflowScenario, current_workflow_name: str, saved_registry_key: str
+    ) -> bool:
+        """Whether this save copied the library-provided workflow open in the current context."""
+        if scenario != SaveWorkflowScenario.SAVE_FROM_TEMPLATE:
+            return False
+        if current_workflow_name == saved_registry_key:
+            return False
+        if not self.engine.workflow_registry.has_workflow_with_name(current_workflow_name):
+            return False
+        current_workflow = self.engine.workflow_registry.get_workflow_by_name(current_workflow_name)
+        return self.is_library_workflow(current_workflow)
+
+    def is_library_workflow(self, workflow: Workflow | None) -> bool:
+        """True when saving this workflow has to copy it instead of overwriting it.
+
+        That is a workflow a library contributed or Griptape ships, template or not. A workflow the
+        user marked `is_template` themselves is theirs to overwrite.
+        """
+        if workflow is None:
+            return False
+        return workflow.library_name is not None or bool(workflow.metadata.is_griptape_provided)
 
     def generate_unique_filename(self, base_name: str) -> str:
         """Generate a unique filename for a workflow, avoiding collisions.
@@ -637,7 +672,7 @@ class WorkflowSaver(EngineScoped):
         return SaveSubflowToWorkflowResultSuccess(
             file_path=save_file_result.file_path,
             workflow_metadata=workflow_metadata,
-            result_details=ResultDetails(message=details, level=logging.INFO),
+            result_details=details,
         )
 
     def _build_workflow_save_path(
@@ -795,10 +830,12 @@ class WorkflowSaver(EngineScoped):
             )
 
         # Determine scenario and build target info.
+        # A workflow a library provides is never saved over: saving it writes a new copy
+        # (SAVE_FROM_TEMPLATE), whether or not it is marked as a template.
         destination: ProjectFileDestination | None = None
         file_path: Path | None = None
-        if self._is_protected_template(target_workflow) or self._is_protected_template(current_workflow):
-            # Protected templates always create new copies with unique names, and are always
+        if self.is_library_workflow(target_workflow) or self.is_library_workflow(current_workflow):
+            # Library-provided workflows always create new copies with unique names, and are always
             # disk-backed, so file_path is guaranteed.
             scenario = SaveWorkflowScenario.SAVE_FROM_TEMPLATE
             template_workflow = target_workflow or current_workflow
@@ -864,18 +901,6 @@ class WorkflowSaver(EngineScoped):
             creation_date=creation_date,
             branched_from=branched_from,
         )
-
-    def _is_protected_template(self, workflow: Workflow | None) -> bool:
-        """True when saving this workflow has to copy it instead of overwriting it.
-
-        That is a template a library contributed or Griptape ships. A workflow the user marked
-        `is_template` themselves is theirs to overwrite.
-        """
-        if workflow is None:
-            return False
-        if not workflow.metadata.is_template:
-            return False
-        return workflow.library_name is not None or bool(workflow.metadata.is_griptape_provided)
 
     def _resolve_versioned_save_target(
         self,
@@ -1158,7 +1183,7 @@ class WorkflowSaver(EngineScoped):
         return SaveWorkflowFileFromSerializedFlowResultSuccess(
             file_path=final_file_path,
             workflow_metadata=workflow_metadata,
-            result_details=ResultDetails(message=details, level=logging.INFO),
+            result_details=details,
         )
 
     @staticmethod

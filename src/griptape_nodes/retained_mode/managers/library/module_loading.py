@@ -8,11 +8,18 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from xdg_base_dirs import xdg_data_home
-
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.exe_types.workflow_node import WorkflowNodeDefinitionError, build_workflow_node_class
-from griptape_nodes.files.path_utils import resolve_workspace_path
+from griptape_nodes.exe_types.workflow_node import (
+    WorkflowNode,
+    WorkflowNodeDefinitionError,
+    build_workflow_node_class,
+    ensure_workflow_registered,
+)
+from griptape_nodes.files.path_utils import (
+    canonicalize_for_identity_preserving_symlinks,
+    relative_to_keeping_or_following_links,
+    resolve_workspace_path,
+)
 from griptape_nodes.node_library.library_registry import (
     Library,
     LibraryRegistry,
@@ -30,9 +37,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     NodeModuleImportProblem,
     OldXdgLocationWarningProblem,
     PostDispatchHookRegistrationProblem,
-    PostDispatchHooksWorkerIncompatibleProblem,
     RequestHandlerRegistrationProblem,
-    RequestHandlersWorkerIncompatibleProblem,
     WorkflowNodeLoadProblem,
 )
 from griptape_nodes.retained_mode.managers.library.common import LibraryFitness, LibraryInfo, LibraryLifecycleState
@@ -45,6 +50,7 @@ from griptape_nodes.serialization.type_names import (
     is_dynamic_module_name,
     register_stable_module_name,
 )
+from griptape_nodes.utils.engine_dirs import engine_data_dir
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -440,8 +446,8 @@ class LibraryModuleLoading(EngineScoped):
         """
         any_nodes_loaded_successfully = False
 
-        # Check if library is in old XDG location
-        old_xdg_libraries_path = xdg_data_home() / "griptape_nodes" / "libraries"
+        # Check if library is in old engine data location
+        old_xdg_libraries_path = engine_data_dir() / "libraries"
         library_path_obj = Path(library_info.library_path)
         try:
             # Check if the library path is relative to the old XDG location
@@ -529,20 +535,6 @@ class LibraryModuleLoading(EngineScoped):
             try:
                 # TODO: https://github.com/griptape-ai/griptape-nodes-engine/issues/4744 revisit per-entry error granularity
                 handlers = advanced_library.get_request_handlers()
-                if handlers and library_info.requires_worker:
-                    library_info.problems.append(
-                        RequestHandlersWorkerIncompatibleProblem(
-                            library_name=library_data.name,
-                            handler_count=len(handlers),
-                        )
-                    )
-                    logger.warning(
-                        "Library '%s' declares %d request handler(s) via get_request_handlers() but requires "
-                        "worker mode. Handlers are only registered in the worker process and cannot be reached "
-                        "from the orchestrator. See https://github.com/griptape-ai/griptape-nodes-engine/issues/4748",
-                        library_data.name,
-                        len(handlers),
-                    )
                 for request_type, handler in handlers:
                     event_manager = self.engine.event_manager
                     event_manager.assign_manager_to_request_type(request_type, handler)
@@ -565,21 +557,6 @@ class LibraryModuleLoading(EngineScoped):
         if advanced_library:
             try:
                 hooks = advanced_library.get_post_dispatch_hooks()
-                if hooks and library_info.requires_worker:
-                    library_info.problems.append(
-                        PostDispatchHooksWorkerIncompatibleProblem(
-                            library_name=library_data.name,
-                            hook_count=len(hooks),
-                        )
-                    )
-                    logger.warning(
-                        "Library '%s' declares %d post-dispatch hook(s) via get_post_dispatch_hooks() but "
-                        "requires worker mode. Hooks are only registered in the worker process and do not "
-                        "observe requests handled by the orchestrator. "
-                        "See https://github.com/griptape-ai/griptape-nodes-engine/issues/4748",
-                        library_data.name,
-                        len(hooks),
-                    )
                 for request_type, callback in hooks:
                     # Hooks match on the exact request type, so a key that is not a class can
                     # never equal `type(request)`: the hook would register cleanly and then
@@ -630,6 +607,40 @@ class LibraryModuleLoading(EngineScoped):
 
         # Update lifecycle state to LOADED
         library_info.lifecycle_state = LibraryLifecycleState.LOADED
+
+    def build_workflow_node_class_from_definition(
+        self, workflow_node_definition: WorkflowNodeDefinition, base_dir: Path
+    ) -> type[WorkflowNode] | WorkflowNodeLoadProblem:
+        """Generate the node type a saved workflow file describes, or the problem that prevents it."""
+        # Deliberately not `canonicalize_for_identity`: the workspace scan registers a linked
+        # workflow under the link's path, and resolving it would key it by a full machine-specific
+        # path instead.
+        workflow_file_path = canonicalize_for_identity_preserving_symlinks(
+            workflow_node_definition.workflow_path, base=base_dir
+        )
+        try:
+            workflow_metadata = read_workflow_metadata(workflow_file_path)
+        except WorkflowMetadataError as err:
+            return WorkflowNodeLoadProblem(
+                node_type=workflow_node_definition.node_type,
+                workflow_path=str(workflow_file_path),
+                error_message=str(err),
+            )
+
+        try:
+            node_class = build_workflow_node_class(
+                node_type=workflow_node_definition.node_type,
+                workflow_file_path=workflow_file_path,
+                workflow_metadata=workflow_metadata,
+            )
+        except WorkflowNodeDefinitionError as err:
+            return WorkflowNodeLoadProblem(
+                node_type=workflow_node_definition.node_type,
+                workflow_path=str(workflow_file_path),
+                error_message=str(err),
+            )
+
+        return node_class
 
     def _create_stable_namespace(self, library_name: str, file_path: Path) -> str:
         """Create a stable namespace for a dynamic module.
@@ -912,36 +923,58 @@ class LibraryModuleLoading(EngineScoped):
         parameters. Returns False (recording a library problem) when the header cannot be read or
         carries no shape.
         """
-        workflow_file_path = resolve_workspace_path(Path(workflow_node_definition.workflow_path), base_dir)
-        try:
-            workflow_metadata = read_workflow_metadata(workflow_file_path)
-        except WorkflowMetadataError as err:
-            library_info.problems.append(
-                WorkflowNodeLoadProblem(
-                    node_type=workflow_node_definition.node_type,
-                    workflow_path=str(workflow_file_path),
-                    error_message=str(err),
-                )
-            )
-            return False
-
-        try:
-            node_class = build_workflow_node_class(
-                node_type=workflow_node_definition.node_type,
-                workflow_file_path=workflow_file_path,
-                workflow_metadata=workflow_metadata,
-            )
-        except WorkflowNodeDefinitionError as err:
-            library_info.problems.append(
-                WorkflowNodeLoadProblem(
-                    node_type=workflow_node_definition.node_type,
-                    workflow_path=str(workflow_file_path),
-                    error_message=str(err),
-                )
-            )
+        node_class = self.build_workflow_node_class_from_definition(workflow_node_definition, base_dir)
+        if isinstance(node_class, WorkflowNodeLoadProblem):
+            library_info.problems.append(node_class)
             return False
 
         library_problem = library.register_new_node_type(node_class, metadata=workflow_node_definition.metadata)
         if library_problem is not None:
             library_info.problems.append(library_problem)
+            return True
+
+        library_info.workflow_node_classes.append(node_class)
+        self.list_workflow_node_workflow(node_class, library_info)
         return True
+
+    def list_workflow_node_workflow(self, node_class: type[WorkflowNode], library_info: LibraryInfo) -> None:
+        """List the workflow behind a library's workflow node in the registry as library-provided.
+
+        Listed like the workflows in the library's `workflows` list: browsable before any node is
+        placed. A registry refresh clears every workflow and calls this again, so the key follows the
+        current workspace. A workflow elsewhere in the workspace is the user's own file, so it stays
+        editable and the workspace scan lists it. The scan skips everything under a non-sandbox
+        library's directory, which includes libraries installed into the workspace.
+        """
+        workspace_path = self.engine.config_manager.workspace_path
+        if self._is_users_workflow(node_class.workflow_file_path, workspace_path, library_info):
+            return
+        node_class.workflow_metadata.is_griptape_provided = True
+        try:
+            ensure_workflow_registered(
+                workspace_path,
+                self.engine.workflow_registry,
+                node_class.workflow_file_path,
+                node_class.workflow_metadata,
+            )
+        except (KeyError, ValueError):
+            logger.warning(
+                "Library '%s' could not list the workflow '%s' behind node type '%s'.",
+                library_info.library_name,
+                node_class.workflow_file_path,
+                node_class.__name__,
+            )
+
+    @staticmethod
+    def _is_users_workflow(workflow_file_path: Path, workspace_path: Path, library_info: LibraryInfo) -> bool:
+        """Whether a library's workflow is a file the workspace scan lists as the user's own.
+
+        Mirrors the scan's rule: it lists files in the workspace, except those under a non-sandbox
+        library's directory.
+        """
+        if relative_to_keeping_or_following_links(workflow_file_path, workspace_path) is None:
+            return False
+        if library_info.is_sandbox:
+            return True
+        library_dir = Path(library_info.library_path).parent
+        return relative_to_keeping_or_following_links(workflow_file_path, library_dir) is None

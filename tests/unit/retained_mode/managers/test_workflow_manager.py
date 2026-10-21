@@ -20,7 +20,11 @@ if TYPE_CHECKING:
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import NodeDependencies, StartNode
-from griptape_nodes.node_library.library_registry import LibraryMetadata
+from griptape_nodes.node_library.library_registry import (
+    LibraryMetadata,
+    LibraryRegistry,
+    LibrarySchema,
+)
 from griptape_nodes.node_library.workflow_registry import (
     Workflow,
     WorkflowMetadata,
@@ -28,9 +32,13 @@ from griptape_nodes.node_library.workflow_registry import (
     read_workflow_metadata,
 )
 from griptape_nodes.retained_mode.engine import Engine, current_engine
-from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
+from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.flow_events import SerializedFlowCommands
-from griptape_nodes.retained_mode.events.library_events import GetLibraryMetadataResultSuccess
+from griptape_nodes.retained_mode.events.library_events import (
+    GetLibraryMetadataResultSuccess,
+    ListRegisteredLibrariesRequest,
+    ListRegisteredLibrariesResultFailure,
+)
 from griptape_nodes.retained_mode.events.workflow_events import (
     BranchWorkflowRequest,
     BranchWorkflowResultFailure,
@@ -142,6 +150,74 @@ def _library_installed(engine: Engine, library_name: str) -> "Generator[None, No
         ),
     ):
         yield
+
+
+def _valid_workflow_source(name: str, libraries: list[str] | None = None) -> str:
+    """Build the source of a workflow file carrying one well-formed metadata header.
+
+    Args:
+        name: The workflow's name.
+        libraries: Library names to declare in `node_libraries_referenced`, each at version
+            1.0.0. Defaults to referencing none.
+    """
+    referenced = ", ".join(f'["{library}", "1.0.0"]' for library in libraries or [])
+    return "\n".join(
+        [
+            f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}",
+            "# [tool.griptape-nodes]",
+            f'# name = "{name}"',
+            f'# schema_version = "{WorkflowMetadata.LATEST_SCHEMA_VERSION}"',
+            '# engine_version_created_with = "0.0.0"',
+            f"# node_libraries_referenced = [{referenced}]",
+            "# ///",
+            "",
+        ]
+    )
+
+
+def _register_library_with_no_node_types(name: str) -> None:
+    """Register a library the engine can resolve, holding no node types at all.
+
+    Tests that want `LibraryNotRegisteredProblem` to mean something need a library on the
+    other side of the comparison. A name absent from the registry produces that problem on
+    every path, so an assertion against it holds whatever the registered-library list says.
+
+    Args:
+        name: The library name, as declared in a workflow's `node_libraries_referenced`.
+    """
+    schema = LibrarySchema(
+        name=name,
+        library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+        metadata=LibraryMetadata(
+            author="t",
+            description="d",
+            library_version="1.0.0",
+            engine_version="1.0.0",
+            tags=[],
+        ),
+        categories=[],
+        nodes=[],
+    )
+    LibraryRegistry.generate_new_library(library_data=schema)
+
+
+def _write_minimal_workflow_header(workflow_file: Path) -> None:
+    workflow_file.write_text(
+        "\n".join(
+            [
+                f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}",
+                "# [tool.griptape-nodes]",
+                '# name = "Outside Workspace"',
+                '# description = "run directly"',
+                '# schema_version = "0.21.0"',
+                '# engine_version_created_with = "0.0.0"',
+                "# node_libraries_referenced = []",
+                "# ///",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
 
 def _register_unsaved_workflow(key: str, name: str) -> None:
@@ -352,6 +428,61 @@ class TestWorkflowManager:
 
         assert isinstance(result, GetWorkflowMetadataResultFailure)
 
+    def test_get_workflow_metadata_reads_file_of_open_unregistered_workflow(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        """A workflow run from a file the registry doesn't know answers with its file header."""
+        workflow_file = tmp_path / "outside_workspace.py"
+        _write_minimal_workflow_header(workflow_file)
+        context_manager = engine.context_manager
+        workflow_name = context_manager.push_workflow(file_path=str(workflow_file))
+        try:
+            result = engine.workflow_manager.catalog.on_get_workflow_metadata_request(
+                GetWorkflowMetadataRequest(workflow_name=workflow_name)
+            )
+        finally:
+            context_manager.pop_workflow()
+
+        assert isinstance(result, GetWorkflowMetadataResultSuccess)
+        assert result.workflow_metadata.name == "Outside Workspace"
+        assert result.workflow_metadata.description == "run directly"
+
+    def test_get_workflow_metadata_not_found_when_name_is_not_open_workflow(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        """The file fallback answers only for the open workflow, not for any unregistered name."""
+        workflow_file = tmp_path / "open_workflow.py"
+        _write_minimal_workflow_header(workflow_file)
+        context_manager = engine.context_manager
+        context_manager.push_workflow(file_path=str(workflow_file))
+        try:
+            result = engine.workflow_manager.catalog.on_get_workflow_metadata_request(
+                GetWorkflowMetadataRequest(workflow_name="some_other_workflow")
+            )
+        finally:
+            context_manager.pop_workflow()
+
+        assert isinstance(result, GetWorkflowMetadataResultFailure)
+
+    def test_get_workflow_metadata_reports_unreadable_header_of_open_workflow(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        """A bad header on the open workflow's file is reported as such, not as "not found"."""
+        workflow_file = tmp_path / "no_header.py"
+        workflow_file.write_text("print('no header')\n", encoding="utf-8")
+        context_manager = engine.context_manager
+        workflow_name = context_manager.push_workflow(file_path=str(workflow_file))
+        try:
+            result = engine.workflow_manager.catalog.on_get_workflow_metadata_request(
+                GetWorkflowMetadataRequest(workflow_name=workflow_name)
+            )
+        finally:
+            context_manager.pop_workflow()
+
+        assert isinstance(result, GetWorkflowMetadataResultFailure)
+        assert isinstance(result.result_details, ResultDetails)
+        assert "metadata section" in result.result_details.result_details[0].message
+
     def test_set_workflow_metadata_success(self, engine: Engine) -> None:
         """Ensure SetWorkflowMetadataRequest replaces metadata and persists header."""
         workflow_manager = engine.workflow_manager
@@ -531,6 +662,8 @@ class TestWorkflowManager:
         mock_workflow.file_path = "workflows/regular_workflow.py"
         mock_workflow.metadata = MagicMock()
         mock_workflow.metadata.is_template = False
+        mock_workflow.metadata.is_griptape_provided = False
+        mock_workflow.library_name = None
 
         with patch.object(
             engine.workflow_registry,
@@ -540,7 +673,7 @@ class TestWorkflowManager:
             result = workflow_manager.branching.on_create_workflow_from_template_request(request)
 
         assert isinstance(result, CreateWorkflowFromTemplateResultFailure)
-        assert "not marked as a template" in str(result.result_details)
+        assert "neither marked as a template nor provided by a library" in str(result.result_details)
 
     def test_on_create_workflow_from_template_request_template_file_not_found(self, engine: Engine) -> None:
         """Test create from template when template file does not exist."""
@@ -1617,6 +1750,404 @@ class TestWorkflowManager:
         assert leaked_path.name not in scanned_names
         # Sanity check: a regular file in the same directory still reaches the processor.
         assert good_path.name in scanned_names
+
+    @pytest.mark.asyncio
+    async def test_refresh_reresolves_library_templates_against_new_workspace(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        """A library template registered under one workspace must still resolve after a project switch.
+
+        A library's templates are keyed by absolute path, so the refresh that follows a workspace
+        change leaves them pointing at the file the library ships.
+        """
+        workflow_manager = engine.workflow_manager
+        startup_workspace = tmp_path / "startup_project"
+        other_workspace = tmp_path / "other_project"
+        other_workspace.mkdir()
+        template_dir = startup_workspace / "libraries" / "some_library" / "workflows"
+        template_dir.mkdir(parents=True)
+        template_path = template_dir / "template.py"
+        header = WorkflowManager.WORKFLOW_METADATA_HEADER
+        template_path.write_text(
+            "\n".join(
+                [
+                    f"# /// {header}",
+                    "# [tool.griptape-nodes]",
+                    '# name = "template"',
+                    f'# schema_version = "{WorkflowMetadata.LATEST_SCHEMA_VERSION}"',
+                    '# engine_version_created_with = "0.0.0"',
+                    "# node_libraries_referenced = []",
+                    "# is_griptape_provided = true",
+                    "# is_template = true",
+                    "# ///",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        engine.library_manager._libraries_loading_complete.set()
+
+        # Startup: the library registers its templates, then the workspace scan runs.
+        engine.config_manager.workspace_path = startup_workspace
+        await workflow_manager.register_list_of_workflows([str(template_path)], library_name="some_library")
+        await workflow_manager.refresh_workflow_registry()
+
+        # Project switch.
+        engine.config_manager.workspace_path = other_workspace
+        await workflow_manager.refresh_workflow_registry()
+
+        templates = [
+            metadata
+            for metadata in engine.workflow_registry.list_workflows().values()
+            if metadata["is_griptape_provided"]
+        ]
+        assert len(templates) == 1
+        assert templates[0]["file_path"] is not None
+        resolved = Path(engine.workflow_registry.get_complete_file_path(templates[0]["file_path"]))
+        assert resolved == template_path
+
+    @pytest.mark.asyncio
+    async def test_registration_scan_reads_each_file_from_disk_once(self, engine: Engine, tmp_path: Path) -> None:
+        """A full registration scan must not re-read a workflow file it already parsed."""
+        workflow_manager = engine.workflow_manager
+        engine.config_manager.workspace_path = tmp_path
+        engine.library_manager._libraries_loading_complete.set()
+
+        file_count = 5
+        for index in range(file_count):
+            (tmp_path / f"workflow_{index}.py").write_text(
+                _valid_workflow_source(f"workflow_{index}"), encoding="utf-8"
+            )
+
+        # Count Path.open rather than Path.read_text: read_text is implemented in terms of
+        # open, so open is the one chokepoint every read passes through.
+        open_call_count = 0
+        original_open = Path.open
+
+        def counting_open(self: Path, *args: Any, **kwargs: Any) -> Any:
+            nonlocal open_call_count
+            if self.suffix == ".py":
+                open_call_count += 1
+            return original_open(self, *args, **kwargs)
+
+        with patch.object(Path, "open", counting_open):
+            result = await workflow_manager._process_workflows_for_registration([str(tmp_path)])
+
+        assert len(result.succeeded) == file_count
+        assert open_call_count == file_count
+
+    @pytest.mark.asyncio
+    async def test_registration_scan_does_not_list_registered_libraries(self, engine: Engine, tmp_path: Path) -> None:
+        """A registration scan reads headers only; judging against the libraries waits for a read.
+
+        A library registering its workflows mid-load would otherwise judge them against a
+        half-loaded set, so the scan never asks which libraries are registered.
+        """
+        workflow_manager = engine.workflow_manager
+        engine.config_manager.workspace_path = tmp_path
+        engine.library_manager._libraries_loading_complete.set()
+
+        file_count = 5
+        for index in range(file_count):
+            (tmp_path / f"workflow_{index}.py").write_text(
+                _valid_workflow_source(f"workflow_{index}"), encoding="utf-8"
+            )
+
+        original_ahandle = engine.ahandle_request
+        list_libraries_call_count = 0
+
+        async def counting_ahandle_request(request: RequestPayload) -> ResultPayload:
+            nonlocal list_libraries_call_count
+            if isinstance(request, ListRegisteredLibrariesRequest):
+                list_libraries_call_count += 1
+            return await original_ahandle(request)
+
+        with patch.object(engine, "ahandle_request", side_effect=counting_ahandle_request):
+            result = await workflow_manager._process_workflows_for_registration([str(tmp_path)])
+
+        assert len(result.succeeded) == file_count
+        assert list_libraries_call_count == 0
+
+    @pytest.mark.parametrize(
+        ("file_name", "source"),
+        [
+            ("plain_module.py", "def add(a, b):\n    return a + b\n"),
+            ("two_headers.py", _valid_workflow_source("first") + "\nimport os\n\n" + _valid_workflow_source("second")),
+        ],
+        ids=["no_metadata_header", "two_metadata_headers"],
+    )
+    @pytest.mark.asyncio
+    async def test_registration_scan_skips_files_without_exactly_one_header(
+        self, engine: Engine, tmp_path: Path, file_name: str, source: str
+    ) -> None:
+        """A .py file that doesn't carry exactly one metadata header isn't a workflow at all.
+
+        The scan has always decided workflow-ness by that header count, so an ordinary helper
+        module sitting in the workspace must stay out of the load report entirely. Reporting it
+        as UNUSABLE would fill the startup workflow-problems table with files the user never
+        meant as workflows.
+        """
+        workflow_manager = engine.workflow_manager
+        engine.config_manager.workspace_path = tmp_path
+        engine.library_manager._libraries_loading_complete.set()
+
+        (tmp_path / file_name).write_text(source, encoding="utf-8")
+        (tmp_path / "good.py").write_text(_valid_workflow_source("good"), encoding="utf-8")
+
+        result = await workflow_manager._process_workflows_for_registration([str(tmp_path)])
+
+        reported = {Path(path).name for path in workflow_manager._workflow_file_path_to_info}
+        assert file_name not in reported
+        assert file_name not in {Path(name).name for name in result.failed}
+        # Sanity check: the real workflow beside it still registers.
+        assert "good" in {Path(name).stem for name in result.succeeded}
+
+    @pytest.mark.parametrize(
+        ("file_name", "body", "expected_problem"),
+        [
+            ("bad_toml.py", "# name = = =", InvalidTomlFormatProblem),
+            ("no_table.py", '# name = "orphan"', MissingTomlSectionProblem),
+        ],
+        ids=["invalid_toml", "missing_tool_table"],
+    )
+    @pytest.mark.asyncio
+    async def test_registration_scan_still_reports_malformed_headers(
+        self, engine: Engine, tmp_path: Path, file_name: str, body: str, expected_problem: type
+    ) -> None:
+        """A file with one header that fails to parse is a real workflow, and still gets reported.
+
+        This is the other side of the skip rule above: skipping must key on the header count,
+        not on "anything that failed to parse", or genuinely broken workflows would vanish from
+        the load report instead of telling the user what to fix.
+        """
+        workflow_manager = engine.workflow_manager
+        engine.config_manager.workspace_path = tmp_path
+        engine.library_manager._libraries_loading_complete.set()
+
+        source = f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}\n{body}\n# ///\n"
+        (tmp_path / file_name).write_text(source, encoding="utf-8")
+
+        await workflow_manager._process_workflows_for_registration([str(tmp_path)])
+
+        infos = {Path(path).name: info for path, info in workflow_manager._workflow_file_path_to_info.items()}
+        assert file_name in infos
+        assert infos[file_name].status is WorkflowManager.WorkflowStatus.UNUSABLE
+        assert any(isinstance(problem, expected_problem) for problem in infos[file_name].problems)
+
+    @pytest.mark.asyncio
+    async def test_registration_scan_skips_a_file_whose_bytes_cannot_be_decoded(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        """A .py file that is not valid UTF-8 is not a workflow, and stays out of the load report.
+
+        The metadata read decodes as UTF-8 before it looks for a header, so a file of other
+        bytes fails as a UnicodeDecodeError rather than as any of the metadata errors. That
+        says nothing about whether the file was ever meant as a workflow -- it is more likely
+        something that merely ends in .py -- so the scan passes over it instead of filling the
+        startup problem table with it.
+
+        A file the OS refuses to open takes the other route: the read turns an OSError into
+        WorkflowMetadataFileError, which the classifier handles by name.
+        """
+        workflow_manager = engine.workflow_manager
+        engine.config_manager.workspace_path = tmp_path
+        engine.library_manager._libraries_loading_complete.set()
+
+        # A UTF-16 byte order mark, which is not valid UTF-8.
+        (tmp_path / "undecodable.py").write_bytes(b"\xff\xfe" + _valid_workflow_source("undecodable").encode())
+        (tmp_path / "good.py").write_text(_valid_workflow_source("good"), encoding="utf-8")
+
+        result = await workflow_manager._process_workflows_for_registration([str(tmp_path)])
+
+        reported = {Path(path).name for path in workflow_manager._workflow_file_path_to_info}
+        assert "undecodable.py" not in reported
+        assert "undecodable" not in {Path(name).stem for name in result.failed}
+        # Sanity check: the decodable workflow beside it still registers.
+        assert "good" in {Path(name).stem for name in result.succeeded}
+
+    @pytest.mark.asyncio
+    async def test_registration_scan_accepts_a_file_path_not_just_a_directory(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        """An entry in the scan list can name one `.py` file rather than a directory.
+
+        `_persist_external_workflow_registration` writes an individual file path for every
+        out-of-workspace workflow, so this is the route a registered external workflow takes
+        on each restart. A named file is classified by the same header check a directory walk
+        applies, so naming a plain module directly does not make it a workflow.
+        """
+        workflow_manager = engine.workflow_manager
+        engine.config_manager.workspace_path = tmp_path
+        engine.library_manager._libraries_loading_complete.set()
+
+        named_workflow = tmp_path / "named_workflow.py"
+        named_workflow.write_text(_valid_workflow_source("named_workflow"), encoding="utf-8")
+        named_module = tmp_path / "named_module.py"
+        named_module.write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+
+        result = await workflow_manager._process_workflows_for_registration([str(named_workflow), str(named_module)])
+
+        assert "named_workflow" in {Path(name).stem for name in result.succeeded}
+        reported = {Path(path).name for path in workflow_manager._workflow_file_path_to_info}
+        assert named_module.name not in reported
+        assert named_module.stem not in {Path(name).stem for name in result.failed}
+
+    class TestRegisteredLibraryResolution:
+        """How the scan and the single-workflow load learn which libraries are registered.
+
+        These are the only tests in this file that put anything in the process-global
+        `LibraryRegistry`, so the fixture clearing it is scoped here rather than to the
+        whole outer class.
+        """
+
+        @pytest.fixture(autouse=True)
+        def _clean_library_registry(self) -> "Generator[None, None, None]":
+            """Drop registered libraries around each test, since the registry is process-global."""
+            LibraryRegistry._clear()
+            yield
+            LibraryRegistry._clear()
+
+        @pytest.mark.asyncio
+        async def test_registration_scan_reports_every_workflow_when_the_library_list_fails(
+            self, engine: Engine, tmp_path: Path
+        ) -> None:
+            """A failed library fetch leaves every scanned workflow's libraries unregistered when read."""
+            workflow_manager = engine.workflow_manager
+            engine.config_manager.workspace_path = tmp_path
+            engine.library_manager._libraries_loading_complete.set()
+
+            # A library the registry CAN resolve, so LibraryNotRegisteredProblem below can only
+            # come from the failed fetch, not from the library being absent.
+            _register_library_with_no_node_types("Resolvable Library")
+
+            file_count = 2
+            for index in range(file_count):
+                (tmp_path / f"workflow_{index}.py").write_text(
+                    _valid_workflow_source(f"workflow_{index}", libraries=["Resolvable Library"]), encoding="utf-8"
+                )
+
+            original_ahandle = engine.ahandle_request
+
+            async def failing_list_libraries(request: RequestPayload) -> ResultPayload:
+                if isinstance(request, ListRegisteredLibrariesRequest):
+                    return ListRegisteredLibrariesResultFailure(result_details="Registry unavailable")
+                return await original_ahandle(request)
+
+            with patch.object(engine, "ahandle_request", side_effect=failing_list_libraries):
+                await workflow_manager._process_workflows_for_registration([str(tmp_path)])
+                infos = [
+                    await workflow_manager.get_current_workflow_info(f"workflow_{index}.py")
+                    for index in range(file_count)
+                ]
+
+            for info in infos:
+                assert info is not None
+                assert any(isinstance(problem, LibraryNotRegisteredProblem) for problem in info.problems)
+
+        @pytest.mark.asyncio
+        async def test_single_workflow_load_reports_unregistered_when_the_library_list_fails(
+            self, engine: Engine, tmp_path: Path
+        ) -> None:
+            """The editor's single-workflow load fetches its own library list, and survives it failing.
+
+            This path passes no pre-fetched list, so it does the fetch itself. A failure there
+            treats every declared library as unregistered rather than raising at the editor.
+            """
+            workflow_manager = engine.workflow_manager
+            engine.config_manager.workspace_path = tmp_path
+            engine.library_manager._libraries_loading_complete.set()
+
+            # Resolvable, so the problem asserted below can only come from the failed fetch.
+            _register_library_with_no_node_types("Resolvable Library")
+
+            (tmp_path / "solo.py").write_text(
+                _valid_workflow_source("solo", libraries=["Resolvable Library"]), encoding="utf-8"
+            )
+
+            original_ahandle = engine.ahandle_request
+
+            async def failing_list_libraries(request: RequestPayload) -> ResultPayload:
+                if isinstance(request, ListRegisteredLibrariesRequest):
+                    return ListRegisteredLibrariesResultFailure(result_details="Registry unavailable")
+                return await original_ahandle(request)
+
+            with patch.object(engine, "ahandle_request", side_effect=failing_list_libraries):
+                result = await workflow_manager.on_load_workflow_metadata_request(
+                    LoadWorkflowMetadata(file_name="solo.py")
+                )
+
+            assert isinstance(result, LoadWorkflowMetadataResultSuccess)
+            info = workflow_manager._workflow_file_path_to_info[str(tmp_path / "solo.py")]
+            assert any(isinstance(problem, LibraryNotRegisteredProblem) for problem in info.problems)
+
+        @pytest.mark.asyncio
+        async def test_scan_and_single_load_record_the_same_result(self, engine: Engine, tmp_path: Path) -> None:
+            """A workflow the scan registered and one the editor loads directly are judged alike.
+
+            The scan hands registration metadata it already parsed, while the handler reads and
+            parses for itself. A change that makes one of them see a workflow differently from the
+            other is a bug, whichever one is right.
+
+            The declared library is registered, so a path that loses the list it fetched -- or never
+            applies the one it was handed -- reports it unregistered and is caught here. A library
+            absent from the registry would be reported unregistered by both paths no matter what
+            either did with the list, which is no test at all.
+            """
+            workflow_manager = engine.workflow_manager
+            engine.config_manager.workspace_path = tmp_path
+            engine.library_manager._libraries_loading_complete.set()
+
+            _register_library_with_no_node_types("Resolvable Library")
+            (tmp_path / "shared.py").write_text(
+                _valid_workflow_source("shared", libraries=["Resolvable Library"]), encoding="utf-8"
+            )
+            str_path = str(tmp_path / "shared.py")
+
+            await workflow_manager.on_load_workflow_metadata_request(LoadWorkflowMetadata(file_name="shared.py"))
+            from_handler = workflow_manager._workflow_file_path_to_info[str_path]
+
+            workflow_manager._workflow_file_path_to_info.clear()
+            await workflow_manager._process_workflows_for_registration([str(tmp_path)])
+            from_scan = await workflow_manager.get_current_workflow_info("shared.py")
+            assert from_scan is not None
+
+            assert from_scan.status is from_handler.status
+            assert from_scan.workflow_name == from_handler.workflow_name
+            assert [type(problem) for problem in from_scan.problems] == [
+                type(problem) for problem in from_handler.problems
+            ]
+            # Agreeing on the wrong answer is still wrong: a registered library must be recorded
+            # as registered by both routes.
+            for info in (from_handler, from_scan):
+                assert not any(isinstance(problem, LibraryNotRegisteredProblem) for problem in info.problems)
+
+        @pytest.mark.asyncio
+        async def test_registration_scan_reports_a_library_missing_from_the_registry(
+            self, engine: Engine, tmp_path: Path
+        ) -> None:
+            """A workflow declaring a library nobody registered is reported, with the fetch healthy.
+
+            The companion to the fetch-failure cases: here the list arrives intact and simply does
+            not contain the declared library. That is the ordinary "you don't have this library
+            installed" path, and it must still produce LibraryNotRegisteredProblem.
+            """
+            workflow_manager = engine.workflow_manager
+            engine.config_manager.workspace_path = tmp_path
+            engine.library_manager._libraries_loading_complete.set()
+
+            _register_library_with_no_node_types("Resolvable Library")
+            (tmp_path / "mixed.py").write_text(
+                _valid_workflow_source("mixed", libraries=["Resolvable Library", "Absent Library"]), encoding="utf-8"
+            )
+
+            await workflow_manager._process_workflows_for_registration([str(tmp_path)])
+
+            info = await workflow_manager.get_current_workflow_info("mixed.py")
+            assert info is not None
+            unregistered = [
+                problem.library_name for problem in info.problems if isinstance(problem, LibraryNotRegisteredProblem)
+            ]
+            assert unregistered == ["Absent Library"]
 
     # --- Metadata header parse failures ---
 
@@ -3920,6 +4451,113 @@ class TestWorkflowCreationOnTheDefaultProject:
         # A workspace-resident file keeps its workspace-relative registry key.
         assert created.workflow_name == "blank_template_1"
 
+    def _make_library_workflow(self, engine: Engine, display_name: str) -> str:
+        """Save a workflow and mark it as library-provided but not a template; return its registry key.
+
+        The workflow stays open in the current context.
+        """
+        from griptape_nodes.retained_mode.events.workflow_events import (
+            SaveWorkflowRequest,
+            SaveWorkflowResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.context_manager import (
+            EnsureWorkflowAndFlowRequest,
+            EnsureWorkflowAndFlowResultSuccess,
+        )
+
+        ensure_result = engine.handle_request(EnsureWorkflowAndFlowRequest(display_name=display_name))
+        assert isinstance(ensure_result, EnsureWorkflowAndFlowResultSuccess)
+        save_result = asyncio.run(engine.ahandle_request(SaveWorkflowRequest()))
+        assert isinstance(save_result, SaveWorkflowResultSuccess), save_result.result_details
+        metadata = engine.workflow_registry.get_workflow_by_name(save_result.workflow_name).metadata
+        metadata.is_griptape_provided = True
+        metadata.is_template = False
+        return save_result.workflow_name
+
+    def test_create_from_a_library_workflow_that_is_not_a_template(self, engine: Engine, temp_dir: Path) -> None:
+        """A library-provided workflow is copied from even when its header does not say `is_template`."""
+        from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+
+        library_key = self._make_library_workflow(engine, "library_workflow")
+        engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+        library_file = temp_dir / "library_workflow.py"
+        library_content = library_file.read_text(encoding="utf-8")
+
+        created = engine.handle_request(CreateWorkflowFromTemplateRequest(template_name=library_key))
+
+        assert isinstance(created, CreateWorkflowFromTemplateResultSuccess), created.result_details
+        assert Path(created.file_path) == temp_dir / "library_workflow_1.py"
+        assert library_file.read_text(encoding="utf-8") == library_content
+        # The copy is the user's own workflow.
+        copy_metadata = engine.workflow_registry.get_workflow_by_name(created.workflow_name).metadata
+        assert copy_metadata.is_griptape_provided is False
+        assert copy_metadata.is_template is False
+
+    def test_saving_a_library_workflow_writes_a_copy(self, engine: Engine, temp_dir: Path) -> None:
+        """Saving an open library-provided workflow never writes over the library's file."""
+        from griptape_nodes.retained_mode.events.workflow_events import (
+            SaveWorkflowRequest,
+            SaveWorkflowResultSuccess,
+        )
+
+        library_key = self._make_library_workflow(engine, "library_workflow")
+        library_file = temp_dir / "library_workflow.py"
+        library_content = library_file.read_text(encoding="utf-8")
+
+        saved = asyncio.run(engine.ahandle_request(SaveWorkflowRequest(file_name=library_key)))
+
+        assert isinstance(saved, SaveWorkflowResultSuccess), saved.result_details
+        assert Path(saved.file_path) != library_file
+        assert Path(saved.file_path).exists()
+        assert library_file.read_text(encoding="utf-8") == library_content
+
+        # The copy is now the open workflow, so the next save lands in it instead of another copy.
+        assert engine.context_manager.get_current_workflow_name() == saved.workflow_name
+        saved_again = asyncio.run(engine.ahandle_request(SaveWorkflowRequest()))
+
+        assert isinstance(saved_again, SaveWorkflowResultSuccess), saved_again.result_details
+        assert Path(saved_again.file_path) == Path(saved.file_path)
+        assert sorted(path.name for path in temp_dir.glob("library_workflow*.py")) == [
+            "library_workflow.py",
+            "library_workflow_1.py",
+        ]
+
+    def test_saving_a_library_workflow_keeps_substitution_disabled(self, engine: Engine) -> None:
+        """A library workflow with variable substitution off stays off in its copy across saves."""
+        from griptape_nodes.retained_mode.events.workflow_events import (
+            SaveWorkflowRequest,
+            SaveWorkflowResultSuccess,
+            SetVariableSubstitutionEnabledRequest,
+        )
+
+        library_key = self._make_library_workflow(engine, "library_workflow")
+        engine.handle_request(SetVariableSubstitutionEnabledRequest(enabled=False))
+
+        saved = asyncio.run(engine.ahandle_request(SaveWorkflowRequest(file_name=library_key)))
+        assert isinstance(saved, SaveWorkflowResultSuccess), saved.result_details
+        saved_again = asyncio.run(engine.ahandle_request(SaveWorkflowRequest()))
+        assert isinstance(saved_again, SaveWorkflowResultSuccess), saved_again.result_details
+
+        assert engine.workflow_manager.variable_substitution.is_enabled() is False
+        assert "SetVariableSubstitutionEnabledRequest" in Path(saved_again.file_path).read_text(encoding="utf-8")
+        # The library workflow keeps its own setting.
+        assert engine.workflow_manager.variable_substitution._enabled[library_key] is False
+
+    def test_saving_the_users_own_workflow_still_overwrites_it(self, engine: Engine, temp_dir: Path) -> None:
+        """Only library-provided workflows are copied on save; the user's own file is saved in place."""
+        from griptape_nodes.retained_mode.events.workflow_events import (
+            SaveWorkflowRequest,
+            SaveWorkflowResultSuccess,
+        )
+
+        own_key = self._make_library_workflow(engine, "own_workflow")
+        engine.workflow_registry.get_workflow_by_name(own_key).metadata.is_griptape_provided = False
+
+        saved = asyncio.run(engine.ahandle_request(SaveWorkflowRequest(file_name=own_key)))
+
+        assert isinstance(saved, SaveWorkflowResultSuccess), saved.result_details
+        assert Path(saved.file_path) == temp_dir / "own_workflow.py"
+
     def test_branch_still_lands_in_the_workspace_root(self, engine: Engine, temp_dir: Path) -> None:
         """Branch names stay workspace-relative on an unmodified project."""
         from griptape_nodes.retained_mode.events.workflow_events import (
@@ -5759,13 +6397,13 @@ class TestProtectedTemplateOwnership:
     def test_a_library_template_is_protected(self, engine: Engine) -> None:
         workflow = self._workflow(engine, is_template=True, library_name="MyLib")
 
-        assert engine.workflow_manager.saver._is_protected_template(workflow) is True
+        assert engine.workflow_manager.saver.is_library_workflow(workflow) is True
 
     def test_a_griptape_provided_template_is_protected(self, engine: Engine) -> None:
         """The pre-existing rule still holds: engine-shipped templates carry the flag, not a library."""
         workflow = self._workflow(engine, is_template=True, is_griptape_provided=True)
 
-        assert engine.workflow_manager.saver._is_protected_template(workflow) is True
+        assert engine.workflow_manager.saver.is_library_workflow(workflow) is True
 
     def test_the_users_own_template_is_not_protected(self, engine: Engine) -> None:
         """A workflow the user marked ``is_template`` in their own workspace is theirs to overwrite.
@@ -5775,25 +6413,24 @@ class TestProtectedTemplateOwnership:
         """
         workflow = self._workflow(engine, is_template=True)
 
-        assert engine.workflow_manager.saver._is_protected_template(workflow) is False
+        assert engine.workflow_manager.saver.is_library_workflow(workflow) is False
 
-    def test_a_library_workflow_that_is_not_a_template_is_not_protected(self, engine: Engine) -> None:
-        """Coming from a library does not protect anything -- the header still has to say template.
+    def test_a_library_workflow_that_is_not_a_template_is_protected(self, engine: Engine) -> None:
+        """Coming from a library is enough: saving any library workflow writes a copy.
 
-        A library can declare a workflow that is not a template, and saving that overwrites it in place
-        like any other.
+        Editing the library's own file in place would be overwritten by the next library update.
         """
         workflow = self._workflow(engine, library_name="MyLib")
 
-        assert engine.workflow_manager.saver._is_protected_template(workflow) is False
+        assert engine.workflow_manager.saver.is_library_workflow(workflow) is True
 
     def test_no_workflow_is_not_protected(self, engine: Engine) -> None:
         """``_determine_save_target`` asks about both the target and the current workflow.
 
         Either can be absent -- a first save has no target, a save driven by name alone has no
-        current workflow -- so the missing one must not be mistaken for a protected template.
+        current workflow -- so the missing one must not be mistaken for a library workflow.
         """
-        assert engine.workflow_manager.saver._is_protected_template(None) is False
+        assert engine.workflow_manager.saver.is_library_workflow(None) is False
 
 
 class TestSaveFromTemplateRoutesOnTheOwningLibrary:

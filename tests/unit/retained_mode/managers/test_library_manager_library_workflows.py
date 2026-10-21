@@ -449,7 +449,6 @@ class TestRegisteringALibraryRegistersItsWorkflows:
         [
             (LibraryManager.LibraryFitness.GOOD, RegisterLibraryFromFileResultSuccess, True),
             (LibraryManager.LibraryFitness.FLAWED, RegisterLibraryFromFileResultSuccess, True),
-            (LibraryManager.LibraryFitness.NOT_EVALUATED, RegisterLibraryFromFileResultSuccess, True),
             (LibraryManager.LibraryFitness.UNUSABLE, RegisterLibraryFromFileResultFailure, False),
         ],
     )
@@ -464,9 +463,8 @@ class TestRegisteringALibraryRegistersItsWorkflows:
     ) -> None:
         """Not just the healthy verdict.
 
-        `FLAWED` means some of the library's nodes failed to load and `NOT_EVALUATED` means node loading
-        is deferred to a worker. Either way the library is registered and its templates belong in the
-        picker: registering one parses the file's TOML header and never imports a node class. `UNUSABLE`
+        `FLAWED` means some of the library's nodes failed to load. The library is still registered and
+        its templates belong in the picker: registering one parses the file's TOML header and never imports a node class. `UNUSABLE`
         is the one that gets no further.
         """
         library_manager = engine.library_manager
@@ -634,7 +632,7 @@ class TestEachMidSessionArrivalRegistersItsWorkflows:
             ),
             patch(f"{LIBRARY_MANAGER_MODULE}.LibraryRegistry.get_library", return_value=_library(["example.py"])),
         ):
-            result = await library_manager.git_operations._reload_library_after_git_operation(
+            result = await library_manager.git_operations.reload_library(
                 library_name=LIBRARY_NAME,
                 library_file_path=str(library_json),
                 failure_result_class=UpdateLibraryResultFailure,

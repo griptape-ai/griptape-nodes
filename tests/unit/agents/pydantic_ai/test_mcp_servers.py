@@ -3,8 +3,8 @@
 These cover two concerns without spinning up a real MCP server:
 
 * config -> transport mapping in :func:`mcp_server_from_config`, and
-* the combinator composition (optional blocklist filter -> name prefix) in
-  :func:`_compose`.
+* the combinator composition (optional blocklist filter -> name prefix ->
+  approval gate) in :func:`_compose`.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from fastmcp.client.transports import SSETransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.toolsets.approval_required import ApprovalRequiredToolset
 from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.toolsets.prefixed import PrefixedToolset
 
@@ -131,19 +132,30 @@ def test_default_transport_is_stdio() -> None:
     assert isinstance(_built("svc", {"command": "run"}).transport, StdioTransport)
 
 
-def test_compose_applies_name_prefix() -> None:
-    """`_compose` exposes tools under the server name prefix."""
-    composed = _compose("Svc", MCPToolset(StreamableHttpTransport(url="http://h/mcp/"), max_retries=3))
-    assert isinstance(composed, PrefixedToolset)
-    assert composed.prefix == "Svc"
-    assert isinstance(composed.wrapped, MCPToolset)
+def _always(_ctx: Any, _tool_def: Any, _tool_args: Any) -> bool:
+    return True
+
+
+def test_compose_applies_name_prefix_under_the_approval_gate() -> None:
+    """`_compose` exposes tools under the server name prefix, gated on the prefixed names."""
+    composed = _compose(
+        "Svc", MCPToolset(StreamableHttpTransport(url="http://h/mcp/"), max_retries=3), requires_approval=_always
+    )
+    assert isinstance(composed, ApprovalRequiredToolset)
+    assert composed.approval_required_func is _always
+    assert isinstance(composed.wrapped, PrefixedToolset)
+    assert composed.wrapped.prefix == "Svc"
+    assert isinstance(composed.wrapped.wrapped, MCPToolset)
 
 
 def test_compose_without_blocklist_skips_filter() -> None:
     """No blocklist means no filter layer is inserted."""
-    composed = _compose("Svc", MCPToolset(StreamableHttpTransport(url="http://h/mcp/"), max_retries=3))
-    assert isinstance(composed, PrefixedToolset)
-    assert not isinstance(composed.wrapped, FilteredToolset)
+    composed = _compose(
+        "Svc", MCPToolset(StreamableHttpTransport(url="http://h/mcp/"), max_retries=3), requires_approval=_always
+    )
+    assert isinstance(composed, ApprovalRequiredToolset)
+    assert isinstance(composed.wrapped, PrefixedToolset)
+    assert not isinstance(composed.wrapped.wrapped, FilteredToolset)
 
 
 def test_compose_with_blocklist_inserts_filter_under_prefix() -> None:
@@ -151,11 +163,13 @@ def test_compose_with_blocklist_inserts_filter_under_prefix() -> None:
     composed = _compose(
         "Svc",
         MCPToolset(StreamableHttpTransport(url="http://h/mcp/"), max_retries=3),
+        requires_approval=_always,
         tool_blocklist=frozenset({"danger"}),
     )
-    assert isinstance(composed, PrefixedToolset)
-    assert isinstance(composed.wrapped, FilteredToolset)
-    assert isinstance(composed.wrapped.wrapped, MCPToolset)
+    assert isinstance(composed, ApprovalRequiredToolset)
+    assert isinstance(composed.wrapped, PrefixedToolset)
+    assert isinstance(composed.wrapped.wrapped, FilteredToolset)
+    assert isinstance(composed.wrapped.wrapped.wrapped, MCPToolset)
 
 
 def test_empty_blocklist_is_not_applied() -> None:
@@ -163,17 +177,20 @@ def test_empty_blocklist_is_not_applied() -> None:
     composed = _compose(
         "Svc",
         MCPToolset(StreamableHttpTransport(url="http://h/mcp/"), max_retries=3),
+        requires_approval=_always,
         tool_blocklist=frozenset(),
     )
-    assert isinstance(composed, PrefixedToolset)
-    assert not isinstance(composed.wrapped, FilteredToolset)
+    assert isinstance(composed, ApprovalRequiredToolset)
+    assert isinstance(composed.wrapped, PrefixedToolset)
+    assert not isinstance(composed.wrapped.wrapped, FilteredToolset)
 
 
 def test_streamable_http_local_prefixes_with_default_name() -> None:
-    """The engine's own server defaults to the `GriptapeNodes` prefix over streamable HTTP."""
+    """The engine's own server uses the `GriptapeNodes` prefix over streamable HTTP."""
     composed = streamable_http_local("http://localhost:9/mcp/")
-    assert isinstance(composed, PrefixedToolset)
-    assert composed.prefix == "GriptapeNodes"
+    assert isinstance(composed, ApprovalRequiredToolset)
+    assert isinstance(composed.wrapped, PrefixedToolset)
+    assert composed.wrapped.prefix == "GriptapeNodes"
     assert isinstance(_mcp_toolset(composed).client.transport, StreamableHttpTransport)
 
 

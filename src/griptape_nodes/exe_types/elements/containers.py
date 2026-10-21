@@ -125,6 +125,7 @@ class ParameterList(ParameterContainer):
         element_id: str | None = None,
         element_type: str | None = None,
         max_items: int | None = None,
+        item_converters: list[Callable[[Any], Any]] | None = None,
         # UI convenience parameters
         collapsed: bool | None = None,
         child_prefix: str | None = None,
@@ -137,6 +138,7 @@ class ParameterList(ParameterContainer):
             self._original_traits = set()
 
         self._max_items = max_items
+        self._item_converters = list(item_converters or [])
         # Store the UI convenience parameters
         self._collapsed = collapsed
         self._child_prefix = child_prefix
@@ -338,6 +340,17 @@ class ParameterList(ParameterContainer):
         err_str = f"Attempted to get a Parameter List index {key}, which was out of range."
         raise KeyError(err_str)
 
+    def convert_items(self, value: Any) -> Any:
+        """Run `item_converters` on each item of a whole list. Anything that is not a list is returned as is."""
+        if not self._item_converters or not isinstance(value, list):
+            return value
+        converted = []
+        for item in value:
+            for converter in self._item_converters:
+                item = converter(item)  # noqa: PLW2901
+            converted.append(item)
+        return converted
+
     def add_child_parameter(self) -> Parameter:
         # Generate a name. This needs to be UNIQUE because children need
         # to be tracked as individuals and not as indices in the list.
@@ -454,6 +467,10 @@ class ParameterList(ParameterContainer):
                 msg = f"Cannot add more items to {self.name}. Maximum {self._max_items} items allowed."
                 raise ValueError(msg)
 
+        if isinstance(child, Parameter):
+            # Rows get the item converters here, including rows restored from a saved workflow.
+            missing = [converter for converter in self._item_converters if converter not in child._converters]
+            child._converters = [*missing, *child._converters]
         super().add_child(child)
 
         # Mark the parent node as unresolved since the parameter structure changed
@@ -465,6 +482,14 @@ class ParameterList(ParameterContainer):
                 current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
             )
 
+    def move_child(self, from_index: int, to_index: int) -> None:
+        """Move the row at `from_index` to `to_index`, then tell the node its list changed."""
+        row = self.get_child_parameters()[from_index]
+        self._children.remove(row)
+        self._children.insert(to_index, row)
+        if self._node_context is not None:
+            self._node_context._list_rows.rows_changed(self)
+
     def remove_child(self, child: BaseNodeElement | str) -> None:
         """Override to mark parent node as unresolved when children are removed.
 
@@ -475,6 +500,8 @@ class ParameterList(ParameterContainer):
 
         # Mark the parent node as unresolved since the parameter structure changed
         if self._node_context is not None:
+            if isinstance(child, Parameter):
+                self._node_context._list_rows.row_removed(self, child)
             # Import at runtime to avoid circular import
             from griptape_nodes.exe_types.node_types import NodeResolutionState
 

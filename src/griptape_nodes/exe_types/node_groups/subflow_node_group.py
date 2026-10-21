@@ -16,6 +16,8 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
 from griptape_nodes.exe_types.node_types import (
+    ISOLATED_EXECUTION,
+    LEGACY_PRIVATE_EXECUTION,
     LOCAL_EXECUTION,
     get_library_names_with_publish_handlers,
 )
@@ -343,6 +345,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             traits=traits_set,
             parent_container_name=param.parent_container_name,
             parent_element_name=param.parent_element_name,
+            serializable=param.serializable,
         )
 
         # Add the parameter to this node
@@ -377,6 +380,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             tooltip="",
             mode_allowed_input=True,
             mode_allowed_output=True,
+            # Carries the value the mirrored parameter holds, so saves it on the same terms.
+            serializable=original_param.serializable,
         )
         # Add with a request, because this will handle naming for us.
         result = self.engine.handle_request(request)
@@ -567,6 +572,22 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             if metadata_key in self.metadata and proxy_parameter.name in self.metadata[metadata_key]:
                 self.metadata[metadata_key].remove(proxy_parameter.name)
 
+    def _refresh_proxy_serializable(self, proxy_parameter: Parameter) -> None:
+        """Save a proxy's value only if every inner parameter connected to it saves its own.
+
+        Runs on every connect and disconnect, including those replayed when a workflow opens.
+        """
+        if isinstance(proxy_parameter, ControlParameter):
+            return
+        connections = self.engine.flow_manager.get_connections()
+        incoming = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
+        outgoing = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
+        inner_parameters = [c.source_parameter for c in incoming if c.source_node.parent_group is self] + [
+            c.target_parameter for c in outgoing if c.target_node.parent_group is self
+        ]
+        if inner_parameters:
+            proxy_parameter.serializable = all(p.serializable for p in inner_parameters)
+
     def _remap_outgoing_connections(self, node: BaseNode, connections: Connections) -> None:
         """Remap outgoing connections that go through proxy parameters.
 
@@ -712,6 +733,18 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             self._remap_outgoing_connections(node, connections)
             self._remap_incoming_connections(node, connections)
 
+    def after_incoming_connection(
+        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
+    ) -> None:
+        super().after_incoming_connection(source_node, source_parameter, target_parameter)
+        self._refresh_proxy_serializable(target_parameter)
+
+    def after_outgoing_connection(
+        self, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
+    ) -> None:
+        super().after_outgoing_connection(source_parameter, target_node, target_parameter)
+        self._refresh_proxy_serializable(source_parameter)
+
     def after_outgoing_connection_removed(
         self, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
     ) -> None:
@@ -721,6 +754,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         else:
             metadata_key = RIGHT_PARAMETERS_KEY
         self._cleanup_proxy_parameter(source_parameter, metadata_key)
+        self._refresh_proxy_serializable(source_parameter)
         return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
 
     def after_incoming_connection_removed(
@@ -732,7 +766,41 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         else:
             metadata_key = LEFT_PARAMETERS_KEY
         self._cleanup_proxy_parameter(target_parameter, metadata_key)
+        self._refresh_proxy_serializable(target_parameter)
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
+
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        """Set a parameter, reading execution_environment's old Private Execution name as Isolated Execution.
+
+        Mapped here, ahead of every converter: the Options converter replaces a value it does not
+        offer with its first choice, so a group saved with Private Execution would otherwise open
+        as Local Execution.
+
+        Not a `SetParameterVersionCompatibilityCheck`, although those also run before the converters.
+        A check is handed only the node, name and value, and when it applies its result replaces the
+        rest of `SetParameterValueRequest`'s handling. Rewriting the value there would either run
+        this node's value hooks during a workflow load, since `initial_setup` does not reach the
+        check, or skip the connection checks and the unresolving of downstream nodes that follow it.
+        This only renames a value, so the normal path has to carry on. It also covers a direct
+        `set_parameter_value` call, which never reaches the manager.
+        """
+        if param_name == self.execution_environment.name and value == LEGACY_PRIVATE_EXECUTION:
+            value = ISOLATED_EXECUTION
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
@@ -1272,7 +1340,6 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             )
 
             if isinstance(result, StartLocalSubflowResultFailure):
-                logger.error("%s: %s", self.name, result.result_details)
                 # Clear partial outputs to prevent inconsistent state
                 self.parameter_output_values.clear()
                 # Re-raise the error message directly without wrapping
@@ -1338,8 +1405,14 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                     msg = f"Failed to delete subflow {subflow_name} when deleting node {self.name}"
                     raise ValueError(msg)
             else:
-                msg = f"Node {self.name} has a subflow name of {subflow_name} but {subflow_name} doesn't exist. Removing from metadata."
-                logger.warning(msg)
+                # Deleting a parent flow removes child flows before child nodes, so the subflow is
+                # already gone by the time its group node is deleted.
+                logger.debug(
+                    "Node %s has a subflow name of %s but %s doesn't exist. Removing from metadata.",
+                    self.name,
+                    subflow_name,
+                    subflow_name,
+                )
             # Delete the subflow name since now there is no subflow attached.
             self.metadata.pop("subflow_name")
 

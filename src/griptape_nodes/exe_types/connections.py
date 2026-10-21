@@ -298,45 +298,34 @@ class Connections:
 
         return internal_connections
 
-    # Used to check data connections for all future nodes to be BAD!
-    def unresolve_future_nodes(self, node: BaseNode, _visited: set[str] | None = None) -> None:
-        # Recursively traverse downstream nodes, tracking visited nodes to avoid cycles.
-        if _visited is None:
-            _visited = set()
-        if node.name in _visited:
-            return
-        _visited.add(node.name)
+    def unresolve_future_nodes(self, node: BaseNode) -> None:
+        """Mark every RESOLVED node downstream of ``node`` through data connections as UNRESOLVED.
 
-        # There are no outgoing connections from this node.
-        if node.name not in self.outgoing_index:
-            return
-        for parameter in node.parameters:
-            # If it is a data connection and has an OUTPUT type
-            # and an outgoing connection exists from this parameter
-            if (
-                ParameterMode.OUTPUT in parameter.allowed_modes
-                and ParameterTypeBuiltin.CONTROL_TYPE.value != parameter.output_type
-                and parameter.name in self.outgoing_index[node.name]
-            ):
-                # A connection or connections exist
-                connections = self.outgoing_index[node.name][parameter.name]
-                # For each connection, check the next node and do all the same.
-                for connection_id in connections:
-                    if connection_id in self.connections:
-                        connection = self.connections[connection_id]
-                        target_node = connection.target_node
-                        # If that node is resolved, mark it unresolved.
-                        # Emit an event so clients know this node has changed resolution state.
-                        if target_node.state == NodeResolutionState.RESOLVED:
-                            target_node.make_node_unresolved(
-                                current_states_to_trigger_change_event=set(
-                                    {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-                                )
-                            )
-                        # Always continue traversal through downstream nodes so that
-                        # resolved nodes beyond an already-unresolved intermediate are
-                        # still reached and unresolved.
-                        self.unresolve_future_nodes(target_node, _visited)
+        The walk goes on through nodes that are already unresolved: resolution state is set per
+        node (on workflow load, by locks, on cancel), so an unresolved node can sit upstream of a
+        resolved one. Iterative, so a long chain cannot exhaust the recursion limit.
+        """
+        visited = {node.name}
+        pending = [node]
+        while pending:
+            current = pending.pop()
+            for connection_ids in self.outgoing_index.get(current.name, {}).values():
+                for connection_id in connection_ids:
+                    connection = self.connections.get(connection_id)
+                    if connection is None or not self._carries_data(connection):
+                        continue
+                    target_node = connection.target_node
+                    if target_node.state == NodeResolutionState.RESOLVED:
+                        target_node.make_node_unresolved(
+                            current_states_to_trigger_change_event={
+                                NodeResolutionState.RESOLVED,
+                                NodeResolutionState.RESOLVING,
+                            }
+                        )
+                    if target_node.name in visited:
+                        continue
+                    visited.add(target_node.name)
+                    pending.append(target_node)
 
     def get_outgoing_connections_to_node(self, node: BaseNode, to_node: BaseNode) -> dict[str, list[Connection]]:
         connections = {}
@@ -453,3 +442,12 @@ class Connections:
                                 return True
 
         return False
+
+    @staticmethod
+    def _carries_data(connection: Connection) -> bool:
+        """Whether a connection passes a value downstream, rather than control."""
+        source_parameter = connection.source_parameter
+        return (
+            ParameterMode.OUTPUT in source_parameter.allowed_modes
+            and source_parameter.output_type != ParameterTypeBuiltin.CONTROL_TYPE.value
+        )

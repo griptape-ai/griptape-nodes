@@ -185,7 +185,8 @@ class CancelFlowRequest(RequestPayload):
     stopping execution due to errors or changes. Cleanly terminates execution.
 
     Args:
-        flow_name: Name of the flow to cancel (deprecated)
+        flow_name: Name of the flow to cancel. Required today: the request fails without
+            it. Planned for removal in griptape-ai/griptape-nodes#1663.
 
     Results: CancelFlowResultSuccess | CancelFlowResultFailure (cancellation error)
     """
@@ -209,6 +210,18 @@ class CancelFlowResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class UnresolveFlowRequest(RequestPayload):
+    """Reset every node in a flow back to unresolved.
+
+    Use when: Clearing cached results so the next run re-executes every node.
+    Does not stop a running flow; use CancelFlowRequest for that.
+
+    Args:
+        flow_name: Name of the flow to unresolve. Required today: the request fails without
+            it. Planned for removal in griptape-ai/griptape-nodes#1663.
+
+    Results: UnresolveFlowResultSuccess | UnresolveFlowResultFailure (unresolve error)
+    """
+
     # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
     flow_name: str | None = None
 
@@ -386,24 +399,50 @@ class ParameterSpotlightEvent(ExecutionPayload):
 @dataclass
 @PayloadRegistry.register
 class ControlFlowResolvedEvent(ExecutionPayload):
+    """A flow run finished.
+
+    Args:
+        end_node_name: The node the run ended on.
+        parameter_output_values: That node's output values.
+        run_seconds: Wall-clock seconds the whole run took, or None when the run was not timed.
+    """
+
     end_node_name: str
     parameter_output_values: dict[str, Value]
+    run_seconds: float | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class ControlFlowCancelledEvent(ExecutionPayload):
+    """A flow run was cancelled. run_seconds is how long it ran before that, or None when not timed."""
+
     result_details: ResultDetails | str | None = None
     exception: Exception | None = None
+    run_seconds: float | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class NodeResolvedEvent(ExecutionPayload):
+    """A node finished running.
+
+    Args:
+        node_name: The node that finished.
+        parameter_output_values: The node's output values, as displayed.
+        node_type: The node's class name.
+        specific_library_name: The library the node type came from, when only one provides it.
+        run_seconds: Wall-clock seconds the node took to run, or None when it did not run (a locked node,
+            or a Start Loop node). An End Loop node or a group node runs the nodes inside it, so its time
+            covers theirs, and they also report their own. Summing every node's time counts loop and
+            group bodies twice.
+    """
+
     node_name: str
     parameter_output_values: dict[str, DisplayValue]
     node_type: str
     specific_library_name: str | None = None
+    run_seconds: float | None = None
 
 
 @dataclass
@@ -443,11 +482,15 @@ class NodeErrorEvent(ExecutionPayload):
         error_message: The failure as one flattened string, for logs and older editors.
         error: The same failure in parts, without engine preambles or the node name prefix.
             Optional so events from older engines still parse.
+        run_seconds: Wall-clock seconds the node ran before failing, or None when it failed before
+            it started running. For an End Loop node or a group node, this includes the nodes inside
+            it, as on `NodeResolvedEvent`.
     """
 
     node_name: str
     error_message: str
     error: NodeErrorDetails | None = None
+    run_seconds: float | None = None
 
 
 @dataclass

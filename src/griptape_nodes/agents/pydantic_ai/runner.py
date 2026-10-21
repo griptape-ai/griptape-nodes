@@ -28,7 +28,7 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, capture_run_messages
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import (
     FinalResultEvent,
@@ -44,8 +44,10 @@ from pydantic_ai.messages import (
     ThinkingPart,
     ThinkingPartDelta,
     ToolCallPart,
+    ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai_skills import SkillsCapability
 
 from griptape_nodes.agents.pydantic_ai.image_tools import (
@@ -54,7 +56,14 @@ from griptape_nodes.agents.pydantic_ai.image_tools import (
     ImageGenerationToolsetConfig,
     register_image_tools,
 )
+from griptape_nodes.agents.pydantic_ai.mcp_servers import grant_keys_for_call
 from griptape_nodes.agents.pydantic_ai.model import build_model
+from griptape_nodes.agents.pydantic_ai.tool_approval import (
+    ToolApprovalDeps,
+    ends_in_tool_results,
+    pending_tool_calls,
+    settle_cancelled_resume,
+)
 from griptape_nodes.drivers.cloud_models import ProviderID
 
 if TYPE_CHECKING:
@@ -64,6 +73,7 @@ if TYPE_CHECKING:
     from pydantic_ai._run_context import RunContext
     from pydantic_ai.messages import ModelMessage, UserContent
     from pydantic_ai.settings import ModelSettings
+    from pydantic_ai.tools import DeferredToolResults
     from pydantic_ai.toolsets import AbstractToolset
     from pydantic_ai.usage import UsageLimits
 
@@ -74,6 +84,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 DEFAULT_SKILLS_DIRECTORY = ".agents/skills"
+
+USAGE_LIMIT_NOTICE = (
+    "I stopped before finishing because I reached the limit on how much work I can do for one message. "
+    'What I did so far is kept. Send another message, such as "continue", and I\'ll pick up where I left off.'
+)
+"""Closes a turn that reached its usage limit, so the user knows it stopped and how to go on."""
 
 
 TokenSink = "Callable[[str], Awaitable[None] | None]"
@@ -127,6 +143,23 @@ class ThinkingDelta(RunEvent):
 
 
 @dataclass
+class PendingApproval:
+    """A tool call a paused turn is waiting on the user to approve or deny.
+
+    Attributes:
+        tool_call_id: Identifier to answer the call by.
+        tool_name: Name of the tool the agent wants to call.
+        args: JSON of the call's arguments, truncated like ``ToolCall.args``.
+        grant_keys: What approving this call for the whole conversation grants.
+    """
+
+    tool_call_id: str
+    tool_name: str
+    args: str
+    grant_keys: list[str]
+
+
+@dataclass
 class AgentRunResult:
     """The return value of :meth:`PydanticAgentRunner.run`.
 
@@ -139,11 +172,16 @@ class AgentRunResult:
             during this run, in call order. Empty when no image was generated.
         cancelled: ``True`` when the run was stopped via its cancel event before
             completing. A cancelled run does not persist its turn to the thread,
-            so ``message_count`` reflects the pre-run history length.
+            except that a resumed one saves what happened to the calls it was
+            answering; ``message_count`` is the thread's length after that.
         truncated: ``True`` when the model stopped because it hit the output
             token limit rather than finishing its reply. ``output`` holds the
             partial text, which is complete-looking but ends mid-thought, so
             callers should tell the user rather than render it as a normal turn.
+        pending_approvals: Tool calls the turn paused on, waiting for the user to
+            approve or deny them. The turn is persisted with these calls open, so
+            the next run on the thread must answer them. Empty when the turn did
+            not pause.
     """
 
     thread_id: str
@@ -152,6 +190,7 @@ class AgentRunResult:
     image_urls: list[str] = field(default_factory=list)
     cancelled: bool = False
     truncated: bool = False
+    pending_approvals: list[PendingApproval] = field(default_factory=list)
 
 
 @dataclass
@@ -203,7 +242,7 @@ class PydanticAgentRunner:
                 raise ValueError(msg)
             self._image_toolset = register_image_tools(self._agent, self.image_config, self.static_files_manager)
         resolved_settings = model.settings or {}
-        logger.info(
+        logger.debug(
             "PydanticAgentRunner ready: model=%s workspace=%s mcp_servers=%d image_tool=%s skills_library=%s "
             "usage_limits=%s max_tokens=%s",
             self.model_name,
@@ -245,15 +284,24 @@ class PydanticAgentRunner:
         gated shell tool and skills here ship no scripts.
 
         Returns an empty list when skills are disabled, the directory is absent,
-        or no skill in it loads, so the run proceeds without skills instead of
-        failing on a bad ``SKILL.md``.
+        no skill in it loads, or this platform cannot load skills, so the run
+        proceeds without skills instead of failing.
         """
         skills_dir = self._skills_library()
         if skills_dir is None:
             return []
-        capability = self._load_skills(skills_dir)
-        if capability is None:
-            capability = self._load_usable_skills(skills_dir)
+        try:
+            capability = self._load_skills(skills_dir)
+            if capability is None:
+                capability = self._load_usable_skills(skills_dir)
+        except NotImplementedError as e:
+            # Raised for the whole library, not one skill, so probing skill by skill cannot help.
+            logger.warning(
+                "Attempted to load skills from %s. Failed because this platform does not support them: %s",
+                skills_dir,
+                e,
+            )
+            return []
         if capability is None:
             return []
         return [capability]
@@ -329,9 +377,9 @@ class PydanticAgentRunner:
     def image_toolset(self) -> ImageGenerationToolset | None:
         return self._image_toolset
 
-    async def run(  # noqa: PLR0913
+    async def run(  # noqa: PLR0913, C901
         self,
-        prompt: str | Sequence[UserContent],
+        prompt: str | Sequence[UserContent] | None,
         *,
         thread_id: str | None = None,
         token_sink: Callable[[str], Awaitable[None] | None] | None = None,
@@ -342,13 +390,16 @@ class PydanticAgentRunner:
         extra_toolsets: Sequence[AbstractToolset[Any]] | None = None,
         extra_instructions: str | None = None,
         extra_headers: Mapping[str, str] | None = None,
+        approval: ToolApprovalDeps | None = None,
+        deferred_tool_results: DeferredToolResults | None = None,
     ) -> AgentRunResult:
         """Run the agent against ``prompt``, streaming events and saving history.
 
         Args:
             prompt: The user prompt for this turn. Either plain text or a
                 sequence of Pydantic AI user-content parts (e.g. text plus
-                inlined ``BinaryContent`` images) for multimodal input.
+                inlined ``BinaryContent`` images) for multimodal input. ``None``
+                resumes a paused turn from ``deferred_tool_results`` alone.
             thread_id: Existing thread id, or ``None`` to start a fresh one.
             token_sink: Callback invoked with each text-delta token as it
                 arrives from the model. Convenience hook for text-only
@@ -359,7 +410,9 @@ class PydanticAgentRunner:
             cancel_event: When set while the run is in flight, the agent task is
                 cancelled and :meth:`run` returns an :class:`AgentRunResult` with
                 ``cancelled=True`` carrying the text streamed so far. The
-                cancelled turn is not persisted.
+                cancelled turn is not persisted, except that a run given
+                ``deferred_tool_results`` saves a result for each paused call it
+                finished, started, or denied.
             persist_prompt: When the live ``prompt`` inlines binary content, the
                 URL-reference form to store in this turn's user message instead
                 of it, keeping saved history small. ``None`` persists ``prompt``
@@ -383,6 +436,13 @@ class PydanticAgentRunner:
                 any Griptape Cloud call a tool makes. Per run, because a value
                 such as the budget attribution header follows the project open
                 when the turn starts.
+            approval: The thread's conversation grants, handed to every tool as
+                ``ctx.deps``. ``None`` means no grants, so every gated call
+                pauses for the user.
+            deferred_tool_results: Answers for the calls a paused turn is
+                waiting on. Required exactly when the thread has such calls;
+                with a ``prompt`` too, the prompt follows the answers in the same
+                request to the model.
 
         Returns:
             An :class:`AgentRunResult` describing the new state of the thread.
@@ -395,6 +455,16 @@ class PydanticAgentRunner:
         # the bytes for the model call, but we never write it back, so rehydrated
         # bytes never leak onto disk.
         history = self.storage.load_history(thread_id)
+        waiting = pending_tool_calls(history)
+        if waiting and deferred_tool_results is None:
+            msg = (
+                f"Attempted to run the agent on thread {thread_id}. Failed because the thread is waiting for "
+                f"approval of {len(waiting)} tool call(s), and the run did not answer them."
+            )
+            raise ValueError(msg)
+        if prompt is None and deferred_tool_results is None:
+            msg = f"Attempted to run the agent on thread {thread_id}. Failed because there was no message to send."
+            raise ValueError(msg)
         model_history = history
         if history_rehydrator is not None:
             model_history = await history_rehydrator(history)
@@ -403,7 +473,7 @@ class PydanticAgentRunner:
         # Rebuilt every run so skill edits land without an engine restart.
         capabilities = self._build_skills_capabilities()
 
-        logger.info(
+        logger.debug(
             "[run %s] start: model=%s history_len=%d skills=%s run_toolsets=%d prompt=%r",
             run_id,
             self.model_name,
@@ -422,43 +492,58 @@ class PydanticAgentRunner:
         async def event_handler(_ctx: RunContext[Any], events: AsyncIterable[Any]) -> None:
             await counters.consume(events, token_sink, event_sink, text_buffer)
 
-        run_task = asyncio.ensure_future(
-            self._agent.run(
-                prompt,
-                message_history=model_history,
-                usage_limits=self.usage_limits,
-                event_stream_handler=event_handler,
-                capabilities=capabilities or None,
-                toolsets=list(extra_toolsets) if extra_toolsets else None,
-                instructions=extra_instructions or None,
-                model_settings={"extra_headers": dict(extra_headers)} if extra_headers else None,
+        # The task copies the current context, so it must be created inside
+        # `capture_run_messages` for the capture to see the run's messages.
+        with capture_run_messages() as captured_messages:
+            run_task = asyncio.ensure_future(
+                self._agent.run(
+                    prompt,
+                    # Passed per run rather than at construction so an agent built
+                    # elsewhere (tests swap one in) still accepts a paused turn.
+                    output_type=[str, DeferredToolRequests],
+                    message_history=model_history,
+                    deferred_tool_results=deferred_tool_results,
+                    deps=approval or ToolApprovalDeps(),
+                    usage_limits=self.usage_limits,
+                    event_stream_handler=event_handler,
+                    capabilities=capabilities or None,
+                    toolsets=list(extra_toolsets) if extra_toolsets else None,
+                    instructions=extra_instructions or None,
+                    model_settings={"extra_headers": dict(extra_headers)} if extra_headers else None,
+                )
             )
-        )
         try:
             agent_result = await self._await_run(run_task, cancel_event)
         except UsageLimitExceeded as exc:
-            logger.warning(
-                "[run %s] usage limit exceeded: %s. Aborting run; no history saved for this turn.",
-                run_id,
+            return await self._finish_stopped_at_limit(
                 exc,
+                thread_id=thread_id,
+                history=history,
+                captured_messages=captured_messages,
+                persist_prompt=persist_prompt,
+                token_sink=token_sink,
+                event_sink=event_sink,
+                text="".join(text_buffer),
+                counters=counters,
             )
-            raise
 
         if agent_result is None:
             text = "".join(text_buffer)
-            logger.info(
+            logger.debug(
                 "[run %s] cancelled after %.2fs: tool_calls=%d partial_output=%r",
                 run_id,
                 time.monotonic() - started,
                 counters.tool_calls,
                 _preview(text),
             )
+            saved = await self._save_cancelled_resume(thread_id, history, deferred_tool_results, counters, event_sink)
             return AgentRunResult(
                 thread_id=thread_id,
                 output=text,
-                message_count=len(history),
+                message_count=len(saved),
                 image_urls=list(counters.image_urls),
                 cancelled=True,
+                pending_approvals=[pending_approval_for(call) for call in pending_tool_calls(saved)],
             )
 
         # Persist the pristine history plus only this turn's new messages. Using
@@ -466,6 +551,9 @@ class PydanticAgentRunner:
         # bytes in ``model_history`` out of what we write back to disk.
         new_messages = agent_result.new_messages()
         usage = agent_result.usage
+        pending_approvals: list[PendingApproval] = []
+        if isinstance(agent_result.output, DeferredToolRequests):
+            pending_approvals = [pending_approval_for(call) for call in agent_result.output.approvals]
 
         elapsed = time.monotonic() - started
         text = "".join(text_buffer)
@@ -478,6 +566,7 @@ class PydanticAgentRunner:
             new_messages=new_messages,
             text=text,
             truncated=truncated,
+            paused_on=len(pending_approvals),
         )
 
         # We persist `history + new_messages` rather than `all_messages()`, which
@@ -486,9 +575,11 @@ class PydanticAgentRunner:
         # was saved earlier, so the two ways of reconstructing the transcript can
         # drift; fail loud rather than silently persist a malformed history.
         # Normal turns always end in a ModelResponse and cancelled turns are
-        # never saved, so this never fires today.
+        # never saved. The one trailing request allowed is a paused turn's, which
+        # holds only tool results: those of the calls that ran without asking, or
+        # those a cancelled resume saved.
         turn_messages = list(new_messages)
-        if history and not isinstance(history[-1], ModelResponse):
+        if history and not isinstance(history[-1], ModelResponse) and not ends_in_tool_results(history):
             msg = (
                 f"Attempted to persist thread {thread_id}. Failed because loaded history ends with "
                 f"{type(history[-1]).__name__}, not a ModelResponse, indicating a partial turn was "
@@ -507,7 +598,94 @@ class PydanticAgentRunner:
             message_count=len(messages_to_save),
             image_urls=list(counters.image_urls),
             truncated=truncated,
+            pending_approvals=pending_approvals,
         )
+
+    async def _finish_stopped_at_limit(  # noqa: PLR0913
+        self,
+        exc: UsageLimitExceeded,
+        *,
+        thread_id: str,
+        history: list[ModelMessage],
+        captured_messages: list[ModelMessage],
+        persist_prompt: str | Sequence[UserContent] | None,
+        token_sink: Callable[[str], Awaitable[None] | None] | None,
+        event_sink: Callable[[RunEvent], Awaitable[None] | None] | None,
+        text: str,
+        counters: _RunCounters,
+    ) -> AgentRunResult:
+        """Save a turn that stopped at its usage limit, closed with a notice saying so.
+
+        The turn's messages are the run's own: the trailing ones carrying its
+        ``run_id``, which leaves out the loaded history (possibly rehydrated, so
+        never written back) and a resumed turn's earlier request. Saved only when
+        the turn ends in the results of its last tool calls, which is where a
+        limit checked before a request stops it. Any other shape saves nothing
+        and re-raises ``exc``.
+        """
+        turn_messages = _run_messages(captured_messages)
+        if not turn_messages or not ends_in_tool_results(turn_messages) or pending_tool_calls(turn_messages):
+            logger.warning(
+                "[run %s] usage limit exceeded: %s. Aborting run; no history saved for this turn.",
+                counters.run_id,
+                exc,
+            )
+            raise exc
+        logger.warning("[run %s] usage limit exceeded: %s. Saved the turn up to the limit.", counters.run_id, exc)
+        if persist_prompt is not None:
+            _apply_persist_prompt(turn_messages, persist_prompt)
+        saved = [*history, *turn_messages, ModelResponse(parts=[TextPart(content=USAGE_LIMIT_NOTICE)])]
+        self.storage.save_history(thread_id, saved)
+        # Set apart from any text the turn already streamed, which ends mid-task.
+        notice = USAGE_LIMIT_NOTICE
+        if text:
+            notice = f"\n\n{USAGE_LIMIT_NOTICE}"
+        await _push_token(token_sink, notice)
+        await _push_event(event_sink, TextDelta(delta=notice))
+        return AgentRunResult(
+            thread_id=thread_id,
+            output=text + notice,
+            message_count=len(saved),
+            image_urls=list(counters.image_urls),
+        )
+
+    async def _save_cancelled_resume(
+        self,
+        thread_id: str,
+        history: list[ModelMessage],
+        deferred_tool_results: DeferredToolResults | None,
+        counters: _RunCounters,
+        event_sink: Callable[[RunEvent], Awaitable[None] | None] | None,
+    ) -> list[ModelMessage]:
+        """Save what a cancelled run did to the calls its paused turn was waiting on.
+
+        A fresh turn that is cancelled saves nothing. A resumed one cannot: a tool
+        it started keeps going after the cancel (an engine flow runs to the end),
+        so leaving the call unanswered would let it be approved and run a second
+        time. Returns the history as it now stands on disk.
+        """
+        if deferred_tool_results is None:
+            return history
+        settled = settle_cancelled_resume(
+            history,
+            deferred_tool_results,
+            started_tool_call_ids=counters.started_tool_call_ids,
+            tool_results=counters.tool_results,
+        )
+        if settled is None:
+            return history
+        self.storage.save_history(thread_id, settled.messages)
+        # The editor shows a call as running until it sees a result for it.
+        for part in settled.added_parts:
+            await _push_event(
+                event_sink,
+                ToolResult(
+                    tool_call_id=part.tool_call_id,
+                    tool_name=part.tool_name,
+                    content=_truncate(_stringify(part.content), _RESULT_TRANSPORT_BYTES),
+                ),
+            )
+        return settled.messages
 
     @staticmethod
     async def _await_run(run_task: asyncio.Future[Any], cancel_event: asyncio.Event | None) -> Any:
@@ -547,6 +725,12 @@ class _RunCounters:
     tool_calls: int = 0
     final_result_emitted: bool = False
     image_urls: list[str] = field(default_factory=list)
+    # Tool calls the run reached, and the results it got back, keyed by tool_call_id.
+    # Both are recorded before any await in the handler: pydantic-ai drives tool
+    # execution from this handler's iteration, so a call cannot start before its
+    # id is in `started_tool_call_ids`, and a cancel cannot fall between the two.
+    started_tool_call_ids: set[str] = field(default_factory=set)
+    tool_results: dict[str, ToolReturnPart | RetryPromptPart] = field(default_factory=dict)
 
     async def consume(
         self,
@@ -570,9 +754,10 @@ class _RunCounters:
         elif isinstance(event, PartDeltaEvent):
             await self._on_part_delta(event, token_sink, event_sink, text_buffer)
         elif isinstance(event, FunctionToolCallEvent):
+            self.started_tool_call_ids.add(event.part.tool_call_id)
             self.tool_calls += 1
             args_str = _args_str(event.part.args)
-            logger.info(
+            logger.debug(
                 "[run %s] tool call #%d -> %s(%s) id=%s",
                 self.run_id,
                 self.tool_calls,
@@ -590,13 +775,15 @@ class _RunCounters:
             )
         elif isinstance(event, FunctionToolResultEvent):
             part = getattr(event, "part", None) or getattr(event, "result", None)
+            if isinstance(part, (ToolReturnPart, RetryPromptPart)):
+                self.tool_results[event.tool_call_id] = part
             content = getattr(part, "content", None)
             tool_name = getattr(part, "tool_name", "?")
             is_error = isinstance(part, RetryPromptPart)
             content_str = _stringify(content)
             if tool_name == IMAGE_TOOL_NAME and not is_error and content_str:
                 self.image_urls.append(content_str)
-            logger.info(
+            logger.debug(
                 "[run %s] tool result <- %s id=%s preview=%r is_error=%s",
                 self.run_id,
                 tool_name,
@@ -615,7 +802,7 @@ class _RunCounters:
             )
         elif isinstance(event, FinalResultEvent):
             self.final_result_emitted = True
-            logger.info(
+            logger.debug(
                 "[run %s] final result event: tool_name=%s tool_call_id=%s",
                 self.run_id,
                 event.tool_name,
@@ -631,7 +818,7 @@ class _RunCounters:
     ) -> None:
         if isinstance(event.part, TextPart):
             self.text_parts += 1
-            logger.info("[run %s] text part #%d started", self.run_id, self.text_parts)
+            logger.debug("[run %s] text part #%d started", self.run_id, self.text_parts)
             if event.part.content:
                 text_buffer.append(event.part.content)
                 await _push_token(token_sink, event.part.content)
@@ -640,7 +827,7 @@ class _RunCounters:
             if event.part.content:
                 await _push_event(event_sink, ThinkingDelta(delta=event.part.content))
         elif isinstance(event.part, ToolCallPart):
-            logger.info(
+            logger.debug(
                 "[run %s] tool-call part started: %s id=%s",
                 self.run_id,
                 event.part.tool_name,
@@ -709,6 +896,22 @@ def _apply_persist_prompt(messages: list[ModelMessage], persist_prompt: str | Se
             return
 
 
+def _run_messages(messages: Sequence[ModelMessage]) -> list[ModelMessage]:
+    """Return the trailing messages that carry the last message's ``run_id``.
+
+    Pydantic AI stamps every message a run creates with the run's id, while the
+    loaded history keeps the ids of earlier runs. Empty when the last message
+    has no ``run_id``.
+    """
+    if not messages or messages[-1].run_id is None:
+        return []
+    run_id = messages[-1].run_id
+    start = len(messages)
+    while start > 0 and messages[start - 1].run_id == run_id:
+        start -= 1
+    return list(messages[start:])
+
+
 def _log_run_outcome(  # noqa: PLR0913
     *,
     run_id: str,
@@ -718,15 +921,16 @@ def _log_run_outcome(  # noqa: PLR0913
     new_messages: Sequence[ModelMessage],
     text: str,
     truncated: bool,
+    paused_on: int,
 ) -> None:
     """Log the one-line run summary plus any warnings the outcome warrants.
 
     Split out of :meth:`PydanticAgentRunner.run` to keep that method under the
     complexity limit; it is pure logging and has no effect on the result.
     """
-    logger.info(
+    logger.debug(
         "[run %s] done in %.2fs: requests=%d tool_calls=%d "
-        "input_tokens=%d output_tokens=%d new_messages=%d finish_reason=%s output=%r",
+        "input_tokens=%d output_tokens=%d new_messages=%d finish_reason=%s paused_on=%d output=%r",
         run_id,
         elapsed,
         usage.requests,
@@ -735,8 +939,12 @@ def _log_run_outcome(  # noqa: PLR0913
         usage.output_tokens,
         len(new_messages),
         _final_finish_reason(new_messages),
+        paused_on,
         _preview(text),
     )
+    if paused_on:
+        # A turn waiting for approval has no final text by design.
+        return
     if truncated:
         # Worth a warning even though the run "succeeded": the reply ends
         # mid-thought and looks identical to a completed one, so without this
@@ -791,12 +999,14 @@ def _preview(value: str) -> str:
     return value[:_LOG_PREVIEW_BYTES] + "..."
 
 
-def _prompt_preview(prompt: str | Sequence[UserContent]) -> str:
+def _prompt_preview(prompt: str | Sequence[UserContent] | None) -> str:
     """Render a log-safe preview of a prompt that may carry binary content.
 
     Text parts are previewed inline; non-text parts (images, audio, etc.) are
     rendered as a ``<TypeName>`` marker so a binary payload never hits the log.
     """
+    if prompt is None:
+        return "<resuming paused turn>"
     if isinstance(prompt, str):
         return _preview(prompt)
     parts = [_preview(item) if isinstance(item, str) else f"<{type(item).__name__}>" for item in prompt]
@@ -862,3 +1072,13 @@ def _args_json(args: Any) -> str:
     if len(text) <= _ARGS_TRANSPORT_BYTES:
         return text
     return text[:_ARGS_TRANSPORT_BYTES] + "..."
+
+
+def pending_approval_for(call: ToolCallPart) -> PendingApproval:
+    """Describe a paused tool call the way clients are sent it."""
+    return PendingApproval(
+        tool_call_id=call.tool_call_id,
+        tool_name=call.tool_name,
+        args=_args_json(call.args),
+        grant_keys=grant_keys_for_call(call.tool_name, call.args_as_dict()),
+    )

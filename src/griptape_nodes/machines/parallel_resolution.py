@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.common.node_executor import ExecuteNodeFailedError
@@ -221,6 +222,12 @@ class ExecuteDagState(State):
             )
             return
 
+        # A locked node passes its frozen outputs through without executing. Record when that pass
+        # is the only reason it now reads RESOLVED, so unlocking it can put it back in the next run.
+        current_node.resolved_while_locked = current_node.lock and (
+            current_node.resolved_while_locked or current_node.state != NodeResolutionState.RESOLVED
+        )
+
         # Special handling for BaseIterativeStartNode
         # Remove it from the network so the end node can process control flow
         if isinstance(current_node, BaseIterativeStartNode):
@@ -233,6 +240,16 @@ class ExecuteDagState(State):
                     network.remove_node(current_node.name)
 
             return
+
+        await ExecuteDagState.publish_resolved_node(context, done_node)
+        # Now the final thing to do, is to take their directed graph and update it.
+        ExecuteDagState.get_next_control_graph(context, current_node, network_name)
+        ExecuteDagState.check_for_new_start_nodes(context, current_node.name, network_name)
+
+    @staticmethod
+    async def publish_resolved_node(context: ParallelResolutionContext, done_node: DagNode) -> None:
+        """Mark a node that finished executing RESOLVED and send its outputs to the editor."""
+        current_node = done_node.node_reference
 
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
@@ -300,13 +317,11 @@ class ExecuteDagState(State):
                         parameter_output_values=display_output_values,
                         node_type=current_node.__class__.__name__,
                         specific_library_name=library_name,
+                        run_seconds=done_node.run_seconds,
                     )
                 )
             )
         )
-        # Now the final thing to do, is to take their directed graph and update it.
-        ExecuteDagState.get_next_control_graph(context, current_node, network_name)
-        ExecuteDagState.check_for_new_start_nodes(context, current_node.name, network_name)
 
     @staticmethod
     def _unresolve_if_an_input_was_torn_down(node: BaseNode) -> None:
@@ -516,7 +531,6 @@ class ExecuteDagState(State):
                 )
                 if isinstance(result, SetParameterValueResultFailure):
                     msg = f"Failed to set parameter value for node '{current_node.name}' and parameter '{parameter.name}'. Details: {result.result_details}"
-                    logger.error(msg)
                     raise RuntimeError(msg)
 
     @staticmethod
@@ -602,7 +616,11 @@ class ExecuteDagState(State):
     @staticmethod
     async def execute_node(engine: Engine, current_node: DagNode) -> None:
         executor = engine.flow_manager.node_executor
-        await executor.execute(current_node.node_reference)
+        started_at = time.perf_counter()
+        try:
+            await executor.execute(current_node.node_reference)
+        finally:
+            current_node.run_seconds = time.perf_counter() - started_at
 
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
@@ -816,24 +834,32 @@ class ExecuteDagState(State):
             done_node_tasks = [task for task in done if task in context.task_to_node]
 
             if done_node_tasks:
-                # Decrement counter for completed tasks
-                context.running_tasks_count -= len(done_node_tasks)
                 # New node has finished - priorities are stale
                 context.node_priority_queue.mark_priorities_stale()
+            # Failures first: one ends this loop, and the tasks it leaves in task_to_node are
+            # reaped and published by ErrorState. A success reaped here before a failure would
+            # never be published, because the failure skips pop_done_states.
+            done_node_tasks.sort(key=lambda task: not (task.cancelled() or task.exception() is not None))
             # Check for task exceptions and handle them properly.
             for task in done_node_tasks:
                 dag_node = context.task_to_node.pop(task)
+                context.running_tasks_count -= 1
                 if task.cancelled():
                     # Task was cancelled - this is expected during flow cancellation
                     dag_node.node_state = NodeState.CANCELED
-                    logger.info("Task execution was cancelled.")
+                    logger.debug("Task execution was cancelled.")
                     return ErrorState
                 if (exc := task.exception()) is not None:
                     node_name = dag_node.node_reference.name
                     dag_node.node_state = NodeState.ERRORED
 
-                    logger.error("Error processing node '%s'", node_name, exc_info=exc)
-                    msg = f"Node '{node_name}' encountered a problem: {exc}"
+                    # Every caller of the machine reports the failure from `get_error_message()`.
+                    logger.debug("Node '%s' failed", node_name, exc_info=exc)
+                    # ExecuteNodeFailedError already names the node.
+                    if isinstance(exc, ExecuteNodeFailedError):
+                        msg = str(exc)
+                    else:
+                        msg = f"Node '{node_name}' encountered a problem: {exc}"
 
                     await context.engine.event_manager.aput_event(
                         ExecutionGriptapeNodeEvent(
@@ -842,6 +868,7 @@ class ExecuteDagState(State):
                                     node_name=node_name,
                                     error_message=str(exc),
                                     error=_node_error_details(node_name, exc),
+                                    run_seconds=dag_node.run_seconds,
                                 )
                             )
                         )
@@ -894,23 +921,48 @@ class ErrorState(State):
                 # Remove from priority queue since it's being canceled
                 context.node_priority_queue.remove_node(node.node_reference.name)
 
-        # Shut down and cancel all threads/tasks that haven't yet ran. Currently running ones will not be affected.
-        # Cancel async tasks
-        for task in list(context.task_to_node.keys()):
-            if not task.done():
-                task.cancel()
+        # A failed node stops new work but lets running nodes finish: they did nothing wrong, and a
+        # remote generation one of them started keeps running (and billing) even if its task is
+        # cancelled, so cancelling would only throw its result away. No error message means a
+        # node was cancelled, so the run itself is being cancelled and everything stops.
+        if context.error_message is None:
+            for task in list(context.task_to_node.keys()):
+                if not task.done():
+                    task.cancel()
         return ErrorState
 
     @staticmethod
     async def on_update(context: ParallelResolutionContext) -> type[State] | None:
-        # Don't modify lists while iterating through them.
+        # See `ParallelResolutionContext.was_reset_since`.
+        generation = context.generation
         task_to_node = context.task_to_node
-        for task, node in task_to_node.copy().items():
-            if task.done():
-                node.node_state = NodeState.DONE
-            elif task.cancelled():
-                node.node_state = NodeState.CANCELED
+
+        running_tasks = [task for task in task_to_node if not task.done()]
+        # Park only when nothing has finished yet: a node that finished in the same wake as the
+        # failure publishes now, not after the slowest running sibling.
+        if running_tasks and len(running_tasks) == len(task_to_node):
+            # Also wake on the new-work flag, which a teardown sets, so a reset ends this run
+            # now rather than when the slowest running node finishes. See ExecuteDagState.on_update.
+            context.new_work_event.clear()
+            wakeup_waiter = asyncio.create_task(context.new_work_event.wait())
+            try:
+                await asyncio.wait({*running_tasks, wakeup_waiter}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                wakeup_waiter.cancel()
+            if context.was_reset_since(generation):
+                ExecuteDagState._log_abandoned(context)
+                return None
+
+        # Don't modify the map while iterating through it.
+        for task, dag_node in list(task_to_node.items()):
+            if not task.done():
+                continue
             task_to_node.pop(task)
+            context.running_tasks_count -= 1
+            await ErrorState._reap_finished_task(context, task, dag_node)
+            if context.was_reset_since(generation):
+                ExecuteDagState._log_abandoned(context)
+                return None
 
         if len(task_to_node) == 0:
             # A node that did not finish is UNRESOLVED: it holds no valid outputs, and nothing else
@@ -936,8 +988,38 @@ class ErrorState(State):
             context.node_to_reference.clear()
             context.task_to_node.clear()
             return DagCompleteState
-        # Let's continue going through until everything is cancelled.
+        # Keep reaping until every running node has finished.
         return ErrorState
+
+    @staticmethod
+    async def _reap_finished_task(context: ParallelResolutionContext, task: asyncio.Task, dag_node: DagNode) -> None:
+        """Record how a node that was still running when the run failed ended up."""
+        if task.cancelled():
+            dag_node.node_state = NodeState.CANCELED
+            return
+
+        exc = task.exception()
+        if exc is not None:
+            node_name = dag_node.node_reference.name
+            dag_node.node_state = NodeState.ERRORED
+            logger.debug("Node '%s' failed", node_name, exc_info=exc)
+            # The run already reports the first failure; this one still reaches the node.
+            await context.engine.event_manager.aput_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(
+                        payload=NodeErrorEvent(
+                            node_name=node_name,
+                            error_message=str(exc),
+                            error=_node_error_details(node_name, exc),
+                            run_seconds=dag_node.run_seconds,
+                        )
+                    )
+                )
+            )
+            return
+
+        dag_node.node_state = NodeState.DONE
+        await ExecuteDagState.publish_resolved_node(context, dag_node)
 
 
 class DagCompleteState(State):
@@ -989,6 +1071,9 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
         context = self.context
         if context.dag_builder is None:
             msg = f"Attempted to run '{node.name}' as part of the current run, but that run has no dependency graph to add it to. Cancel the run and try again."
+            raise ValueError(msg)
+        if self.is_stopping_after_failure():
+            msg = f"Attempted to run '{node.name}' as part of the current run. Failed because a node in that run failed, and the run is waiting for its other nodes to finish. Try again once the run ends."
             raise ValueError(msg)
 
         added_nodes = ExecuteDagState.add_and_queue_nodes(context, node, graph_name or node.name)
@@ -1049,6 +1134,10 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
 
     def is_errored(self) -> bool:
         return self._context.workflow_state == WorkflowState.ERRORED
+
+    def is_stopping_after_failure(self) -> bool:
+        """True while a failed run waits for its still-running nodes before it ends."""
+        return self._current_state is ErrorState
 
     def get_error_message(self) -> str | None:
         return self._context.error_message

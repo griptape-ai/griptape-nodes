@@ -228,30 +228,16 @@ class ArtifactManager(EngineScoped):
                 return sniffed
         return None
 
-    def prepare_content_for_write(self, data: bytes, file_name: str) -> bytes:
-        """Process content before writing to disk by dispatching to the appropriate provider.
+    def provider_for_write(self, file_name: str) -> BaseArtifactProvider | None:
+        """The provider that collects and embeds write metadata for `file_name`, or None.
 
-        Looks up the artifact provider for the file's extension and delegates
-        to that provider's prepare_content_for_write for format-specific processing.
+        Reads the provider registry, so call it on the event loop. The caller collects metadata
+        with the provider on the loop and runs its `prepare_content_for_write` on a worker thread.
 
         Args:
-            data: Raw file bytes
             file_name: Filename including extension
-
-        Returns:
-            Processed bytes, or original bytes if no provider handles this extension
         """
-        extension = Path(file_name).suffix.lstrip(".").lower()
-        if not extension:
-            return data
-        provider_classes = self._registry.get_provider_classes_by_format(extension)
-        if not provider_classes:
-            return data
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4027
-        # Handle ambiguity when multiple providers support the same extension
-        # (e.g., .mp4 could be handled by both video and audio providers).
-        provider = self._registry.get_or_create_provider_instance(provider_classes[0])
-        return provider.prepare_content_for_write(data, file_name)
+        return self._provider_for_format(Path(file_name).suffix.lstrip(".").lower())
 
     def get_write_vetting_policy(self, detected_format: str) -> WriteVettingPolicy | None:
         """Return the vetting mode the format's provider needs, or ``None``.
@@ -358,7 +344,7 @@ class ArtifactManager(EngineScoped):
         Centralizes the "which class wins when multiple providers claim the
         same format" decision so ``check_write_format_from_bytes``,
         ``check_write_format_from_path``, ``check_read_permission``, and
-        (eventually) ``prepare_content_for_write`` don't drift on it.
+        ``provider_for_write`` don't drift on it.
         Currently just "first registered class wins" per the provider
         registry order; ambiguity handling is tracked at
         https://github.com/griptape-ai/griptape-nodes/issues/4027.
@@ -404,7 +390,6 @@ class ArtifactManager(EngineScoped):
                 f"Attempted to register default artifact providers during initialization. "
                 f"Failed due to: {failure_details}"
             )
-            logger.error(error_message)
             raise RuntimeError(error_message)
 
     @handles(GeneratePreviewRequest)
@@ -566,7 +551,7 @@ class ArtifactManager(EngineScoped):
                 )
                 break
 
-            logger.info(
+            logger.debug(
                 "Source file '%s' changed while its preview was being generated; regenerating from the new content.",
                 source_path,
             )
@@ -765,7 +750,7 @@ class ArtifactManager(EngineScoped):
             Success with path_to_preview string, or failure with details
         """
         # FAILURE CASE: Verify source file exists and get its metadata
-        file_info_request = GetFileInfoRequest(path=source_path, workspace_only=False)
+        file_info_request = GetFileInfoRequest(path=source_path, workspace_only=False, broadcast_result=False)
         file_info_result = self.engine.handle_request(file_info_request)
 
         if not isinstance(file_info_result, GetFileInfoResultSuccess):
