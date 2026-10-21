@@ -189,6 +189,43 @@ class TestRunId:
         assert cancelling.flow_manager.global_single_node_resolution is True
         assert cancelling.involved_node_sets == []
 
+    @staticmethod
+    def _failing_cancel(*, run_finishes_meanwhile: bool) -> _Cancelling:
+        """A flow manager whose cancel of "run-a" raises, after the run finished or not."""
+        cancelling = TestRunId._cancelling(another_run_starts=False)
+        machine = cancelling.cancelled_run
+        machine.context.run_id = "run-a"
+        machine.current_state = None
+
+        async def cancel() -> None:
+            if run_finishes_meanwhile:
+                machine.current_state = CompleteState
+            msg = "worker gone"
+            raise RuntimeError(msg)
+
+        machine.cancel_flow = AsyncMock(side_effect=cancel)
+        return cancelling
+
+    @pytest.mark.asyncio
+    async def test_a_failed_cancel_still_ends_a_run_that_finished_meanwhile(self) -> None:
+        """The run held its id back for a cancelled event; without one, no end event would carry it."""
+        cancelling = self._failing_cancel(run_finishes_meanwhile=True)
+
+        with pytest.raises(RuntimeError, match="worker gone"):
+            await cancelling.flow_manager.cancel_flow_run()
+
+        assert cancelling.cancelled_ids == ["run-a"]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_cancel_leaves_a_run_still_going_to_end_itself(self) -> None:
+        cancelling = self._failing_cancel(run_finishes_meanwhile=False)
+
+        with pytest.raises(RuntimeError, match="worker gone"):
+            await cancelling.flow_manager.cancel_flow_run()
+
+        assert cancelling.cancelled_ids == []
+        cancelling.cancelled_run.reset_machine.assert_not_called()
+
     def test_a_group_run_for_another_engine_reports_that_engine_s_run(self) -> None:
         flow_manager = FlowManager(MagicMock(spec=EventManager), engine=MagicMock())
         flow_manager.parent_run_id = "parent-run"

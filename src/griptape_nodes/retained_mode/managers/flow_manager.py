@@ -4728,7 +4728,15 @@ class FlowManager(EngineScoped):
         # across the wait: a new run can start meanwhile, and it is this run that has been cancelled.
         machine = self._global_control_flow_machine
         if machine is not None:
-            await machine.cancel_flow()
+            try:
+                await machine.cancel_flow()
+            except Exception:
+                # Cancelling awaits arbitrary node code, so there is no narrower type to catch.
+                # The run may have finished while it was marked cancelled, holding its id back for a
+                # cancelled event; end it now, or no end event would ever carry that id.
+                if machine.current_state is CompleteState and machine.context.run_id is not None:
+                    self._end_cancelled_run(machine)
+                raise
         logger.debug("Cancelling flow run")
         self._end_cancelled_run(machine)
 
