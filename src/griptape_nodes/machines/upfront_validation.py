@@ -9,6 +9,10 @@ runs, and problems on several nodes are reported together.
 
 The inputs are handed to the check with `BaseNode.reading_inputs`, not set on the node, so looking
 changes nothing: no node is marked unresolved and no `after_value_set` hook fires.
+
+An input that's a key for an object held in a worker process (a `serializable=False` value) isn't
+treated as known. The check runs in the engine process, where that object can't be read, so it would
+fail; at the node's turn that fails only the node, but up front it would stop the whole flow.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.input_check_budget import input_check_budget
+from griptape_nodes.exe_types.local_objects import collect_leaves, is_reference
 from griptape_nodes.exe_types.node_types import NodeResolutionState
 
 if TYPE_CHECKING:
@@ -49,7 +54,8 @@ def known_inputs(node: BaseNode, connections: Connections) -> dict[str, Any] | N
 
     An input is known when the node feeding it won't run this time, so its output is already final.
     The values are read the way `collect_values_from_upstream_nodes` reads them. Inputs with no
-    connection aren't included: the node already holds their values.
+    connection aren't included: the node already holds their values. An input holding a key for an
+    object kept in a worker process makes the node unknown, since its check can't read the object here.
     """
     values: dict[str, Any] = {}
     for parameter in node.parameters:
@@ -62,9 +68,12 @@ def known_inputs(node: BaseNode, connections: Connections) -> dict[str, Any] | N
         if not _wont_run(upstream_node):
             return None
         if upstream_parameter.name in upstream_node.parameter_output_values:
-            values[parameter.name] = upstream_node.parameter_output_values[upstream_parameter.name]
+            value = upstream_node.parameter_output_values[upstream_parameter.name]
         else:
-            values[parameter.name] = upstream_node._get_raw_parameter_value(upstream_parameter.name)
+            value = upstream_node._get_raw_parameter_value(upstream_parameter.name)
+        if collect_leaves(value, is_reference):
+            return None
+        values[parameter.name] = value
     return values
 
 

@@ -9,6 +9,7 @@ import pytest
 
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.local_objects import make_reference
 from griptape_nodes.exe_types.node_types import DataNode, NodeResolutionState
 from griptape_nodes.machines.upfront_validation import known_inputs, validate_nodes_with_known_inputs
 from griptape_nodes.retained_mode.events.validation_events import ValidateFlowDependenciesRequest
@@ -107,6 +108,24 @@ class TestKnownInputs:
         connections = Connections()
         _connect(connections, upstream, node)
         assert known_inputs(node, connections) == {"value": "frozen.png"}
+
+    @pytest.mark.parametrize(
+        "held",
+        [
+            make_reference(worker="worker-1", key="k1", source="Load Model"),
+            [make_reference(worker="worker-1", key="k1", source="Load Model")],
+        ],
+        ids=["key", "key-in-a-list"],
+    )
+    def test_is_unknown_when_an_input_is_held_in_a_worker(self, held: Any) -> None:
+        # The check runs in the engine, where a worker's object can't be read, so leave it for its turn.
+        upstream = _Node("Upstream")
+        upstream.state = NodeResolutionState.RESOLVED
+        upstream.parameter_output_values["value"] = held
+        node = _Node("Node")
+        connections = Connections()
+        _connect(connections, upstream, node)
+        assert known_inputs(node, connections) is None
 
     def test_is_unknown_when_an_upstream_node_will_run(self) -> None:
         upstream = _Node("Upstream")
