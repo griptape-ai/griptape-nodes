@@ -29,6 +29,7 @@ from griptape_nodes.exe_types.input_checks import (
     check_count,
     check_dimensions,
     check_duration,
+    check_frame_count,
     check_frame_rate,
     check_mime_type,
     check_size,
@@ -340,6 +341,42 @@ class TestLocalVideoProbe:
         monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: "/usr/bin/ffprobe")
         monkeypatch.setattr(input_checks.subprocess, "run", fake_run)
         return runs
+
+    def test_reads_the_frame_count_a_file_records(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._answer(
+            monkeypatch,
+            {
+                "format": {"duration": "3.0"},
+                "streams": [{"avg_frame_rate": "24/1", "duration": "3.0", "nb_frames": "72"}],
+            },
+        )
+        probe = local_video_probe(str(clip))
+        assert probe is not None
+        assert probe.frames == 72
+        assert (probe.fewest_frames, probe.most_frames) == (72, 72)
+
+    def test_estimates_frames_when_the_file_records_none(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # An MKV records no frame count: 3 s at 24 fps holds 72 frames.
+        self._answer(
+            monkeypatch,
+            {
+                "format": {"format_name": "matroska,webm", "duration": "3.0"},
+                "streams": [{"avg_frame_rate": "24/1", "nb_frames": "N/A", "tags": {"DURATION": "00:00:03.000000000"}}],
+            },
+        )
+        probe = local_video_probe(str(clip))
+        assert probe is not None
+        assert probe.frames is None
+        assert (probe.fewest_frames, probe.most_frames) == (72, 72)
+
+    def test_estimates_the_fewest_and_most_frames_from_every_reading(self) -> None:
+        # 3 s of video in a 4 s container at 24 fps average, 30 fps declared.
+        probe = VideoProbe(info=None, seconds=3.0, container_seconds=4.0, fps=24.0, nominal_fps=30.0)
+        assert (probe.fewest_frames, probe.most_frames) == (72, 120)
+
+    def test_reads_no_frames_without_a_duration_or_rate(self) -> None:
+        assert VideoProbe(info=None, seconds=None, fps=24.0).fewest_frames is None
+        assert VideoProbe(info=None, seconds=3.0).most_frames is None
 
     def test_reads_size_and_duration_in_one_ffprobe_run(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         runs = self._answer(
@@ -956,6 +993,46 @@ class TestVideoErrors:
         probe = VideoProbe(info=ImageInfo(1440, 1080, None), seconds=5.0, display_info=ImageInfo(1920, 1080, None))
         monkeypatch.setattr(input_checks, "local_video_probe", lambda _v: probe)
         assert video_errors(str(clip), subject=SUBJECT, max_side=1500) == []
+
+
+class TestCheckFrameCount:
+    def test_refuses_too_many_frames(self) -> None:
+        error = check_frame_count(9001, subject=SUBJECT, maximum=9000, docs_url=DOCS)
+        assert str(error) == (
+            f"{SUBJECT} has 9,001 frames and the limit is 9,000. Use a Trim Video node to shorten it, or lower its "
+            "frame rate."
+        )
+        assert error is not None
+        assert error.links
+        assert error.links[0].url == DOCS
+
+    def test_refuses_too_few_frames(self) -> None:
+        error = check_frame_count(72, subject=SUBJECT, minimum=73)
+        assert str(error) == f"{SUBJECT} has 72 frames and the minimum is 73. Use a longer clip."
+
+    def test_accepts_counts_on_the_limits_and_skips_an_unread_count(self) -> None:
+        assert check_frame_count(73, subject=SUBJECT, minimum=73, maximum=181) is None
+        assert check_frame_count(181, subject=SUBJECT, minimum=73, maximum=181) is None
+        assert check_frame_count(None, subject=SUBJECT, minimum=73) is None
+
+    def test_video_errors_checks_frames_against_the_reading_easier_to_meet(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        clip = tmp_path / "clip.mkv"
+        clip.write_bytes(b"video")
+        # No recorded count: 3 s at 24 fps average (72 frames) or 30 fps declared (90 frames).
+        probe = VideoProbe(info=None, seconds=3.0, fps=24.0, nominal_fps=30.0)
+        monkeypatch.setattr(input_checks, "local_video_probe", lambda _v: probe)
+        assert video_errors(str(clip), subject=SUBJECT, min_frames=80, max_frames=80) == []
+        assert [str(e) for e in video_errors(str(clip), subject=SUBJECT, max_frames=60)] == [
+            f"{SUBJECT} has 72 frames and the limit is 60. Use a Trim Video node to shorten it, or lower its frame rate."
+        ]
+        assert [str(e) for e in video_errors(str(clip), subject=SUBJECT, min_frames=100)] == [
+            f"{SUBJECT} has 90 frames and the minimum is 100. Use a longer clip."
+        ]
+
+    def test_video_errors_skips_frames_for_a_video_it_cannot_read(self) -> None:
+        assert video_errors("https://example.com/clip.mp4", subject=SUBJECT, min_frames=73, max_frames=181) == []
 
 
 class TestCheckFrameRate:

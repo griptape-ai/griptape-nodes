@@ -14,7 +14,7 @@ credits. These helpers let a node refuse it first, from what it can read locally
   tool to read it is missing or too slow.
 - **Checks** (`check_count`, `check_size`, `check_dimensions`, `check_aspect_ratio_range`,
   `check_aspect_ratio_exact`, `check_mime_type`, `check_video_codec`, `check_audio_codec`,
-  `check_duration`, `check_frame_rate`) compare one value with a limit and return a `NodeError`
+  `check_duration`, `check_frame_rate`, `check_frame_count`) compare one value with a limit and return a `NodeError`
   ready to append to `validate_before_node_run`'s list, or None when the value is within the limit
   or unknown.
 
@@ -89,6 +89,7 @@ __all__ = [
     "check_count",
     "check_dimensions",
     "check_duration",
+    "check_frame_count",
     "check_frame_rate",
     "check_mime_type",
     "check_size",
@@ -254,6 +255,7 @@ class VideoProbe(NamedTuple):
     than its name, and `codec` the video stream's, as ffprobe names it, such as "h264" or "hevc".
     `display_info` is the frame's shape as it plays when its pixels aren't square (anamorphic footage
     such as 1440x1080 shown at 16:9), and None when they are, so `info` already gives the shape.
+    `frames` is the frame count the file records; MP4, MOV and AVI record one, MKV and WebM don't.
     Each part is None when ffprobe didn't report it.
     """
 
@@ -265,6 +267,30 @@ class VideoProbe(NamedTuple):
     mime_type: str | None = None
     codec: str | None = None
     display_info: ImageInfo | None = None
+    frames: int | None = None
+
+    @property
+    def fewest_frames(self) -> int | None:
+        """The frame count a maximum is checked against: the recorded count, or the lowest estimate.
+
+        Without a recorded count, the count is estimated from each duration and frame rate the probe
+        read, rounding down, as providers do when they write "73 frames (around 3 seconds at 24fps)".
+        """
+        if self.frames is not None:
+            return self.frames
+        return min(self._frame_estimates(), default=None)
+
+    @property
+    def most_frames(self) -> int | None:
+        """The frame count a minimum is checked against: the recorded count, or the highest estimate."""
+        if self.frames is not None:
+            return self.frames
+        return max(self._frame_estimates(), default=None)
+
+    def _frame_estimates(self) -> list[int]:
+        rates = [rate for rate in (self.fps, self.nominal_fps) if rate is not None]
+        # A small allowance, so 2.9999 s at 24 fps reads as the 72 frames it holds rather than 71.
+        return [math.floor(seconds * rate + 1e-6) for seconds in self._durations() for rate in rates]
 
     @property
     def shortest_seconds(self) -> float | None:
@@ -327,6 +353,7 @@ def local_video_probe(value: Any) -> VideoProbe | None:
         mime_type=_video_mime_type(data),
         codec=_video_codec(data),
         display_info=_display_frame_size(data),
+        frames=_recorded_frames(data),
     )
 
 
@@ -717,6 +744,37 @@ def check_frame_rate(  # noqa: PLR0913
     return None
 
 
+def check_frame_count(
+    frames: int | None,
+    *,
+    subject: str,
+    minimum: int | None = None,
+    maximum: int | None = None,
+    docs_url: str | None = None,
+) -> NodeError | None:
+    """An error when a video has fewer or more frames than the provider accepts.
+
+    Args:
+        frames: The frame count. Pass a `local_video_probe` result's `fewest_frames` for a maximum or
+            `most_frames` for a minimum, the readings `video_errors` uses. None skips the check.
+        subject: The input, from `input_subject`.
+        minimum: The fewest frames accepted.
+        maximum: The most frames accepted.
+        docs_url: The provider's page documenting the limit.
+    """
+    if frames is None:
+        return None
+    if maximum is not None and frames > maximum:
+        return _error(
+            f"{subject} has {frames:,} frames and the limit is {maximum:,}. "
+            "Use a Trim Video node to shorten it, or lower its frame rate.",
+            docs_url,
+        )
+    if minimum is not None and frames < minimum:
+        return _error(f"{subject} has {frames:,} frames and the minimum is {minimum:,}. Use a longer clip.", docs_url)
+    return None
+
+
 def image_errors(  # noqa: PLR0913
     image: Any,
     *,
@@ -819,6 +877,8 @@ def video_errors(  # noqa: PLR0913
     exact_aspect_ratios: Sequence[str] = (),
     min_fps: float | None = None,
     max_fps: float | None = None,
+    min_frames: int | None = None,
+    max_frames: int | None = None,
     allowed_mime_types: Sequence[str] = (),
     allowed_codecs: Sequence[str] = (),
     duration_fix: str | None = None,
@@ -831,7 +891,8 @@ def video_errors(  # noqa: PLR0913
     given: the file size with `maximum_bytes`, the duration with `min_seconds` or `max_seconds`,
     the frame's sides and area as stored (turned upright for a rotated clip) with `min_side`, `max_side`, `min_megapixels` or
     `max_megapixels`, the aspect ratio when both `widest` and `tallest` are set, the exact shape with
-    `exact_aspect_ratios`, the frame rate with `min_fps` or `max_fps`, the container with
+    `exact_aspect_ratios`, the frame rate with `min_fps` or `max_fps`, the frame count with
+    `min_frames` or `max_frames`, the container with
     `allowed_mime_types`, and the codec with `allowed_codecs`. Like the checks it runs, it skips
     anything it can't read locally.
 
@@ -853,6 +914,8 @@ def video_errors(  # noqa: PLR0913
             ratios, such as ("16:9", "9:16"). See `check_aspect_ratio_exact`.
         min_fps: The lowest frame rate accepted.
         max_fps: The highest frame rate accepted.
+        min_frames: The fewest frames accepted. See `check_frame_count`.
+        max_frames: The most frames accepted.
         allowed_mime_types: The containers the provider accepts, such as ("video/mp4", "video/quicktime").
             The container is read from the file, so a MOV renamed to .mp4 is still a MOV.
         allowed_codecs: The video codecs the provider accepts, as ffprobe names them, such as
@@ -893,9 +956,9 @@ def video_errors(  # noqa: PLR0913
         or (widest is not None and tallest is not None)
         or bool(exact_aspect_ratios)
     )
-    needs_fps = min_fps is not None or max_fps is not None
+    needs_rate = min_fps is not None or max_fps is not None or min_frames is not None or max_frames is not None
     needs_encoding = bool(allowed_mime_types) or bool(allowed_codecs)
-    if min_seconds is None and max_seconds is None and not needs_frame and not needs_fps and not needs_encoding:
+    if min_seconds is None and max_seconds is None and not needs_frame and not needs_rate and not needs_encoding:
         return [error for error in errors if error]
     if probe is _PROBE_NOT_GIVEN:
         probe = local_video_probe(video)
@@ -938,13 +1001,17 @@ def video_errors(  # noqa: PLR0913
             display_info=display_info,
         )
     )
-    # A variable-frame-rate clip's average and declared rates differ, and providers don't say which
-    # they mean, so each bound uses the rate it's easier to meet, as the duration checks do.
-    rates = _frame_rates(probe)
-    if max_fps is not None:
-        errors.append(check_frame_rate(min(rates, default=None), subject=subject, maximum=max_fps, docs_url=docs_url))
-    if min_fps is not None:
-        errors.append(check_frame_rate(max(rates, default=None), subject=subject, minimum=min_fps, docs_url=docs_url))
+    errors.extend(
+        _rate_errors(
+            probe,
+            subject=subject,
+            min_fps=min_fps,
+            max_fps=max_fps,
+            min_frames=min_frames,
+            max_frames=max_frames,
+            docs_url=docs_url,
+        )
+    )
     return [error for error in errors if error]
 
 
@@ -1207,6 +1274,37 @@ def _duration_errors(  # noqa: PLR0913
         )
     if min_seconds is not None:
         errors.append(check_duration(longest, subject=subject, minimum=min_seconds, fix=fix, docs_url=docs_url))
+    return errors
+
+
+def _rate_errors(  # noqa: PLR0913
+    probe: VideoProbe | None,
+    *,
+    subject: str,
+    min_fps: float | None,
+    max_fps: float | None,
+    min_frames: int | None,
+    max_frames: int | None,
+    docs_url: str | None,
+) -> list[NodeError | None]:
+    """`video_errors`' frame-rate and frame-count checks.
+
+    A variable-frame-rate clip's average and declared rates differ, and providers don't say which
+    they mean, so each bound uses the reading it's easier to meet, as the duration checks do. The
+    same goes for a frame count estimated from them.
+    """
+    rates = _frame_rates(probe)
+    errors: list[NodeError | None] = []
+    if max_fps is not None:
+        errors.append(check_frame_rate(min(rates, default=None), subject=subject, maximum=max_fps, docs_url=docs_url))
+    if min_fps is not None:
+        errors.append(check_frame_rate(max(rates, default=None), subject=subject, minimum=min_fps, docs_url=docs_url))
+    if probe is None:
+        return errors
+    if max_frames is not None:
+        errors.append(check_frame_count(probe.fewest_frames, subject=subject, maximum=max_frames, docs_url=docs_url))
+    if min_frames is not None:
+        errors.append(check_frame_count(probe.most_frames, subject=subject, minimum=min_frames, docs_url=docs_url))
     return errors
 
 
@@ -1686,6 +1784,14 @@ def _positive_fraction(text: str) -> float | None:
     if not rate > 0:
         return None
     return rate
+
+
+def _recorded_frames(data: dict[str, Any]) -> int | None:
+    """The frame count the first video stream records in ffprobe's JSON, or None when it records none."""
+    frames = _whole_number(_first_stream(data).get("nb_frames"))
+    if frames is None or frames <= 0:
+        return None
+    return frames
 
 
 def _whole_number(value: Any) -> int | None:
