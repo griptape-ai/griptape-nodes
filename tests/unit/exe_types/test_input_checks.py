@@ -644,6 +644,15 @@ class TestImageErrors:
         assert image_errors(artifact, subject=SUBJECT, maximum_bytes=10, min_side=500) != []
         assert sum(1 for value in calls if value is artifact) == 1
 
+    @pytest.mark.parametrize("image_format", ["DDS", "QOI"])
+    def test_refuses_a_format_pillow_reads_but_has_no_mime_type_for(self, image_format: str) -> None:
+        buffer = BytesIO()
+        Image.new("RGB", (64, 64)).save(buffer, format=image_format)
+        errors = image_errors(
+            _data_uri(buffer.getvalue(), "image/png"), subject=SUBJECT, allowed_mime_types=("image/jpeg", "image/png")
+        )
+        assert [str(e) for e in errors] == [f"{SUBJECT} is in {image_format} format. Convert it to JPEG or PNG."]
+
 
 class TestVideoErrors:
     @pytest.fixture

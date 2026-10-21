@@ -384,8 +384,9 @@ The checks follow these rules:
 
 - **Skip what can't be read locally, don't fail it.** A remote URL, a format Pillow can't open, an
     image over Pillow's decompression-bomb limit (about 179 megapixels), a video when ffprobe isn't
-    installed, or a probe that runs out of time (see the next rule) is left for the provider to judge. A
-    check refuses only an input it has read and found outside the limit.
+    installed, or a probe that runs out of time (see "No network calls, and a cap on blocking"
+    below) is left for the provider to judge. A check refuses only an input it has read and found
+    outside the limit.
 - **Pass the provider's limits and a docs link for the selected model.** The checks know nothing
     about any provider. Your node passes the limits the provider documents, only for the inputs its
     request sends, and `docs_url` for the page that documents them, so the user can see the rule.

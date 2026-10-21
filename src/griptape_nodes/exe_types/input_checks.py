@@ -202,6 +202,10 @@ def local_image_info(value: Any) -> ImageInfo | None:
         mime_type = "image/jpeg"
     else:
         mime_type = Image.MIME.get(image_format or "")
+    # Pillow registers no MIME type for some formats it reads, such as DDS and QOI. Name one after
+    # its format so a format check can still refuse it, rather than skipping a format it has read.
+    if mime_type is None and image_format:
+        mime_type = f"image/{image_format.lower()}"
     return ImageInfo(width=width, height=height, mime_type=mime_type)
 
 
