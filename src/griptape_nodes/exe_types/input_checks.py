@@ -114,9 +114,10 @@ FRAME_RATE_TOLERANCE = 0.01
 # codec, frame size, duration, frame rate) are skipped.
 FFPROBE_TIMEOUT_SECONDS = 2
 
-# How long after a node's validation starts it may still probe videos. The engine opens one
-# `input_check_budget` around each node's `validate_before_node_run`; once this much time has
-# passed, the remaining videos are skipped rather than probed, so one node's slow probes can't add up.
+# How long after a node's validation starts it may still probe video and audio inputs. The engine
+# opens one `input_check_budget` around each node's `validate_before_node_run`; once this much time
+# has passed, the remaining inputs are skipped rather than probed, so one node's slow probes can't
+# add up.
 # It counts all of the validation's time, not only probing. The cap is per node: when the engine
 # starts several nodes in one pass, each can block for this long.
 VALIDATION_PROBE_BUDGET_SECONDS = 5
@@ -300,7 +301,7 @@ def input_check_budget(seconds: float = VALIDATION_PROBE_BUDGET_SECONDS) -> Iter
     """Stop the video and audio probes inside this block once `seconds` have passed since it opened.
 
     The engine opens one around each node's `validate_before_node_run`, so a node checking several
-    videos probes for at most `seconds` in all. The time counts from when the block opens, so it
+    video or audio inputs probes for at most `seconds` in all. The time counts from when the block opens, so it
     includes any other checks the node runs first. Inside it, each probe gets the smaller of
     `FFPROBE_TIMEOUT_SECONDS` and the time left, and a probe that would start with no time left is
     skipped. Opened inside another budget, it can shorten the time left but never
@@ -625,7 +626,8 @@ def check_video_codec(
         codec: The video stream's codec as ffprobe names it, from `local_video_probe`, such as "h264".
             None skips the check.
         subject: The input, from `input_subject`.
-        allowed: The codecs the provider accepts, as ffprobe names them, such as ("h264", "hevc").
+        allowed: The codecs the provider accepts, such as ("h264", "hevc"). They may be written as
+            ffprobe names them or as providers do ("H.264", "HEVC", "AVC"); case doesn't matter.
         docs_url: The provider's page documenting the limit.
 
     Raises:
@@ -643,7 +645,9 @@ def check_audio_codec(
         codec: The audio stream's codec as ffprobe names it, from `local_audio_probe`, such as "mp3".
             None skips the check.
         subject: The input, from `input_subject`.
-        allowed: The codecs the provider accepts, as ffprobe names them, such as ("mp3", "aac").
+        allowed: The codecs the provider accepts, such as ("mp3", "aac"). They may be written as ffprobe
+            names them or as providers do ("MP3", "AAC-LC"); case doesn't matter. A profile such as
+            AAC-LC matches its codec, as the profile isn't checked.
         docs_url: The provider's page documenting the limit.
 
     Raises:
@@ -1020,7 +1024,7 @@ def audio_errors(  # noqa: PLR0913
                 subject=subject,
                 allowed=allowed_mime_types,
                 docs_url=docs_url,
-                also_matching=_mp4_audio_reading(allowed_mime_types),
+                also_matching=_audio_readings_of(allowed_mime_types),
             )
         )
     if allowed_codecs:
@@ -1049,26 +1053,27 @@ def _codec_error(  # noqa: PLR0913
             f"pass a tuple such as ('{example}',)."
         )
         raise TypeError(msg)
-    if codec is None or codec in allowed:
+    if codec is None:
+        return None
+    # A codec matches however a provider writes it ("H.264", "AVC", "h264"), so a refusal never asks
+    # for the input's own codec. Names that read the same are listed once.
+    canonical = _canonical_codec(codec)
+    if any(_canonical_codec(name) == canonical for name in allowed):
         return None
     shown = _codec_name(codec)
-    # A name that reads the same as the input's also matches, such as "H.264" for ffprobe's "h264", so
-    # a refusal never asks for the input's own codec. Names that read the same are listed once.
-    if any(_codec_name(name) == shown for name in allowed):
-        return None
     codecs = _join_or(list(dict.fromkeys(_codec_name(name) for name in allowed)))
     return _error(f"{subject} is encoded as {shown}. Re-encode it as {codecs}.", docs_url)
 
 
-def _mp4_audio_reading(allowed: Sequence[str]) -> tuple[str, ...]:
-    """The extra name an audio check matches when a provider lists video/mp4.
+def _audio_readings_of(allowed: Sequence[str]) -> tuple[str, ...]:
+    """The extra names an audio check matches for the video containers a provider lists.
 
-    An MP4's audio reads as audio/mp4, and a provider listing video/mp4 takes that file. The name
-    widens the match only; a refusal lists just the names the provider wrote.
+    A video file's audio reads under its container's audio name (an MP4's as audio/mp4, an MKV's as
+    audio/x-matroska), and a provider listing the video container takes that file. The names widen
+    the match only; a refusal lists just the names the provider wrote.
     """
-    if any(_canonical_mime_type(name) == "video/mp4" for name in allowed):
-        return ("audio/mp4",)
-    return ()
+    readings = (_VIDEO_TO_AUDIO_CONTAINER.get(_canonical_mime_type(name)) for name in allowed)
+    return tuple(reading for reading in readings if reading is not None)
 
 
 def _encoding_errors(
@@ -1291,7 +1296,42 @@ def _run_ffprobe(value: Any, args: list[str], *, kind: MediaKind) -> dict[str, A
         return None
     if not isinstance(data, dict):
         return None
+    _record_matroska_doctype(data, path)
     return data
+
+
+def _record_matroska_doctype(data: dict[str, Any], path: Path) -> None:
+    """Add a Matroska file's DocType ("webm" or "matroska") to ffprobe's JSON, which doesn't report it.
+
+    ffprobe names MKV and WebM with one demuxer. The file's header says which it is, and that's more
+    reliable than guessing from a codec, as WebM and MKV can carry the same ones.
+    """
+    format_info = data.get("format")
+    if not isinstance(format_info, dict) or not str(format_info.get("format_name", "")).startswith("matroska"):
+        return
+    try:
+        with path.open("rb") as file:
+            header = file.read(_MATROSKA_HEADER_BYTES)
+    except OSError:
+        return
+    doctype = _matroska_doctype(header)
+    if doctype is not None:
+        format_info[_DOCTYPE_KEY] = doctype
+
+
+def _matroska_doctype(header: bytes) -> str | None:
+    """The DocType in a Matroska file's EBML header, or None if it isn't found there."""
+    start = header.find(_EBML_DOCTYPE_ID)
+    if start < 0 or start + len(_EBML_DOCTYPE_ID) >= len(header):
+        return None
+    size_byte = header[start + len(_EBML_DOCTYPE_ID)]
+    # A one-byte EBML size has its top bit set; the DocType is short enough to always use one.
+    if not size_byte & 0x80:
+        return None
+    end = start + len(_EBML_DOCTYPE_ID) + 1 + (size_byte & 0x7F)
+    if end > len(header):
+        return None
+    return header[start + len(_EBML_DOCTYPE_ID) + 1 : end].decode("ascii", errors="replace")
 
 
 def _probe_timeout() -> float | None:
@@ -1381,20 +1421,29 @@ def _audio_mime_type(data: dict[str, Any]) -> str | None:
     if demuxer.startswith("mov,"):
         return _iso_audio_mime_type(format_info.get("tags", {}).get("major_brand"))
     if demuxer.startswith("matroska"):
-        return _matroska_audio_mime_type(_stream_text(_first_stream(data), "codec_name"))
+        return _matroska_audio_mime_type(format_info, _stream_text(_first_stream(data), "codec_name"))
     return _AUDIO_DEMUXER_MIME_TYPES.get(demuxer)
 
 
 def _iso_audio_mime_type(brand: Any) -> str:
-    """An ISO media file's container for an audio check: a MOV stays a MOV, and the rest reads as M4A."""
-    if _iso_media_mime_type(brand) == "video/quicktime":
-        return "video/quicktime"
-    return "audio/mp4"
+    """An ISO media file's container for an audio check.
+
+    A MOV stays a MOV, a 3GP reads as 3GP audio, and the rest reads as M4A.
+    """
+    match _iso_media_mime_type(brand):
+        case "video/quicktime":
+            return "video/quicktime"
+        case "video/3gpp":
+            return "audio/3gpp"
+        case "video/3gpp2":
+            return "audio/3gpp2"
+        case _:
+            return "audio/mp4"
 
 
-def _matroska_audio_mime_type(codec: str | None) -> str:
-    """A Matroska file's container for an audio check: WebM for the codecs WebM allows, MKA otherwise."""
-    if codec in _WEBM_AUDIO_CODECS:
+def _matroska_audio_mime_type(format_info: dict[str, Any], codec: str | None) -> str:
+    """A Matroska file's container for an audio check: WebM or MKA, by the file's DocType."""
+    if _is_webm(format_info, codec, _WEBM_AUDIO_CODECS):
         return "audio/webm"
     return "audio/x-matroska"
 
@@ -1411,7 +1460,7 @@ def _video_mime_type(data: dict[str, Any]) -> str | None:
     """A video's container as a MIME type, read from ffprobe's JSON, or None if it's one not named here.
 
     ffprobe names MP4, MOV and 3GP with one demuxer ("mov,mp4,m4a,3gp,3g2,mj2"), and MKV and WebM with
-    another, so the file's brand tells MP4 from MOV, and the codec WebM from MKV.
+    another, so the file's brand tells MP4 from MOV, and its DocType WebM from MKV.
     """
     format_info = data.get("format")
     if not isinstance(format_info, dict):
@@ -1423,10 +1472,18 @@ def _video_mime_type(data: dict[str, Any]) -> str | None:
         brand = format_info.get("tags", {}).get("major_brand")
         return _iso_media_mime_type(brand)
     if demuxer.startswith("matroska"):
-        if _video_codec(data) in _WEBM_VIDEO_CODECS:
+        if _is_webm(format_info, _video_codec(data), _WEBM_VIDEO_CODECS):
             return "video/webm"
         return "video/x-matroska"
     return _DEMUXER_MIME_TYPES.get(demuxer)
+
+
+def _is_webm(format_info: dict[str, Any], codec: str | None, webm_codecs: frozenset[str]) -> bool:
+    """Whether a Matroska file is WebM: by the DocType in its header, or by its codec when that's unread."""
+    doctype = format_info.get(_DOCTYPE_KEY)
+    if doctype is not None:
+        return doctype == "webm"
+    return codec in webm_codecs
 
 
 def _iso_media_mime_type(brand: Any) -> str:
@@ -1625,9 +1682,24 @@ _MIME_ALIASES = {
     "audio/x-mp4": "audio/mp4",
 }
 
-# Video and audio codecs a WebM file may carry; Matroska with any other codec is an MKV or MKA.
+# A Matroska file's EBML header holds its DocType within its first few dozen bytes.
+_EBML_DOCTYPE_ID = b"\x42\x82"
+_MATROSKA_HEADER_BYTES = 64
+# Where _run_ffprobe records a Matroska file's DocType in ffprobe's format JSON.
+_DOCTYPE_KEY = "griptape_doctype"
+
+# Video and audio codecs a WebM file may carry, used when a Matroska file's DocType can't be read.
 _WEBM_VIDEO_CODECS = frozenset({"vp8", "vp9", "av1"})
 _WEBM_AUDIO_CODECS = frozenset({"opus", "vorbis"})
+
+# The audio reading of a video container, for an audio check of a video file's audio track.
+_VIDEO_TO_AUDIO_CONTAINER = {
+    "video/mp4": "audio/mp4",
+    "video/x-matroska": "audio/x-matroska",
+    "video/webm": "audio/webm",
+    "video/3gpp": "audio/3gpp",
+    "video/3gpp2": "audio/3gpp2",
+}
 
 # ffprobe demuxer names for audio containers that name one format each.
 _AUDIO_DEMUXER_MIME_TYPES = {
@@ -1672,6 +1744,8 @@ _FORMAT_NAMES = {
     "audio/mp4a-latm": "M4A",
     "audio/x-mp4": "M4A",
     "audio/x-matroska": "MKA",
+    "audio/3gpp": "3GP",
+    "audio/3gpp2": "3G2",
     "video/webm": "WebM",
     "video/3gpp": "3GP",
     "video/3gpp2": "3G2",
@@ -1692,6 +1766,26 @@ _FORMAT_NAMES = {
     "audio/aiff": "AIFF",
 }
 
+
+# Other ways providers write a codec, mapped to ffprobe's name. Profiles such as AAC-LC are matched
+# as their codec; the checks don't read a profile, which refuses less.
+_CODEC_ALIASES = {
+    "avc": "h264",
+    "h264": "h264",
+    "h.264": "h264",
+    "x264": "h264",
+    "hevc": "hevc",
+    "h265": "hevc",
+    "h.265": "hevc",
+    "x265": "hevc",
+    "aac-lc": "aac",
+    "he-aac": "aac",
+    "mpeg-4": "mpeg4",
+    "mpeg-2": "mpeg2video",
+    "mp2": "mp2",
+    "pcm": "pcm_s16le",
+    "wav": "pcm_s16le",
+}
 
 # ffprobe's codec names that aren't the name an artist knows a codec by.
 _CODEC_NAMES = {
@@ -1723,9 +1817,21 @@ _CODEC_NAMES = {
 }
 
 
+def _canonical_codec(name: str) -> str:
+    """A codec's ffprobe name, however it's written: "H.264", "AVC" and "h264" all give "h264"."""
+    folded = name.strip().lower()
+    known = _CODEC_ALIASES.get(folded)
+    if known is not None:
+        return known
+    for ffprobe_name, shown in _CODEC_NAMES.items():
+        if shown.lower() == folded:
+            return ffprobe_name
+    return folded
+
+
 def _codec_name(codec: str) -> str:
-    """A codec as a message shows it: ffprobe's "hevc" reads "H.265"."""
-    known = _CODEC_NAMES.get(codec)
+    """A codec as a message shows it: ffprobe's "hevc", or "HEVC" as a provider writes it, reads "H.265"."""
+    known = _CODEC_NAMES.get(_canonical_codec(codec))
     if known:
         return known
     return codec.upper()
@@ -1754,6 +1860,8 @@ def _parse_ratio(name: str) -> float:
         height_value = float(height)
     except ValueError as e:
         raise ValueError(msg) from e
+    if not (math.isfinite(width_value) and math.isfinite(height_value)):
+        raise ValueError(msg)
     if not width_value > 0 or not height_value > 0:
         raise ValueError(msg)
     return width_value / height_value

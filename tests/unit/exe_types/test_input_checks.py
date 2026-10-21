@@ -1015,6 +1015,11 @@ class TestCheckAspectRatioExact:
             f"{SUBJECT} is 400x300, and its aspect ratio must be 16:9 or 9:16. Crop it."
         ]
 
+    @pytest.mark.parametrize("ratio", ["1:inf", "inf:1", "nan:1"])
+    def test_refuses_a_ratio_that_is_not_finite(self, ratio: str) -> None:
+        with pytest.raises(ValueError, match="is not a ratio such as '16:9'"):
+            check_aspect_ratio_exact(None, subject=SUBJECT, ratios=(ratio,))
+
 
 class TestVideoEncoding:
     @pytest.mark.parametrize(
@@ -1049,6 +1054,46 @@ class TestVideoEncoding:
     def test_refuses_codecs_given_as_one_string(self) -> None:
         with pytest.raises(TypeError, match="pass a tuple"):
             check_video_codec("h264", subject=SUBJECT, allowed="h264")
+
+    @pytest.mark.parametrize(
+        ("header", "codec", "expected"),
+        [
+            (b"\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\x82\x84webm", "vp9", "video/webm"),
+            # An MKV can carry a WebM codec; its header still says matroska.
+            (b"\x1a\x45\xdf\xa3\xa3\x42\x86\x81\x01\x42\x82\x88matroska", "vp9", "video/x-matroska"),
+            (b"\x1a\x45\xdf\xa3\xa3\x42\x86\x81\x01\x42\x82\x88matroska", "h264", "video/x-matroska"),
+        ],
+    )
+    def test_tells_webm_from_mkv_by_the_files_doctype(
+        self, tmp_path: Path, header: bytes, codec: str, expected: str
+    ) -> None:
+        path = tmp_path / "clip.mkv"
+        path.write_bytes(header + b"\x00" * 32)
+        data: dict[str, Any] = {"format": {"format_name": "matroska,webm"}, "streams": [{"codec_name": codec}]}
+        input_checks._record_matroska_doctype(data, path)
+        assert input_checks._video_mime_type(data) == expected
+
+    def test_falls_back_to_the_codec_when_the_doctype_is_unread(self) -> None:
+        data = {"format": {"format_name": "matroska,webm"}, "streams": [{"codec_name": "vp9"}]}
+        assert input_checks._video_mime_type(data) == "video/webm"
+
+    @pytest.mark.parametrize(
+        ("codec", "allowed"),
+        [
+            ("prores", ("ProRes",)),
+            ("hevc", ("HEVC",)),
+            ("hevc", ("h265",)),
+            ("h264", ("AVC",)),
+            ("h264", ("H264",)),
+            ("h264", ("H.264",)),
+        ],
+    )
+    def test_matches_a_codec_however_a_provider_writes_it(self, codec: str, allowed: tuple[str, ...]) -> None:
+        assert check_video_codec(codec, subject=SUBJECT, allowed=allowed) is None
+
+    def test_shows_provider_written_codecs_by_their_known_names(self) -> None:
+        error = check_video_codec("vp9", subject=SUBJECT, allowed=("ProRes", "HEVC"))
+        assert str(error) == f"{SUBJECT} is encoded as VP9. Re-encode it as ProRes or H.265."
 
 
 class TestAudio:
@@ -1193,6 +1238,32 @@ class TestAudio:
     def test_lists_a_codec_once_when_the_provider_names_it_twice(self) -> None:
         error = check_video_codec("vp9", subject=SUBJECT, allowed=("hevc", "H.265"))
         assert str(error) == f"{SUBJECT} is encoded as VP9. Re-encode it as H.265."
+
+    @pytest.mark.parametrize(("codec", "allowed"), [("opus", ("Opus",)), ("aac", ("AAC-LC",)), ("vorbis", ("Vorbis",))])
+    def test_matches_an_audio_codec_however_a_provider_writes_it(self, codec: str, allowed: tuple[str, ...]) -> None:
+        assert check_audio_codec(codec, subject=SUBJECT, allowed=allowed) is None
+
+    @pytest.mark.parametrize(
+        ("reading", "listed"),
+        [("audio/x-matroska", "video/x-matroska"), ("audio/3gpp", "video/3gpp"), ("audio/webm", "video/webm")],
+    )
+    def test_accepts_a_videos_audio_where_its_container_is_listed(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch, reading: str, listed: str
+    ) -> None:
+        probe = AudioProbe(mime_type=reading, codec="aac", profile="LC", seconds=3.0)
+        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: probe)
+        assert audio_errors(str(clip), subject=SUBJECT, allowed_mime_types=(listed,)) == []
+
+    @pytest.mark.parametrize("brand", ["3gp4", "3gp6"])
+    def test_names_3gp_audio_as_3gp(self, clip: Path, monkeypatch: pytest.MonkeyPatch, brand: str) -> None:
+        self._answer(
+            monkeypatch,
+            {"codec_name": "aac", "duration": "3.0"},
+            {"format_name": "mov,mp4,m4a,3gp,3g2,mj2", "tags": {"major_brand": brand}},
+        )
+        probe = local_audio_probe(str(clip))
+        assert probe is not None
+        assert probe.mime_type == "audio/3gpp"
 
 
 class TestCheckMimeType:
