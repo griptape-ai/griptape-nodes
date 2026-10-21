@@ -74,9 +74,8 @@ class BaseNodeElement:
         and reports every change recorded since the last flush.
         """
         self._changes[key] = value
-        # Only when attached to a node and not already in the list (avoids duplicate events).
-        if self._node_context is not None and self not in self._node_context._tracked_parameters:
-            self._node_context._tracked_parameters.append(self)
+        if self._node_context is not None:
+            self._node_context.queue_element_change(self)
 
     # --- Badge (discoverable by all subclasses) ---
     # Message types for frontend: clear_badge, get_badge, set_badge, clear_badge_display

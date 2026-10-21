@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
+from griptape_nodes.common.isolated_execution_scope import IsolatedExecutionScope, current_isolated_execution_scope
 from griptape_nodes.drivers.cloud_credentials import resolve_cloud_host
 from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeEndNode,
@@ -46,8 +47,8 @@ from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_groups import NodeGroupMembershipError, SubflowNodeGroup
 from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
 from griptape_nodes.exe_types.node_types import (
+    ISOLATED_EXECUTION,
     LOCAL_EXECUTION,
-    PRIVATE_EXECUTION,
     BaseNode,
     ErrorProxyNode,
     NodeDependencies,
@@ -102,6 +103,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowResultFailure,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
+    PACKAGED_FLOW_BOUNDARY_KEY,
     ListNodesInFlowRequest,
     ListNodesInFlowResultSuccess,
 )
@@ -3338,6 +3340,17 @@ class NodeManager(EngineScoped):
             wm = self.engine.worker_manager
             if wm is not None and worker is not None:
                 return await self._execute_node_via_worker(request, wm, worker)
+            # A library's own worker comes first: that is where its dependencies are installed. Only a
+            # node that would otherwise run here moves to the worker its Isolated Execution names.
+            #
+            # The StartFlow and EndFlow the packager adds around a packaged body stay here. They are the
+            # flow's boundary and only pass values in and out, and the packager gives them their
+            # parameters by request, which the fresh copy a worker builds from metadata does not have.
+            # The packager flags them; a Start/End node a user placed carries no flag and goes.
+            isolated_scope = current_isolated_execution_scope.get()
+            is_flow_boundary = bool(node.metadata.get(PACKAGED_FLOW_BOUNDARY_KEY))
+            if wm is not None and isolated_scope is not None and not is_flow_boundary:
+                return await self._execute_node_in_isolated_execution_worker(request, wm, isolated_scope)
 
         async with STRICT_MODE.scoped_execution(
             kind=StrictModeScopeKind.RUNTIME_EXECUTE,
@@ -3466,6 +3479,35 @@ class NodeManager(EngineScoped):
         if library_info.lifecycle_state is LibraryManager.LibraryLifecycleState.LOADED:
             return None
         return library_manager.catalog.get_collated_problems_for_library(library_name)
+
+    async def _execute_node_in_isolated_execution_worker(
+        self, request: ExecuteNodeRequest, wm: WorkerManager, scope: IsolatedExecutionScope
+    ) -> ResultPayload:
+        """Run the node on the worker its Isolated Execution scope names.
+
+        The scope is set by NodeExecutor, which decided this run uses Isolated Execution, so nothing
+        here infers it from where the node sits in the graph.
+        """
+        try:
+            await wm.wait_until_executable(scope.worker_key)
+        except RuntimeError as err:
+            return ExecuteNodeResultFailure(result_details=str(err), exception=err)
+        unavailable = wm.worker_unavailable_reason(scope.worker_key)
+        if unavailable is not None:
+            details = (
+                f"Attempted to run '{request.node_name}' with the Isolated Execution set on '{scope.owner_name}'. "
+                f"Failed because {unavailable} Reload your libraries, or restart Griptape Nodes, to start it again."
+            )
+            return ExecuteNodeResultFailure(result_details=details)
+        worker = wm.get_worker_for_key(scope.worker_key)
+        if worker is None:
+            details = (
+                f"Attempted to run '{request.node_name}' with the Isolated Execution set on '{scope.owner_name}'. "
+                "Failed because the background process that runs Isolated Execution is not running. Reload your "
+                "libraries, or restart Griptape Nodes, to start it again."
+            )
+            return ExecuteNodeResultFailure(result_details=details)
+        return await self._execute_node_via_worker(request, wm, worker)
 
     async def _execute_node_via_worker(
         self,
@@ -3653,7 +3695,8 @@ class NodeManager(EngineScoped):
         node_name = request.node_name
         with self.engine.event_manager.node_execution_scope():
             hydrated_values = hydrate_parameter_values(request.parameter_values)
-            hydration_failure = self._apply_hydrated_values(node, node_name, hydrated_values)
+            with self.engine.event_manager.hydration_scope(node_name):
+                hydration_failure = self._apply_hydrated_values(node, node_name, hydrated_values)
             if hydration_failure is not None:
                 return hydration_failure
             # Materialize parameter defaults into parameter_values so that user
@@ -4058,7 +4101,7 @@ class NodeManager(EngineScoped):
             execution_env_library_details = None
             if isinstance(node, SubflowNodeGroup):
                 execution_env = node.get_parameter_value(node.execution_environment.name)
-                if execution_env not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
+                if execution_env not in (LOCAL_EXECUTION, ISOLATED_EXECUTION):
                     # Get library details for the execution environment library
                     exec_env_metadata_request = GetLibraryMetadataRequest(library=execution_env)
                     exec_env_metadata_result = self.engine.library_manager.catalog.get_library_metadata_request(

@@ -144,15 +144,6 @@ wheels = [
 ]
 
 [[package]]
-name = "binaryornot"
-version = "0.6.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/86/72/4755b85101f37707c71526a301c1203e413c715a0016ecb592de3d2dcfff/binaryornot-0.6.0.tar.gz", hash = "sha256:cc8d57cfa71d74ff8c28a7726734d53a851d02fad9e3a5581fb807f989f702f0", size = 478718, upload-time = "2026-03-08T16:26:28.804Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/0c/31cfaa6b56fe23488ecb993bc9fc526c0d84d89607decdf2a10776426c2e/binaryornot-0.6.0-py3-none-any.whl", hash = "sha256:900adfd5e1b821255ba7e63139b0396b14c88b9286e74e03b6f51e0200331337", size = 14185, upload-time = "2026-03-08T16:26:27.466Z" },
-]
-
-[[package]]
 name = "cachetools"
 version = "7.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -729,7 +720,6 @@ dependencies = [
     { name = "anyio" },
     { name = "asyncio-thread-runner" },
     { name = "attrs" },
-    { name = "binaryornot" },
     { name = "cattrs" },
     { name = "fastapi" },
     { name = "fileseq" },
@@ -747,7 +737,6 @@ dependencies = [
     { name = "pydantic-ai-skills" },
     { name = "pydantic-ai-slim", extra = ["mcp", "openai"] },
     { name = "python-dotenv" },
-    { name = "python-multipart" },
     { name = "rich" },
     { name = "ruamel-yaml" },
     { name = "semver" },
@@ -806,7 +795,6 @@ requires-dist = [
     { name = "asyncio-thread-runner", specifier = ">=1.0" },
     { name = "attrs", specifier = ">=25.4.0" },
     { name = "austin-dist", marker = "extra == 'profiling'", specifier = ">=3.7.0" },
-    { name = "binaryornot", specifier = ">=0.4.4" },
     { name = "cattrs", specifier = ">=26.1.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "fileseq", specifier = ">=3.2.0" },
@@ -824,7 +812,6 @@ requires-dist = [
     { name = "pydantic-ai-skills", specifier = ">=2.0,<3" },
     { name = "pydantic-ai-slim", extras = ["mcp", "openai"], specifier = ">=2.29.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
-    { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "rich", specifier = ">=14.1.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.15" },
     { name = "semver", specifier = ">=3.0.4" },

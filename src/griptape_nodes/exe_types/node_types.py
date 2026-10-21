@@ -111,7 +111,10 @@ class TransformedParameterValue(NamedTuple):
 AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
-PRIVATE_EXECUTION = "Private Execution"
+ISOLATED_EXECUTION = "Isolated Execution"
+# What Isolated Execution was called before it was renamed. Workflows saved before then hold this
+# value, so a group's execution_environment reads it as ISOLATED_EXECUTION.
+LEGACY_PRIVATE_EXECUTION = "Private Execution"
 CONTROL_INPUT_PARAMETER = "Control Input Selection"
 
 
@@ -300,8 +303,8 @@ def get_library_names_with_publish_handlers(engine: Engine) -> list[str]:
 
     event_handlers = engine.library_manager.get_registered_event_handlers(PublishWorkflowRequest)
 
-    # Always include "local" and "private" as the first options
-    library_names = [LOCAL_EXECUTION, PRIVATE_EXECUTION]
+    # Always include Local and Isolated Execution as the first options
+    library_names = [LOCAL_EXECUTION, ISOLATED_EXECUTION]
 
     # Add all registered library names that can handle PublishWorkflowRequest
     library_names.extend(sorted(event_handlers.keys()))
@@ -325,6 +328,9 @@ class BaseNode(ABC):
     root_ui_element: BaseNodeElement
     _state: NodeResolutionState
     _tracked_parameters: list[BaseNodeElement]
+    # Set by the ObjectManager while this node is registered, so a node with queued changes is
+    # flushed without the manager scanning every object after each request.
+    _on_change_queued: Callable[[BaseNode], None] | None = None
     _entry_control_parameter: Parameter | None = (
         None  # The control input parameter used to enter this node during execution
     )
@@ -538,6 +544,20 @@ class BaseNode(ABC):
     def clear_cancellation(self) -> None:
         """Clear the cancellation request flag."""
         self._cancellation_requested.clear()
+
+    def set_change_listener(self, listener: Callable[[BaseNode], None] | None) -> None:
+        """Call ``listener`` whenever this node queues a change, and now if one is already queued."""
+        self._on_change_queued = listener
+        if listener is not None and self._tracked_parameters:
+            listener(self)
+
+    def queue_element_change(self, element: BaseNodeElement) -> None:
+        """Queue an element for the next batched UI update, once per flush."""
+        if element in self._tracked_parameters:
+            return
+        self._tracked_parameters.append(element)
+        if self._on_change_queued is not None:
+            self._on_change_queued(self)
 
     def emit_parameter_changes(self) -> None:
         if self._tracked_parameters:

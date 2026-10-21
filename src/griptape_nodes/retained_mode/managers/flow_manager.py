@@ -93,6 +93,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     UnresolveFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
+    PACKAGED_FLOW_BOUNDARY_KEY,
     TRANSIENT_KEY,
     AutoLayoutFlowRequest,
     AutoLayoutFlowResultFailure,
@@ -2033,7 +2034,7 @@ class FlowManager(EngineScoped):
             node_type=request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
             specific_library_name=request.end_node_library_name,
             node_name=end_node_name,
-            metadata={},
+            metadata={PACKAGED_FLOW_BOUNDARY_KEY: True},
             initial_setup=True,
             create_error_proxy_on_failure=False,
         )
@@ -2336,7 +2337,7 @@ class FlowManager(EngineScoped):
             node_type=request.start_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
             specific_library_name=request.start_node_library_name,
             node_name=start_node_name,
-            metadata={},
+            metadata={PACKAGED_FLOW_BOUNDARY_KEY: True},
             initial_setup=True,
             create_error_proxy_on_failure=False,
         )

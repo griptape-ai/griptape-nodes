@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, cast
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
-from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.engine import EngineScoped, engine_scope
 from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.base_events import (
@@ -61,6 +60,11 @@ EP = TypeVar("EP", bound=ExecutionPayload, default=ExecutionPayload)
 _active_request_type: ContextVar[type[RequestPayload] | None] = ContextVar(
     "_event_manager_active_request_type", default=None
 )
+
+# The node the current logical chain is rebuilding from the values it was sent, if any. Per chain rather
+# than process-wide, unlike the node-execution refcount: another node's aprocess can run in this
+# process at the same time, and its requests are not part of the rebuild.
+_hydrating_node_name: ContextVar[str | None] = ContextVar("_event_manager_hydrating_node_name", default=None)
 
 # (request_type, callback) pairs for the post-dispatch hooks running above this point
 # in the current logical chain. A hook task is created with this marker set, and every
@@ -889,6 +893,24 @@ class EventManager(EngineScoped):
         with self._node_execution_lock:
             return self._node_execution_depth > 0
 
+    @contextmanager
+    def hydration_scope(self, node_name: str) -> Iterator[None]:
+        """Mark the current chain as rebuilding `node_name` from the values it was sent.
+
+        Hydration replays each value through `set_parameter_value`, so a node's value hooks run as if a
+        user had edited it. On a worker the node is a copy, and the worker-side RemoteHandler reads this
+        to keep those hooks from repeating their edits on the orchestrator's node.
+        """
+        token = _hydrating_node_name.set(node_name)
+        try:
+            yield
+        finally:
+            _hydrating_node_name.reset(token)
+
+    def hydrating_node_name(self) -> str | None:
+        """The node the current chain is rebuilding, or None outside a hydration scope."""
+        return _hydrating_node_name.get()
+
     def get_manager_for_request_type(self, request_type: type[RP]) -> Callable | None:
         """Return the currently-registered handler callback for a request type, or None."""
         return self._request_type_to_manager.get(request_type)
@@ -1443,13 +1465,8 @@ class EventManager(EngineScoped):
             )
 
     def _flush_tracked_parameter_changes(self) -> None:
-        obj_manager = self.engine.object_manager
-        # Get all flows and their nodes
-        nodes = obj_manager.get_filtered_subset(type=BaseNode)
-        for node in nodes.values():
-            # Only flush if there are actually tracked parameters
-            if node._tracked_parameters:
-                node.emit_parameter_changes()
+        for node in self.engine.object_manager.take_nodes_with_queued_changes():
+            node.emit_parameter_changes()
 
 
 class EventSuppressionContext:
