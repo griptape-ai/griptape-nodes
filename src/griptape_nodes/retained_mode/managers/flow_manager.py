@@ -390,7 +390,9 @@ class FlowManager(EngineScoped):
         """Check if a connection exists."""
         connected_outputs = self.get_connected_output_parameters(source_node, source_parameter)
         for connected_node, connected_param in connected_outputs:
-            if connected_node is target_node and connected_param is target_parameter:
+            # By name, as the connection indexes are: a node can replace a connected parameter with
+            # a same-named one, and the connection still holds the one it replaced.
+            if connected_node is target_node and connected_param.name == target_parameter.name:
                 return True
         return False
 
