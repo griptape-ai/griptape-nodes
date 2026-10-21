@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import pytest
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
-from PIL import Image, PngImagePlugin
+from PIL import Image, PngImagePlugin, features
 
 from griptape_nodes.exe_types import input_checks
 from griptape_nodes.exe_types.input_checks import (
@@ -139,6 +139,16 @@ class TestLocalImageInfo:
     def test_reads_exif_rotation_from_other_formats(self, image_format: str, mime_type: str) -> None:
         image = _data_uri(_rotated_jpeg_bytes(400, 300, 6, image_format), mime_type)
         assert local_image_info(image) == ImageInfo(300, 400, mime_type)
+
+    @pytest.mark.skipif(not features.check("avif"), reason="this Pillow build has no AVIF support")
+    def test_skips_a_damaged_avif(self) -> None:
+        # Pillow's AVIF plugin passes on libavif's RuntimeError for a damaged file.
+        buffer = BytesIO()
+        Image.new("RGB", (64, 64)).save(buffer, format="AVIF")
+        data = buffer.getvalue()
+        item_locations = data.index(b"iloc") + 4
+        damaged = data[:item_locations] + bytes(16) + data[item_locations + 16 :]
+        assert local_image_info(_data_uri(damaged, "image/avif")) is None
 
     def test_does_not_decode_a_png_without_exif(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Pillow's PNG plugin decodes the whole image to look for EXIF after the pixel data.

@@ -183,13 +183,15 @@ def local_image_info(value: Any) -> ImageInfo | None:
             height = image.height
             orientation = _exif_orientation(image)
     # Pillow re-raises NotImplementedError from a format plugin that recognises a file but can't decode
-    # it, such as a DDS texture in an unsupported DXGI format.
+    # it, such as a DDS texture in an unsupported DXGI format. Its AVIF plugin passes on libavif's
+    # RuntimeError for a damaged file.
     except (
         OSError,
         UnidentifiedImageError,
         Image.DecompressionBombError,
         ValueError,
         NotImplementedError,
+        RuntimeError,
     ) as e:
         logger.debug("Could not read image header for a pre-run input check, skipping it: %s", e)
         return None
