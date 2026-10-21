@@ -1,5 +1,6 @@
 """Tests for FlowManager.on_extract_flow_commands_from_image_metadata."""
 
+import asyncio
 import itertools
 import json
 import tempfile
@@ -1044,3 +1045,56 @@ class TestReparentFlow:
         # The rejected move must leave the hierarchy untouched.
         assert flow_manager.get_parent_flow(inner.flow_name) == outer.flow_name
         assert flow_manager.get_parent_flow(outer.flow_name) is None
+
+
+class TestRunsTakeTurns:
+    """A run started while another is in progress waits its turn; a request from inside a run does not."""
+
+    @pytest.mark.asyncio
+    async def test_a_request_from_inside_the_run_in_progress_does_not_wait_for_it(self, engine: Engine) -> None:
+        flow_manager = engine.flow_manager
+
+        async def nested() -> Any:
+            return "nested ran"
+
+        async def outer() -> Any:
+            return await flow_manager.run_when_machine_is_free(nested)
+
+        result = await asyncio.wait_for(flow_manager.run_when_machine_is_free(outer), timeout=1.0)
+
+        assert result == "nested ran"
+
+    @pytest.mark.asyncio
+    async def test_a_task_that_outlives_its_run_waits_like_any_other_request(self, engine: Engine) -> None:
+        """A task copies the run it was created in, so its run having ended must not count as being inside one."""
+        flow_manager = engine.flow_manager
+        later_run_holds = asyncio.Event()
+        later_run_may_end = asyncio.Event()
+        leftover: list[asyncio.Task] = []
+
+        async def first_run() -> Any:
+            leftover.append(asyncio.ensure_future(_after(later_run_holds, flow_manager)))
+            return None
+
+        async def later_run() -> Any:
+            later_run_holds.set()
+            await later_run_may_end.wait()
+            return None
+
+        await flow_manager.run_when_machine_is_free(first_run)
+        holding = asyncio.ensure_future(flow_manager.run_when_machine_is_free(later_run))
+        await asyncio.sleep(0.05)
+
+        assert not leftover[0].done(), "a task left over from an ended run skipped the line"
+        later_run_may_end.set()
+        await asyncio.wait_for(holding, timeout=1.0)
+        assert await asyncio.wait_for(leftover[0], timeout=1.0) == "left over ran"
+
+
+async def _after(event: asyncio.Event, flow_manager: Any) -> Any:
+    await event.wait()
+
+    async def left_over() -> Any:
+        return "left over ran"
+
+    return await flow_manager.run_when_machine_is_free(left_over)

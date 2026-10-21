@@ -374,7 +374,7 @@ EVERYTHING (nodes, flows, connections, workflow). There is no softer reset today
 ### Agents cannot be interrupted mid-run
 
 `StartFlowRequest` holds the call until the run finishes or errors. A subsequent
-`StartFlowRequest` will fail with "Flow is already running" until it does.
+`StartFlowRequest` waits for that run to finish, then starts.
 
 ## Tool Cheat Sheet
 

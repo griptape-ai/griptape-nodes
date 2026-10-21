@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from griptape_nodes.retained_mode.managers.run_queue import NotAdmittedError, RunQueue
+from griptape_nodes.retained_mode.managers.run_queue import RunHoldingMachine, RunQueue
 
 _A = "session-a"
 _B = "session-b"
@@ -24,7 +24,7 @@ class TestRunQueue:
 
         await queue.acquire(_A, "r1")
 
-        assert queue.holder == (_A, "r1")
+        assert queue.holder == RunHoldingMachine(session=_A, run_id="r1")
 
     @pytest.mark.asyncio
     async def test_another_run_waits_until_the_run_holding_the_machine_releases_it(self) -> None:
@@ -38,7 +38,7 @@ class TestRunQueue:
         queue.release(_A, "r1")
         await asyncio.wait_for(waiting, timeout=1.0)
 
-        assert queue.holder == (_B, "r2")
+        assert queue.holder == RunHoldingMachine(session=_B, run_id="r2")
 
     @pytest.mark.asyncio
     async def test_waiting_runs_get_the_machine_in_the_order_they_asked(self) -> None:
@@ -55,32 +55,7 @@ class TestRunQueue:
         queue.release(_A, "second")
         await asyncio.wait_for(third, timeout=1.0)
 
-        assert queue.holder == (_B, "third")
-
-    @pytest.mark.asyncio
-    async def test_a_cancelled_waiting_run_never_gets_the_machine_and_the_next_one_does(self) -> None:
-        queue = RunQueue()
-        await queue.acquire(_A, "first")
-        cancelled = asyncio.ensure_future(queue.acquire(_A, "cancelled"))
-        await _settle()
-        after = asyncio.ensure_future(queue.acquire(_B, "after"))
-        await _settle()
-
-        assert queue.cancel_waiting(_A, "cancelled") is True
-        with pytest.raises(NotAdmittedError, match="cancelled"):
-            await cancelled
-        queue.release(_A, "first")
-        await asyncio.wait_for(after, timeout=1.0)
-
-        assert queue.holder == (_B, "after")
-
-    @pytest.mark.asyncio
-    async def test_cancelling_a_run_that_is_not_waiting_changes_nothing(self) -> None:
-        queue = RunQueue()
-        await queue.acquire(_A, "r1")
-
-        assert queue.cancel_waiting(_A, "r1") is False
-        assert queue.holder == (_A, "r1")
+        assert queue.holder == RunHoldingMachine(session=_B, run_id="third")
 
     @pytest.mark.asyncio
     async def test_a_release_from_a_run_without_the_machine_changes_nothing(self) -> None:
@@ -92,10 +67,26 @@ class TestRunQueue:
         queue.release(_B, "r2")
         await _settle()
 
-        assert queue.holder == (_A, "r1")
+        assert queue.holder == RunHoldingMachine(session=_A, run_id="r1")
         assert not waiting.done()
         queue.release(_A, "r1")
         await asyncio.wait_for(waiting, timeout=1.0)
+
+    @pytest.mark.asyncio
+    async def test_a_run_that_stops_waiting_leaves_the_line_and_the_next_one_gets_the_machine(self) -> None:
+        queue = RunQueue()
+        await queue.acquire(_A, "first")
+        cancelled = asyncio.ensure_future(queue.acquire(_A, "cancelled"))
+        await _settle()
+        after = asyncio.ensure_future(queue.acquire(_B, "after"))
+        await _settle()
+
+        cancelled.cancel()
+        await asyncio.gather(cancelled, return_exceptions=True)
+        queue.release(_A, "first")
+        await asyncio.wait_for(after, timeout=1.0)
+
+        assert queue.holder == RunHoldingMachine(session=_B, run_id="after")
 
     @pytest.mark.asyncio
     async def test_a_run_whose_wait_is_cancelled_as_it_gets_the_machine_gives_it_back(self) -> None:
@@ -112,7 +103,7 @@ class TestRunQueue:
         await asyncio.gather(cancelled, return_exceptions=True)
         await asyncio.wait_for(after, timeout=1.0)
 
-        assert queue.holder == (_B, "after")
+        assert queue.holder == RunHoldingMachine(session=_B, run_id="after")
 
     @pytest.mark.asyncio
     async def test_releasing_with_no_one_waiting_frees_the_machine(self) -> None:

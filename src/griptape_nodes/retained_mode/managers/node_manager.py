@@ -247,7 +247,6 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointSubjectType,
 )
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
-from griptape_nodes.retained_mode.managers.run_manager import runs_as_one_run
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands, encode_commands
@@ -3196,15 +3195,8 @@ class NodeManager(EngineScoped):
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
-    def parent_flow_name_or_none(self, node_name: str | None) -> str | None:
-        """The flow that holds `node_name`, or None if there is no such node."""
-        if node_name is None:
-            return None
-        return self._name_to_parent_flow_name.get(node_name)
-
     @handles(ResolveNodeRequest)
-    @runs_as_one_run(ResolveNodeResultFailure, lambda self, request: self.parent_flow_name_or_none(request.node_name))
-    async def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    async def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: PLR0911
         node_name = request.node_name
         debug_mode = request.debug_mode
 
@@ -3237,6 +3229,17 @@ class NodeManager(EngineScoped):
             details = f'Failed to fetch parent flow for "{node_name}"'
             return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
 
+        flow_mgr = self.engine.flow_manager
+        # A node run while another node's run is in progress joins that run, so the two run side by side.
+        if flow_mgr.check_for_existing_running_flow() and flow_mgr.global_single_node_resolution:
+            return await self._resolve_node_run(node, flow, debug_mode=debug_mode)
+        return await flow_mgr.run_when_machine_is_free(
+            lambda: self._resolve_node_run(node, flow, debug_mode=debug_mode)
+        )
+
+    async def _resolve_node_run(self, node: BaseNode, flow: ControlFlow, *, debug_mode: bool) -> ResultPayload:  # noqa: C901, PLR0911
+        node_name = node.name
+        flow_name = flow.name
         # Check for existing running flow
         flow_mgr = self.engine.flow_manager
         if flow_mgr.check_for_existing_running_flow() and not flow_mgr._global_single_node_resolution:

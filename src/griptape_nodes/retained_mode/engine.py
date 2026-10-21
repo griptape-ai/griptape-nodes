@@ -78,7 +78,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
     from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
-    from griptape_nodes.retained_mode.managers.run_manager import RunManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
     from griptape_nodes.retained_mode.managers.session_manager import SessionManager
     from griptape_nodes.retained_mode.managers.static_files_manager import (
@@ -204,7 +203,6 @@ class Engine:
         from griptape_nodes.retained_mode.managers.os_manager import OSManager
         from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
         from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
-        from griptape_nodes.retained_mode.managers.run_manager import RunManager
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
         from griptape_nodes.retained_mode.managers.session_manager import SessionManager
         from griptape_nodes.retained_mode.managers.static_files_manager import (
@@ -232,7 +230,6 @@ class Engine:
         self._object_manager = ObjectManager(self._event_manager, engine=self)
         self._node_manager = NodeManager(self._event_manager, engine=self)
         self._flow_manager = FlowManager(self._event_manager, engine=self)
-        self._run_manager = RunManager(engine=self)
         self._context_manager = ContextManager(self._event_manager, engine=self)
         self._worker_manager = WorkerManager(engine=self, event_manager=self._event_manager)
         self._library_manager = LibraryManager(self._event_manager, worker_manager=self._worker_manager, engine=self)
@@ -382,10 +379,6 @@ class Engine:
     @property
     def worker_manager(self) -> WorkerManager:
         return self._worker_manager
-
-    @property
-    def run_manager(self) -> RunManager:
-        return self._run_manager
 
     @property
     def workflow_registry(self) -> _WorkflowRegistry:

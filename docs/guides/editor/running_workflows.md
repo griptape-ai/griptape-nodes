@@ -76,6 +76,14 @@ Two cases are worth knowing about:
 **Run Workflow** and **Run From Selected** still require an idle
 workflow; they stay disabled until the current run ends.
 
+## Starting a run while another is running
+
+A run started some other way while one is in progress, such as from a
+script or another tool that drives the engine, waits for the run in
+progress to finish and then starts. Several waiting runs start one at a
+time, in the order they were started. **Cancel Run** stops only the run in
+progress; the next waiting run then starts.
+
 ## Stopping a run
 
 While a workflow is running, the same button area shows **Cancel Run** in
