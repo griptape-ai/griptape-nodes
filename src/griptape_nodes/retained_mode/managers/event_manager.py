@@ -344,6 +344,10 @@ class EventManager(EngineScoped):
         """
         if self._event_queue is None:
             return
+        # A worker building or discarding its copy of a node changes only its own graph, which no client
+        # knows about; publishing that would show clients flows and nodes that don't exist for them.
+        if _rebuilding_node_name.get() is not None:
+            return
 
         if self._is_cross_thread_call() and self._event_loop is not None:
             # We're in a different thread from the event loop, use thread-safe method
@@ -367,6 +371,10 @@ class EventManager(EngineScoped):
             event: The event to publish to the queue
         """
         if self._event_queue is None:
+            return
+        # A worker building or discarding its copy of a node changes only its own graph, which no client
+        # knows about; publishing that would show clients flows and nodes that don't exist for them.
+        if _rebuilding_node_name.get() is not None:
             return
 
         if self._is_cross_thread_call() and self._event_loop is not None:
