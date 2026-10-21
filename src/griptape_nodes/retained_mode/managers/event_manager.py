@@ -1241,10 +1241,11 @@ class EventManager(EngineScoped):
 
     def _invoke_handler_from_sync(self, callback: Callable, request: RequestPayload) -> ResultPayload:
         """Call a request handler from sync code, bridging async handlers onto a loop."""
-        # Worker-side RemoteHandler callbacks are async but safe to invoke from a
-        # running loop: forward_to_orchestrator dispatches onto the WS loop via
-        # run_coroutine_threadsafe, which runs on a different thread than the caller's
-        # loop, so no primitives are shared and the #4469 deadlock shape does not apply.
+        # Worker-side RemoteHandler callbacks are async but safe to invoke from any
+        # running loop except the WS loop itself: forward_to_orchestrator dispatches onto
+        # the WS loop via run_coroutine_threadsafe, which then runs on a different thread
+        # than the caller's loop, so no primitives are shared and the #4469 deadlock shape
+        # does not apply. A caller on the WS loop would block the loop it waits on.
         # Hop the callback onto the WS loop here and block the caller's thread on the
         # concurrent.futures.Future so RemoteHandler itself stays a plain async callable.
         #
@@ -1254,12 +1255,20 @@ class EventManager(EngineScoped):
         from griptape_nodes.app.worker_routing import RemoteHandler
 
         if isinstance(callback, RemoteHandler):
-            if _running_loop() is None:
+            running_loop = _running_loop()
+            if running_loop is None:
                 return asyncio.run(callback(request))
             if self._websocket_event_loop is None:
                 msg = (
                     f"Cannot forward '{type(request).__name__}' from a running event loop: "
                     "the websocket event loop is not configured. This indicates a bootstrap order bug."
+                )
+                raise RuntimeError(msg)
+            if running_loop is self._websocket_event_loop:
+                msg = (
+                    f"Cannot handle '{type(request).__name__}' synchronously on the websocket event loop: "
+                    "its handler is dispatched onto that same loop, so blocking on it here would never return. "
+                    "Use ahandle_request from code running on this loop."
                 )
                 raise RuntimeError(msg)
             future = asyncio.run_coroutine_threadsafe(callback(request), self._websocket_event_loop)
