@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import json
 import subprocess
+import sys
 from io import BytesIO
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -1117,51 +1118,6 @@ class TestVideoEncoding:
         assert str(error) == f"{SUBJECT} is encoded as VP9. Re-encode it as ProRes or H.265."
 
     @pytest.mark.parametrize(
-        ("codec", "written", "accepted"),
-        [
-            ("h264", "H.264 (MPEG-4 AVC)", True),
-            ("h264", "MPEG-4 AVC/H.264", True),
-            ("h264", "AVC (MPEG-4 Part 10)", True),
-            ("ac3", "AC-3", True),
-            ("ac3", "Dolby Digital (AC-3)", True),
-            ("eac3", "E-AC-3", True),
-            ("mjpeg", "M-JPEG", True),
-            ("mjpeg", "Motion-JPEG", True),
-            ("pcm_s16le", "16-bit PCM", True),
-            ("pcm_s16le", "PCM (WAV)", True),
-            ("pcm_s16le", "Linear PCM, 16-bit", True),
-            # A name naming H.264 means it even when it also says "MPEG-4".
-            ("mpeg4", "H.264 (MPEG-4 AVC)", False),
-            ("mpeg4", "MPEG-4 AVC/H.264", False),
-            ("mpeg4", "H.264/MPEG-4 AVC", False),
-            ("mpeg4", "AVC (MPEG-4 Part 10)", False),
-            ("eac3", "AC-3", False),
-            ("ac3", "E-AC-3", False),
-            ("flac", "16-bit PCM", False),
-            ("h264", "MPEG-4 AVC", True),
-            ("h264", "H.264/AVC", True),
-            ("prores", "Apple ProRes", True),
-            ("prores", "ProRes 422", True),
-            ("mpeg4", "MPEG-4", True),
-            # "MPEG-4 AVC" is H.264, so its word "MPEG-4" must not accept MPEG-4 Part 2.
-            ("mpeg4", "MPEG-4 AVC", False),
-            ("hevc", "Apple ProRes", False),
-            ("vp9", "H.264/AVC", False),
-        ],
-    )
-    def test_matches_a_codec_named_inside_a_longer_name(
-        self,
-        codec: str,
-        written: str,
-        accepted: bool,  # noqa: FBT001
-    ) -> None:
-        assert input_checks._codec_matches(codec, written) is accepted
-
-    def test_shows_a_provider_written_codec_name_as_written(self) -> None:
-        error = check_video_codec("hevc", subject=SUBJECT, allowed=("Apple ProRes", "vp9"))
-        assert str(error) == f"{SUBJECT} is encoded as H.265. Re-encode it as Apple ProRes or VP9."
-
-    @pytest.mark.parametrize(
         ("demuxer", "expected"), [("mxf", "application/mxf"), ("dv", "video/dv"), ("ogg", "video/ogg")]
     )
     def test_names_more_video_containers(self, demuxer: str, expected: str) -> None:
@@ -1374,7 +1330,7 @@ class TestAudio:
         error = check_video_codec("vp9", subject=SUBJECT, allowed=("hevc", "H.265"))
         assert str(error) == f"{SUBJECT} is encoded as VP9. Re-encode it as H.265."
 
-    @pytest.mark.parametrize(("codec", "allowed"), [("opus", ("Opus",)), ("aac", ("AAC-LC",)), ("vorbis", ("Vorbis",))])
+    @pytest.mark.parametrize(("codec", "allowed"), [("opus", ("Opus",)), ("aac", ("AAC",)), ("vorbis", ("Vorbis",))])
     def test_matches_an_audio_codec_however_a_provider_writes_it(self, codec: str, allowed: tuple[str, ...]) -> None:
         assert check_audio_codec(codec, subject=SUBJECT, allowed=allowed) is None
 
@@ -1399,19 +1355,6 @@ class TestAudio:
         probe = local_audio_probe(str(clip))
         assert probe is not None
         assert probe.mime_type == "audio/3gpp"
-
-    @pytest.mark.parametrize("codec", ["pcm_s16le", "pcm_s24le", "pcm_s16be", "pcm_f32le", "pcm_u8"])
-    @pytest.mark.parametrize("written", ["PCM", "WAV", "LPCM"])
-    def test_a_generic_pcm_name_accepts_any_pcm(self, codec: str, written: str) -> None:
-        assert check_audio_codec(codec, subject=SUBJECT, allowed=(written,)) is None
-
-    def test_a_generic_pcm_name_still_refuses_a_compressed_codec(self) -> None:
-        error = check_audio_codec("flac", subject=SUBJECT, allowed=("PCM",))
-        assert str(error) == f"{SUBJECT} is encoded as FLAC. Re-encode it as PCM."
-
-    @pytest.mark.parametrize("written", ["AAC LC", "MPEG-4 AAC", "HE-AACv2", "AAC-LC"])
-    def test_matches_aac_however_a_provider_writes_it(self, written: str) -> None:
-        assert check_audio_codec("aac", subject=SUBJECT, allowed=(written,)) is None
 
     def test_reads_a_matroska_audio_tracks_own_length(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # A 3 s audio track in a 10 s MKV: ffprobe gives the track's length only as a DURATION tag.
@@ -1443,137 +1386,62 @@ class TestAudio:
         assert probe.mime_type == expected
 
 
-# Codec spellings real providers write, gathered over review; each must accept, or refuse, the codec.
-CODEC_SPELLINGS_ACCEPTED = [
-    ("h264", "H.264"),
-    ("h264", "AVC"),
-    ("h264", "H.264/AVC"),
-    ("h264", "MPEG-4 AVC"),
-    ("h264", "H.264 (MPEG-4 AVC)"),
-    ("h264", "MPEG-4 AVC/H.264"),
-    ("h264", "H.264/MPEG-4 AVC"),
-    ("h264", "AVC (MPEG-4 Part 10)"),
-    ("h264", "H264"),
-    ("hevc", "HEVC"),
-    ("hevc", "h265"),
-    ("hevc", "H.265 (HEVC)"),
-    ("prores", "ProRes"),
-    ("prores", "Apple ProRes"),
-    ("prores", "ProRes 422"),
-    ("mpeg4", "MPEG-4"),
-    ("mpeg4", "MPEG-4 Part 2"),
-    ("mpeg4", "H.264, MPEG-4 Part 2"),
-    ("mpeg4", "AVC, HEVC, MPEG-4 Visual"),
-    ("dnxhd", "DNxHR"),
-    ("dnxhd", "Avid DNxHR"),
-    ("mjpeg", "M-JPEG"),
-    ("mjpeg", "Motion-JPEG"),
-    ("vp9", "VP9"),
-    ("av1", "AV1"),
-    ("aac", "AAC-LC"),
-    ("aac", "AAC LC"),
-    ("aac", "MPEG-4 AAC"),
-    ("aac", "HE-AACv2"),
-    ("opus", "Opus"),
-    ("opus", "OGG_OPUS"),
-    ("opus", "WEBM_OPUS"),
-    ("vorbis", "Vorbis"),
-    ("mp3", "MP3"),
-    ("mp3", "MPEG-1 Audio Layer III"),
-    ("mp3", "MPEG Audio Layer 3"),
-    ("alac", "Apple Lossless"),
-    ("ac3", "AC-3"),
-    ("ac3", "Dolby Digital (AC-3)"),
-    ("eac3", "E-AC-3"),
-    ("pcm_s16le", "PCM"),
-    ("pcm_s24le", "WAV"),
-    ("pcm_s16be", "LPCM"),
-    ("pcm_s16le", "16-bit PCM"),
-    ("pcm_s16le", "PCM (WAV)"),
-    ("pcm_s16le", "Linear PCM, 16-bit"),
-    ("pcm_s16le", "LINEAR16"),
-    ("pcm_mulaw", "MULAW"),
-    ("pcm_mulaw", "PCM"),
-    ("mpeg4", "H.264 or MPEG-4 Part 2"),
-    ("mpeg4", "H.264; MPEG-4 Part 2"),
-    ("h263", "H.263"),
-    ("h263", "H.263 or H.264"),
-    ("pcm_s16le", "pcm16"),
-    ("pcm_mulaw", "g711_ulaw"),
-    ("pcm_alaw", "g711_alaw"),
-    ("pcm_mulaw", "G.711"),
-    ("pcm_alaw", "G.711"),
-    ("mp3", "MPEG Audio Layer III"),
-    ("mp3", "MPEG-2 Audio Layer III"),
-    ("amr_nb", "AMR"),
-    ("speex", "SPEEX_WITH_HEADER_BYTE"),
-    ("pcm_s16le", "Linear PCM (WAV)"),
-    ("pcm_s16le", "16-bit PCM"),
-    ("opus", "ogg-opus"),
-    ("pcm_mulaw", "μ-law"),
-    ("pcm_mulaw", "8-bit μ-law"),
-    ("pcm_mulaw", "PCMU"),
-    ("pcm_alaw", "PCMA"),
-    ("pcm_s16le", "L16"),
-    ("pcm_f32le", "linear32"),
-    ("amr_wb", "amr-wb-16000hz"),
-    ("pcm_s16le", "riff-16khz-16bit-mono-pcm"),
-    ("pcm_mulaw", "raw-8khz-8bit-mono-mulaw"),
-    ("opus", "ogg-24khz-16bit-mono-opus"),
-]
-CODEC_SPELLINGS_REFUSED = [
-    ("mpeg4", "H.264 (MPEG-4 AVC)"),
-    ("mpeg4", "MPEG-4 AVC/H.264"),
-    ("mpeg4", "AVC (MPEG-4 Part 10)"),
-    ("mpeg4", "MPEG-4 AVC"),
-    ("hevc", "Apple ProRes"),
-    ("vp9", "H.264/AVC"),
-    ("h264", "HEVC"),
-    ("hevc", "H.264"),
-    ("vp8", "VP9"),
-    ("prores", "H.264 (MPEG-4 AVC)"),
-    ("flac", "PCM"),
-    ("flac", "16-bit PCM"),
-    ("mp3", "AAC"),
-    ("aac", "MP3"),
-    ("eac3", "AC-3"),
-    ("ac3", "E-AC-3"),
-    ("opus", "OGG_VORBIS"),
-    ("pcm_mulaw", "Linear PCM"),
-    ("pcm_mulaw", "LPCM"),
-    ("pcm_alaw", "LINEAR16"),
-    ("pcm_mulaw", "ALAW"),
-    # A linear-PCM name or a bit depth means linear PCM, even beside a container word such as WAV.
-    ("pcm_mulaw", "Linear PCM (WAV)"),
-    ("pcm_mulaw", "LINEAR16 (WAV)"),
-    ("pcm_mulaw", "LPCM (WAV)"),
-    ("pcm_mulaw", "WAV (16-bit linear PCM)"),
-    ("pcm_mulaw", "16-bit PCM"),
-    ("pcm_s16le", "g711_ulaw"),
-    ("h264", "H.263"),
-    ("vorbis", "ogg-opus"),
-    ("pcm_alaw", "μ-law"),
-    ("pcm_mulaw", "PCMA"),
-    ("pcm_mulaw", "L16"),
-    ("pcm_mulaw", "linear32"),
-    ("amr_nb", "amr-wb-16000hz"),
-    ("pcm_mulaw", "riff-16khz-16bit-mono-pcm"),
-    ("vorbis", "ogg-24khz-16bit-mono-opus"),
-]
+class TestCodecNames:
+    @pytest.mark.parametrize(
+        ("codec", "written"),
+        [
+            ("h264", "h264"),
+            ("h264", "H.264"),
+            ("h264", "AVC"),
+            ("hevc", "HEVC"),
+            ("hevc", "H.265"),
+            ("hevc", "h265"),
+            ("ac3", "AC-3"),
+            ("pcm_s16le", "pcm_s16le"),
+            ("pcm_mulaw", "G.711 μ-law"),
+        ],
+    )
+    def test_accepts_ffprobes_name_the_shown_name_or_an_alias(self, codec: str, written: str) -> None:
+        assert check_audio_codec(codec, subject=SUBJECT, allowed=(written,)) is None
+
+    @pytest.mark.parametrize("written", ["H.264 or H.265", "Apple ProRes", "PCM", "AAC-LC", "x264"])
+    def test_raises_on_a_name_it_doesnt_know(self, written: str) -> None:
+        with pytest.raises(ValueError, match="isn't a codec this module knows"):
+            check_video_codec("h264", subject=SUBJECT, allowed=(written,))
+
+    def test_raises_on_an_unknown_name_before_any_input_is_read(self) -> None:
+        with pytest.raises(ValueError, match="isn't a codec this module knows"):
+            video_errors("https://example.com/clip.mp4", subject=SUBJECT, allowed_codecs=("H.264/AVC",))
+        with pytest.raises(ValueError, match="isn't a codec this module knows"):
+            audio_errors("https://example.com/clip.mp3", subject=SUBJECT, allowed_codecs=("MPEG Layer 3",))
+
+    def test_names_a_codec_it_doesnt_list_by_ffprobes_name(self) -> None:
+        error = check_video_codec("theora", subject=SUBJECT, allowed=("h264",))
+        assert str(error) == f"{SUBJECT} is encoded as THEORA. Re-encode it as H.264."
 
 
-class TestCodecSpellings:
-    @pytest.mark.parametrize(("codec", "written"), CODEC_SPELLINGS_ACCEPTED)
-    def test_accepts_the_codec_it_names(self, codec: str, written: str) -> None:
-        assert input_checks._codec_matches(codec, written)
+class TestHeifOpener:
+    def test_reads_images_without_pillow_heif(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(input_checks, "register_heif_opener", None)
+        input_checks._register_heif_opener.cache_clear()
+        try:
+            path = tmp_path / "photo.png"
+            Image.new("RGB", (40, 20)).save(path)
+            assert local_image_info(str(path)) == ImageInfo(40, 20, "image/png")
+        finally:
+            input_checks._register_heif_opener.cache_clear()
 
-    @pytest.mark.parametrize(("codec", "written"), CODEC_SPELLINGS_REFUSED)
-    def test_refuses_a_codec_it_does_not_name(self, codec: str, written: str) -> None:
-        assert not input_checks._codec_matches(codec, written)
-
-    def test_shows_a_provider_written_name_with_non_ascii_letters_as_written(self) -> None:
-        error = check_audio_codec("flac", subject=SUBJECT, allowed=("μ-law",))
-        assert str(error) == f"{SUBJECT} is encoded as FLAC. Re-encode it as G.711 μ-law."
+    def test_resolution_machine_loads_no_media_libraries(self) -> None:
+        code = (
+            "import sys\n"
+            "import griptape_nodes.machines.parallel_resolution\n"
+            "loaded = [m for m in ('pillow_heif', 'griptape_nodes.exe_types.input_checks') if m in sys.modules]\n"
+            "print(loaded)\n"
+        )
+        result = subprocess.run(  # noqa: S603 (a fresh interpreter, so earlier imports do not count)
+            [sys.executable, "-c", code], capture_output=True, text=True, check=True, timeout=60
+        )
+        assert result.stdout.strip() == "[]"
 
 
 class TestCheckMimeType:

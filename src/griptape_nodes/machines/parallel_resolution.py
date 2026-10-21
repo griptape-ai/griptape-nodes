@@ -10,7 +10,7 @@ from griptape_nodes.common.node_executor import ExecuteNodeFailedError
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
-from griptape_nodes.exe_types.input_checks import input_check_budget
+from griptape_nodes.exe_types.input_check_budget import input_check_budget
 from griptape_nodes.exe_types.node_types import (
     BaseNode,
     NodeResolutionState,

@@ -47,34 +47,36 @@ import binascii
 import json
 import logging
 import math
-import re
 import shutil
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
-from contextvars import ContextVar
+from functools import cache
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from PIL import Image, UnidentifiedImageError
-from pillow_heif import register_heif_opener
 from static_ffmpeg import run as static_ffmpeg_run
 
+from griptape_nodes.exe_types.input_check_budget import input_check_budget, probe_deadline
 from griptape_nodes.exe_types.node_error import NodeError, NodeErrorLink
 from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.files.path_utils import is_url
 from griptape_nodes.utils.media_values import MediaKind, coerce_media_url_or_data_uri
 
+# pillow-heif teaches Pillow to read HEIC and HEIF headers, the format phones save photos in. Without
+# it (no wheel for this platform, or its native library won't load), HEIC photos are skipped like any
+# other format nothing here can open.
+try:
+    from pillow_heif import register_heif_opener
+except ImportError:
+    register_heif_opener = None
+
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Sequence
 
 logger = logging.getLogger("griptape_nodes")
-
-# Teaches Pillow to read HEIC and HEIF headers, the format phones save photos in, so they can be
-# checked like any other image instead of skipped.
-register_heif_opener()
 
 __all__ = [
     "AudioProbe",
@@ -114,18 +116,6 @@ FRAME_RATE_TOLERANCE = 0.01
 # milliseconds; one that takes longer than this is abandoned and the checks that need it (container,
 # codec, frame size, duration, frame rate) are skipped.
 FFPROBE_TIMEOUT_SECONDS = 2
-
-# How long after a node's validation starts it may still probe video and audio inputs. The engine
-# opens one `input_check_budget` around each node's `validate_before_node_run`; once this much time
-# has passed, the remaining inputs are skipped rather than probed, so one node's slow probes can't
-# add up.
-# It counts all of the validation's time, not only probing. The cap is per node: when the engine
-# starts several nodes in one pass, each can block for this long.
-VALIDATION_PROBE_BUDGET_SECONDS = 5
-
-# When the current validation run's probe budget runs out, as a `time.monotonic()` reading, or None
-# outside a run, where each probe is limited only by FFPROBE_TIMEOUT_SECONDS.
-_probe_deadline: ContextVar[float | None] = ContextVar("input_check_probe_deadline", default=None)
 
 # EXIF Orientation tag (0x0112) values that display an image rotated a quarter turn.
 _EXIF_ORIENTATION_TAG = 0x0112
@@ -193,6 +183,7 @@ def local_image_info(value: Any) -> ImageInfo | None:
     source = _image_source(location)
     if source is None:
         return None
+    _register_heif_opener()
     try:
         with Image.open(source) as image:
             image_format = image.format
@@ -300,27 +291,14 @@ class VideoProbe(NamedTuple):
 _PROBE_NOT_GIVEN = VideoProbe(info=None, seconds=None)
 
 
-@contextmanager
-def input_check_budget(seconds: float = VALIDATION_PROBE_BUDGET_SECONDS) -> Iterator[None]:
-    """Stop the video and audio probes inside this block once `seconds` have passed since it opened.
+@cache
+def _register_heif_opener() -> None:
+    """Let Pillow open HEIC and HEIF photos, once, when the first image is read rather than at import.
 
-    The engine opens one around each node's `validate_before_node_run`, so a node checking several
-    video or audio inputs probes for at most `seconds` in all. The time counts from when the block opens, so it
-    includes any other checks the node runs first. Inside it, each probe gets the smaller of
-    `FFPROBE_TIMEOUT_SECONDS` and the time left, and a probe that would start with no time left is
-    skipped. Opened inside another budget, it can shorten the time left but never
-    extend it.
+    Registering changes `Image.open` for the whole process, so it waits until a node checks an image.
     """
-    deadline = time.monotonic() + seconds
-    # Nested inside another budget, this one can only end sooner, so the engine's cap always holds.
-    outer = _probe_deadline.get()
-    if outer is not None and outer < deadline:
-        deadline = outer
-    token = _probe_deadline.set(deadline)
-    try:
-        yield
-    finally:
-        _probe_deadline.reset(token)
+    if register_heif_opener is not None:
+        register_heif_opener()
 
 
 def local_video_probe(value: Any) -> VideoProbe | None:
@@ -632,14 +610,15 @@ def check_video_codec(
         codec: The video stream's codec as ffprobe names it, from `local_video_probe`, such as "h264".
             None skips the check.
         subject: The input, from `input_subject`.
-        allowed: The codecs the provider accepts, such as ("h264", "hevc"). They may be written as
-            ffprobe names them or as providers do ("H.264", "HEVC", "AVC"); case doesn't matter.
+        allowed: The codecs the provider accepts, as ffprobe names them, such as ("h264", "hevc").
+            The names messages show ("H.264", "H.265") and "AVC" work too; case doesn't matter.
         docs_url: The provider's page documenting the limit.
 
     Raises:
         TypeError: If `allowed` is a single string rather than a sequence of codecs.
+        ValueError: If `allowed` names a codec this module doesn't know.
     """
-    return _codec_error(codec, kind="a video", example="h264", subject=subject, allowed=allowed, docs_url=docs_url)
+    return _codec_error(codec, subject=subject, allowed=allowed, docs_url=docs_url)
 
 
 def check_audio_codec(
@@ -651,15 +630,16 @@ def check_audio_codec(
         codec: The audio stream's codec as ffprobe names it, from `local_audio_probe`, such as "mp3".
             None skips the check.
         subject: The input, from `input_subject`.
-        allowed: The codecs the provider accepts, such as ("mp3", "aac"). They may be written as ffprobe
-            names them or as providers do ("MP3", "AAC-LC"); case doesn't matter. A profile such as
-            AAC-LC matches its codec, as the profile isn't checked.
+        allowed: The codecs the provider accepts, as ffprobe names them, such as ("mp3", "aac"). A WAV's
+            codec is a PCM one, such as "pcm_s16le". The names messages show ("MP3", "AC-3") work too;
+            case doesn't matter. A profile such as AAC-LC isn't checked, so list its codec, "aac".
         docs_url: The provider's page documenting the limit.
 
     Raises:
         TypeError: If `allowed` is a single string rather than a sequence of codecs.
+        ValueError: If `allowed` names a codec this module doesn't know.
     """
-    return _codec_error(codec, kind="an audio", example="mp3", subject=subject, allowed=allowed, docs_url=docs_url)
+    return _codec_error(codec, subject=subject, allowed=allowed, docs_url=docs_url)
 
 
 def check_duration(  # noqa: PLR0913
@@ -887,11 +867,13 @@ def video_errors(  # noqa: PLR0913
     Raises:
         ValueError: If only one of `widest` and `tallest` is given, or one isn't a ratio such as "16:9".
         TypeError: If `allowed_mime_types` or `allowed_codecs` is a single string.
+        ValueError: Also if `allowed_codecs` names a codec this module doesn't know.
     """
     _require_valid_aspect_ratio_bounds(widest, tallest)
     if exact_aspect_ratios:
         _require_valid_exact_ratios(exact_aspect_ratios)
     _require_mime_type_sequence(allowed_mime_types)
+    _require_known_codecs(allowed_codecs)
     errors: list[NodeError | None] = []
     if maximum_bytes is not None:
         errors.append(
@@ -1004,8 +986,10 @@ def audio_errors(  # noqa: PLR0913
 
     Raises:
         TypeError: If `allowed_mime_types` or `allowed_codecs` is a single string.
+        ValueError: If `allowed_codecs` names a codec this module doesn't know.
     """
     _require_mime_type_sequence(allowed_mime_types)
+    _require_known_codecs(allowed_codecs)
     errors: list[NodeError | None] = []
     if maximum_bytes is not None:
         errors.append(
@@ -1052,30 +1036,42 @@ def audio_errors(  # noqa: PLR0913
     return [error for error in errors if error]
 
 
-def _codec_error(  # noqa: PLR0913
-    codec: str | None, *, kind: str, example: str, subject: str, allowed: Sequence[str], docs_url: str | None
-) -> NodeError | None:
-    """`check_video_codec` and `check_audio_codec`: `kind` and `example` only shape the TypeError."""
+def _codec_error(codec: str | None, *, subject: str, allowed: Sequence[str], docs_url: str | None) -> NodeError | None:
+    """`check_video_codec` and `check_audio_codec`."""
+    accepted = _require_known_codecs(allowed)
+    # An empty list is no limit, as the combined checks treat it.
+    if codec is None or not accepted:
+        return None
+    if codec.strip().lower() in accepted:
+        return None
+    codecs = _join_or([_CODEC_NAMES[name] for name in accepted])
+    return _error(f"{subject} is encoded as {_codec_name(codec)}. Re-encode it as {codecs}.", docs_url)
+
+
+def _require_known_codecs(allowed: Sequence[str]) -> tuple[str, ...]:
+    """The ffprobe names of the codecs `allowed` lists, each once, in order.
+
+    Raises:
+        TypeError: If `allowed` is one string rather than a sequence of codecs.
+        ValueError: If a name isn't a codec this module knows.
+    """
     if isinstance(allowed, str):
         msg = (
-            f"Attempted to check {kind} codec. Failed because the allowed codecs were one string; "
-            f"pass a tuple such as ('{example}',)."
+            "Attempted to check a codec. Failed because the allowed codecs were one string; "
+            "pass a tuple such as ('h264',)."
         )
         raise TypeError(msg)
-    # An empty list is no limit, as the combined checks treat it.
-    if codec is None or not allowed:
-        return None
-    # A codec matches however a provider writes it ("H.264", "AVC", "h264"), so a refusal never asks
-    # for the input's own codec. Names that read the same are listed once.
-    if any(_codec_matches(codec, name) for name in allowed):
-        return None
-    shown = _codec_name(codec)
-    # Last guard: a refusal that would list the input's own codec, under any spelling not matched
-    # above, would contradict itself, so the codec is let through instead.
-    if any(_squash(_codec_name(name)) == _squash(shown) for name in allowed):
-        return None
-    codecs = _join_or(list(dict.fromkeys(_codec_name(name) for name in allowed)))
-    return _error(f"{subject} is encoded as {shown}. Re-encode it as {codecs}.", docs_url)
+    accepted: dict[str, None] = {}
+    for name in allowed:
+        canonical = _canonical_codec(name)
+        if canonical is None:
+            msg = (
+                f"Attempted to check a codec. Failed because {name!r} isn't a codec this module knows; "
+                "pass ffprobe's name for it, such as 'h264' or 'pcm_s16le'."
+            )
+            raise ValueError(msg)
+        accepted[canonical] = None
+    return tuple(accepted)
 
 
 def _audio_readings_of(allowed: Sequence[str]) -> tuple[str, ...]:
@@ -1382,7 +1378,7 @@ def _matroska_doctype(header: bytes) -> str | None:
 
 def _probe_timeout() -> float | None:
     """How long the next probe may take, or None when the current budget leaves no time for one."""
-    deadline = _probe_deadline.get()
+    deadline = probe_deadline()
     if deadline is None:
         return FFPROBE_TIMEOUT_SECONDS
     remaining = deadline - time.monotonic()
@@ -1476,9 +1472,10 @@ def _iso_audio_mime_type(brand: Any) -> str:
 
     A MOV stays a MOV, a 3GP reads as 3GP audio, and the rest reads as M4A.
     """
-    match _iso_media_mime_type(brand):
+    mime_type = _iso_media_mime_type(brand)
+    match mime_type:
         case "video/quicktime" | "image/heif" | "image/avif":
-            return _iso_media_mime_type(brand)
+            return mime_type
         case "video/3gpp":
             return "audio/3gpp"
         case "video/3gpp2":
@@ -1940,75 +1937,6 @@ _FORMAT_NAMES = {
 }
 
 
-# Other ways providers write a codec, mapped to ffprobe's name. Profiles such as AAC-LC are matched
-# as their codec; the checks don't read a profile, which refuses less.
-_CODEC_ALIASES = {
-    "avc": "h264",
-    "h264": "h264",
-    "x264": "h264",
-    "mpeg4avc": "h264",
-    "mpeg4part10": "h264",
-    "hevc": "hevc",
-    "h265": "hevc",
-    "x265": "hevc",
-    "aaclc": "aac",
-    "heaac": "aac",
-    "heaacv2": "aac",
-    "mpeg4aac": "aac",
-    "mpeg4": "mpeg4",
-    "mpeg4part2": "mpeg4",
-    "mpeg2": "mpeg2video",
-    "mp2": "mp2",
-    "ac3": "ac3",
-    "dolbydigital": "ac3",
-    "eac3": "eac3",
-    "dolbydigitalplus": "eac3",
-    "mjpeg": "mjpeg",
-    "motionjpeg": "mjpeg",
-    "applelossless": "alac",
-    "mpeg1audiolayer3": "mp3",
-    "mpeg1audiolayeriii": "mp3",
-    "mpegaudiolayer3": "mp3",
-    "mpeg1layer3": "mp3",
-    "mpeglayer3": "mp3",
-    "dnxhr": "dnxhd",
-    "pcm16": "pcm_s16le",
-    "pcmu": "pcm_mulaw",
-    "pcma": "pcm_alaw",
-    "mpegaudiolayeriii": "mp3",
-    "mpeg2audiolayeriii": "mp3",
-    "mpeg1layeriii": "mp3",
-    "amr": "amr_nb",
-    "amrnb": "amr_nb",
-    "amrwb": "amr_wb",
-    "speexwithheaderbyte": "speex",
-    "g711ulaw": "pcm_mulaw",
-    "g711mulaw": "pcm_mulaw",
-    "g711alaw": "pcm_alaw",
-    "mulaw": "pcm_mulaw",
-    "ulaw": "pcm_mulaw",
-    "alaw": "pcm_alaw",
-}
-
-# Words a provider writes for PCM without naming a bit depth or byte order. "PCM" and "WAV" accept any
-# PCM codec; the "linear" ones exclude companded PCM (G.711 mu-law and A-law), which isn't linear.
-_GENERIC_PCM_WORDS = frozenset({"pcm", "wav", "wave", "uncompressed"})
-_LINEAR_PCM_WORDS = frozenset({"lpcm", "linearpcm", "linear16", "linear32", "l16"})
-# ffprobe's prefixes for linear PCM: signed, unsigned and float samples.
-_LINEAR_PCM_PREFIXES = ("pcm_s", "pcm_u", "pcm_f")
-_LINEAR_PCM_PHRASE = re.compile(r"linear[\s_-]*pcm", re.IGNORECASE)
-_BIT_DEPTH = re.compile(r"\b(?:8|16|24|32)[\s-]*bits?\b", re.IGNORECASE)
-
-# What `_codecs_named` records for a generic PCM word, and for a linear-PCM one.
-_PCM = "pcm"
-_LINEAR_PCM = "linear pcm"
-
-# What separates the words of a codec name a provider writes, such as "AAC LC" or "H.264/AVC".
-_CODEC_WORD_SPLIT = re.compile(r"[\s/,()_]+")
-_NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]")
-# What separates the codecs of a list a provider writes in one string.
-_CODEC_LIST_SPLIT = re.compile(r",|;|\s+(?:or|and)\s+", re.IGNORECASE)
-
 # ffprobe's codec names that aren't the name an artist knows a codec by.
 _CODEC_NAMES = {
     "h264": "H.264",
@@ -2046,141 +1974,24 @@ _CODEC_NAMES = {
     "pcm_alaw": "G.711 A-law",
 }
 
+# A codec as messages show it, lowercased, mapped to ffprobe's name, so a library may write "H.264".
+_CODECS_BY_SHOWN_NAME = {shown.lower(): codec for codec, shown in _CODEC_NAMES.items()}
 
-def _codec_matches(codec: str, written: str) -> bool:
-    """Whether a codec name a provider wrote accepts the input's codec, from ffprobe.
-
-    Names are compared without case or punctuation, and a long name accepts every codec it mentions,
-    so "AAC LC", "H.264 (MPEG-4 AVC)", "Dolby Digital (AC-3)" and "Apple ProRes" accept the codec they
-    name. "MPEG-4" alone means MPEG-4 Part 2, but next to H.264 or HEVC it only qualifies that codec,
-    so it accepts nothing on its own there. Any PCM word ("PCM", "16-bit PCM", "WAV") accepts any PCM
-    codec, whatever its bit depth or byte order.
-    """
-    canonical = _canonical_codec(codec)
-    named = _codecs_named(written)
-    if canonical.startswith("pcm_") and _PCM in named:
-        return True
-    if canonical.startswith(_LINEAR_PCM_PREFIXES) and _LINEAR_PCM in named:
-        return True
-    return canonical in named
+# Other names a library may write for a codec, mapped to ffprobe's name.
+_CODEC_ALIASES = {"avc": "h264", "h265": "hevc"}
 
 
-def _codecs_named(written: str) -> set[str]:
-    """The codecs a name a provider wrote mentions, by their ffprobe names; `_PCM` for any PCM word.
-
-    A list in one string ("H.264, MPEG-4 Part 2", "H.264 or H.263") is read piece by piece, so each
-    piece names its own codec and "MPEG-4" in one piece isn't taken as a qualifier of H.264 in another.
-    """
-    pieces = [piece for piece in _CODEC_LIST_SPLIT.split(written) if piece.strip()]
-    if len(pieces) > 1:
-        return set().union(*(_codecs_named_in_one(piece) for piece in pieces))
-    return _codecs_named_in_one(written)
-
-
-def _codecs_named_in_one(written: str) -> set[str]:
-    """`_codecs_named` for one codec name, not a list."""
-    whole = _canonical_codec(written)
-    if _is_known_codec(whole):
-        return {whole}
-    # "G.711" alone names both its laws.
-    if _squash(written) == "g711":
-        return {"pcm_mulaw", "pcm_alaw"}
-    named = set()
-    # "Linear PCM" is one phrase; split, its word "PCM" would read as any PCM, companded included.
-    if _LINEAR_PCM_PHRASE.search(written):
-        named.add(_LINEAR_PCM)
-        written = _LINEAR_PCM_PHRASE.sub(" ", written)
-    named |= _codecs_named_by_words(written)
-    # "MPEG-4" beside H.264 or HEVC names its family, as in "H.264 (MPEG-4 AVC)", not MPEG-4 Part 2.
-    if named & {"h264", "hevc"}:
-        named.discard("mpeg4")
-    # A name that says linear PCM or gives a bit depth ("Linear PCM (WAV)", "16-bit PCM") means linear
-    # PCM, so a generic PCM word beside it doesn't widen it to companded PCM.
-    if _PCM in named and (_LINEAR_PCM in named or _BIT_DEPTH.search(written)):
-        named.discard(_PCM)
-        named.add(_LINEAR_PCM)
-    return named
-
-
-def _codecs_named_by_words(written: str) -> set[str]:
-    """The codecs the words of one codec name name, with `_PCM` and `_LINEAR_PCM` for PCM words."""
-    named = set()
-    for word in _CODEC_WORD_SPLIT.split(written.lower()):
-        if not word:
-            continue
-        squashed = _squash(word)
-        if squashed in _GENERIC_PCM_WORDS:
-            named.add(_PCM)
-            continue
-        if squashed in _LINEAR_PCM_WORDS:
-            named.add(_LINEAR_PCM)
-            continue
-        candidate = _canonical_codec(word)
-        if _is_known_codec(candidate):
-            named.add(candidate)
-        elif "-" in word:
-            # A hyphenated word that isn't one codec ("ogg-opus", as Deepgram and AWS write it) is
-            # read part by part. Whole names such as "AC-3" and "AAC-LC" matched above first.
-            named |= _codecs_named_by_hyphenated_parts(word.split("-"))
-    return named
-
-
-def _codecs_named_by_hyphenated_parts(parts: list[str]) -> set[str]:
-    """The codecs the parts of a hyphenated word name.
-
-    Two adjacent parts are joined first when together they name a codec, so Azure's "amr-wb-16000hz"
-    names AMR-WB, not AMR-NB.
-    """
-    parts = [part for part in parts if part]
-    named: set[str] = set()
-    index = 0
-    while index < len(parts):
-        if index + 1 < len(parts):
-            pair = parts[index] + parts[index + 1]
-            if _is_known_codec(_canonical_codec(pair)):
-                named |= _codecs_named_by_words(pair)
-                index += 2
-                continue
-        named |= _codecs_named_by_words(parts[index])
-        index += 1
-    return named
-
-
-def _is_known_codec(canonical: str) -> bool:
-    """Whether a canonical codec name is one this module knows by name."""
-    return canonical in _CODEC_NAMES or canonical in _CODEC_ALIASES.values()
-
-
-def _canonical_codec(name: str) -> str:
-    """A codec's ffprobe name, however it's written: "H.264", "AVC" and "h264" all give "h264"."""
-    squashed = _squash(name)
-    known = _CODEC_ALIASES.get(squashed)
-    if known is not None:
-        return known
-    for ffprobe_name, shown in _CODEC_NAMES.items():
-        if _squash(shown) == squashed or _squash(ffprobe_name) == squashed:
-            return ffprobe_name
-    return name.strip().lower()
-
-
-def _squash(name: str) -> str:
-    """A name without case, spaces or punctuation, so "AC-3", "ac3" and "AC 3" compare equal.
-
-    The micro sign and Greek mu read as "mu", so "μ-law" squashes to "mulaw" rather than "law".
-    """
-    return _NON_ALPHANUMERIC.sub("", name.lower().replace("μ", "mu").replace("µ", "mu"))
+def _canonical_codec(name: str) -> str | None:
+    """A codec's ffprobe name from the name a library wrote ("h264", "H.264" or "AVC"), or None if unknown."""
+    folded = name.strip().lower()
+    if folded in _CODEC_NAMES:
+        return folded
+    return _CODEC_ALIASES.get(folded) or _CODECS_BY_SHOWN_NAME.get(folded)
 
 
 def _codec_name(codec: str) -> str:
-    """A codec as a message shows it: ffprobe's "hevc", or "HEVC" as a provider writes it, reads "H.265"."""
-    known = _CODEC_NAMES.get(_canonical_codec(codec))
-    if known:
-        return known
-    # ffprobe writes codecs in lowercase ASCII ("vp9"); a name a provider wrote ("Apple ProRes",
-    # "μ-law") keeps its case.
-    if codec == codec.lower() and codec.isascii():
-        return codec.upper()
-    return codec
+    """A codec ffprobe read as a message shows it: "hevc" reads "H.265", and an unlisted "theora" "THEORA"."""
+    return _CODEC_NAMES.get(codec) or codec.upper()
 
 
 def _format_name(mime_type: str) -> str:
