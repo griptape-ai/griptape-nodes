@@ -1,7 +1,7 @@
 """A node's list parameters and their rows.
 
-A list nothing is connected to holds its items in rows, one child parameter per item, and has no value of
-its own: reading it builds it from the rows. Only a list fed by a connection to the list itself stores the
+A list nothing is connected to holds its items in rows, child parameters that each hold one item or a list
+of items, and has no value of its own: reading it builds it from the rows. Only a list fed by a connection to the list itself stores the
 whole list it was handed.
 """
 
@@ -115,6 +115,31 @@ class ListRows:
         self._replace(parameter, value)
         return True
 
+    def convert_and_validate(self, parameter: Parameter, value: Any) -> Any:
+        """Run `parameter`'s converters and validators on `value`, or on each item of a list a row adds."""
+        convert_and_validate = self._node._convert_and_validate
+        container = self._container_of(parameter)
+        if not isinstance(container, ParameterList) or not container.row_value_is_items(value):
+            return convert_and_validate(parameter, value)
+        return [convert_and_validate(parameter, item) for item in value]
+
+    def check_row_within_max_items(self, row: Parameter, value: Any, *, initial_setup: bool) -> None:
+        if initial_setup:
+            return
+        node = self._node
+        container = self._container_of(row)
+        if not isinstance(container, ParameterList) or container.max_items is None:
+            return
+        held_count = 0
+        for child in container.get_child_parameters():
+            child_value = value if child.name == row.name else node._get_raw_parameter_value(child.name)
+            held_count += len(_items_of_row(container, child_value))
+        if held_count <= container.max_items:
+            return
+        # Workers rebuild one row per item, so values over `max_items` cannot be restored.
+        msg = f"Attempted to set an item of list '{node.name}.{container.name}'. Failed because the list would hold {held_count} items, counting the items of any list in a row, and holds at most {container.max_items} items."
+        raise ValueError(msg)
+
     def row_removed(self, parameter_list: ParameterList, row: BaseNodeElement) -> None:
         """Drop a removed row's value, and tell the node its list changed."""
         self._node.parameter_values.pop(row.name, None)
@@ -134,7 +159,9 @@ class ListRows:
         self._notify(container)
 
     def _replace(self, parameter_list: ParameterList, items: Any) -> None:
-        """Replace the list's rows with one row per item, the way the editor fills a list.
+        """Replace the list's rows with one row per entry of `items`, the way the editor fills a list.
+
+        An entry that is itself a list of items fills one row, and counts as its items toward `max_items`.
 
         Each row is set through `set_parameter_value`, so the node's hooks fire for each one. If an item
         is rejected, the old rows are put back and the error is raised.
@@ -149,8 +176,9 @@ class ListRows:
             msg = f"Attempted to set list {list_label}. Failed because a list can only be set to a list, but got a value of type '{type(items).__name__}'."
             raise TypeError(msg)
         max_items = parameter_list.max_items
-        if max_items is not None and len(items) > max_items:
-            msg = f"Attempted to set list {list_label} to {len(items)} items. Failed because the list holds at most {max_items} items."
+        item_count = _item_count(parameter_list, items)
+        if max_items is not None and item_count > max_items:
+            msg = f"Attempted to set list {list_label} to {item_count} items, counting the items of any list in it. Failed because the list holds at most {max_items} items."
             raise ValueError(msg)
         old_rows = parameter_list.get_child_parameters()
         # Checked only when there are rows: on a worker the question goes to the orchestrator.
@@ -176,6 +204,11 @@ class ListRows:
             raise
         finally:
             self._being_replaced.discard(parameter_list.name)
+
+    def _container_of(self, parameter: Parameter) -> BaseNodeElement | None:
+        if parameter.parent_container_name is None:
+            return None
+        return self._node.get_parameter_by_name(parameter.parent_container_name)
 
     def _restore(self, parameter_list: ParameterList, rows: list[Parameter], values: dict[str, Any]) -> None:
         """Put back the rows `_replace` removed, with their values, and remove the ones it added."""
@@ -243,6 +276,18 @@ def handle_container_parameter(current_node: BaseNode, parameter: ParameterConta
         # would put a live object in it and send it to a worker as JSON. The node still sees objects:
         # its read resolves the whole list on the way out.
         value = current_node._get_raw_parameter_value(child.name)
-        if value is not None:
-            build_parameter_value.append(value)
+        build_parameter_value.extend(_items_of_row(parameter, value))
     return build_parameter_value
+
+
+def _item_count(parameter_list: ParameterList, entries: list[Any]) -> int:
+    """How many items the list holds with one row per entry."""
+    return sum(len(_items_of_row(parameter_list, entry)) for entry in entries)
+
+
+def _items_of_row(container: ParameterContainer, value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(container, ParameterList) and container.row_value_is_items(value):
+        return [item for item in value if item is not None]
+    return [value]
