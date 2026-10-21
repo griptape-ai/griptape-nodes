@@ -712,7 +712,7 @@ class TestImageErrors:
     def test_refuses_a_heic_photo_where_heif_is_not_allowed(self) -> None:
         heic = _data_uri(_rotated_jpeg_bytes(400, 200, 1, "HEIF"), "image/heic")
         errors = image_errors(heic, subject=SUBJECT, allowed_mime_types=("image/jpeg", "image/png"))
-        assert [str(e) for e in errors] == [f"{SUBJECT} is in HEIF format. Convert it to JPEG or PNG."]
+        assert [str(e) for e in errors] == [f"{SUBJECT} is in HEIC format. Convert it to JPEG or PNG."]
 
     def test_passes_a_strict_size_limit_through(self) -> None:
         image = _data_uri(_png_bytes(40, 30))
@@ -942,6 +942,20 @@ class TestVideoErrors:
         ]
         assert len(calls) == 1
 
+    def test_passes_a_shape_check_when_the_displayed_frame_fits(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 1440x1080 HDV with 4:3 pixels plays at 16:9.
+        probe = VideoProbe(info=ImageInfo(1440, 1080, None), seconds=5.0, display_info=ImageInfo(1920, 1080, None))
+        monkeypatch.setattr(input_checks, "local_video_probe", lambda _v: probe)
+        assert video_errors(str(clip), subject=SUBJECT, exact_aspect_ratios=("16:9",)) == []
+        assert video_errors(str(clip), subject=SUBJECT, widest="16:9", tallest="16:9") == []
+
+    def test_checks_pixel_limits_against_the_stored_frame(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        probe = VideoProbe(info=ImageInfo(1440, 1080, None), seconds=5.0, display_info=ImageInfo(1920, 1080, None))
+        monkeypatch.setattr(input_checks, "local_video_probe", lambda _v: probe)
+        assert video_errors(str(clip), subject=SUBJECT, max_side=1500) == []
+
 
 class TestCheckFrameRate:
     @pytest.mark.parametrize("fps", [24.0, 23.976, 30.0, 59.94, 60.0])
@@ -1033,7 +1047,8 @@ class TestVideoEncoding:
             ("matroska,webm", None, "vp9", "video/webm"),
             ("matroska,webm", None, "h264", "video/x-matroska"),
             ("avi", None, "mpeg4", "video/x-msvideo"),
-            ("something_new", None, "h264", None),
+            # A container ffprobe named but this module doesn't map is named after it, so it can be refused.
+            ("something_new", None, "h264", "video/x-something_new"),
         ],
     )
     def test_reads_the_container_from_the_file_not_its_name(
@@ -1139,6 +1154,56 @@ class TestVideoEncoding:
     def test_shows_a_provider_written_codec_name_as_written(self) -> None:
         error = check_video_codec("hevc", subject=SUBJECT, allowed=("Apple ProRes", "vp9"))
         assert str(error) == f"{SUBJECT} is encoded as H.265. Re-encode it as Apple ProRes or VP9."
+
+    @pytest.mark.parametrize(
+        ("demuxer", "expected"), [("mxf", "application/mxf"), ("dv", "video/dv"), ("ogg", "video/ogg")]
+    )
+    def test_names_more_video_containers(self, demuxer: str, expected: str) -> None:
+        data = {"format": {"format_name": demuxer}, "streams": [{"codec_name": "mpeg2video"}]}
+        assert input_checks._video_mime_type(data) == expected
+
+    def test_refuses_a_named_container_the_provider_doesnt_list(self) -> None:
+        error = check_mime_type("application/mxf", subject=SUBJECT, allowed=("video/mp4", "video/quicktime"))
+        assert str(error) == f"{SUBJECT} is in MXF format. Convert it to MP4 or MOV."
+
+    def test_reads_a_matroska_streams_duration_from_its_tag(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        clip = tmp_path / "clip.mkv"
+        clip.write_bytes(b"video")
+        answer = json.dumps(
+            {
+                "streams": [
+                    {"codec_name": "h264", "width": 320, "height": 240, "tags": {"DURATION": "00:00:03.023000000"}}
+                ],
+                "format": {"format_name": "matroska,webm", "duration": "10.0"},
+            }
+        )
+        monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: "/usr/bin/ffprobe")
+        monkeypatch.setattr(input_checks.subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout=answer))
+        probe = local_video_probe(str(clip))
+        assert probe is not None
+        assert probe.seconds == pytest.approx(3.023)
+        assert probe.container_seconds == 10.0
+
+    @pytest.mark.parametrize("tag", ["N/A", "", "1:2", "bad", "-00:00:01.0"])
+    def test_ignores_a_duration_tag_that_isnt_a_clock_time(self, tag: str) -> None:
+        assert input_checks._stream_seconds({"tags": {"DURATION": tag}}) is None
+
+    @pytest.mark.parametrize(
+        ("width", "height", "sar", "displayed"),
+        [(1440, 1080, "4:3", (1920, 1080)), (720, 480, "32:27", (853, 480))],
+    )
+    def test_reads_an_anamorphic_frames_displayed_shape(
+        self, width: int, height: int, sar: str, displayed: tuple[int, int]
+    ) -> None:
+        data = {"streams": [{"width": width, "height": height, "sample_aspect_ratio": sar}]}
+        assert input_checks._display_frame_size(data) == ImageInfo(*displayed, None)
+
+    @pytest.mark.parametrize("sar", ["1:1", "0:1", "N/A", None])
+    def test_has_no_displayed_shape_for_square_or_unknown_pixels(self, sar: str | None) -> None:
+        data = {"streams": [{"width": 1920, "height": 1080, "sample_aspect_ratio": sar}]}
+        assert input_checks._display_frame_size(data) is None
 
 
 class TestAudio:
@@ -1322,6 +1387,35 @@ class TestAudio:
     @pytest.mark.parametrize("written", ["AAC LC", "MPEG-4 AAC", "HE-AACv2", "AAC-LC"])
     def test_matches_aac_however_a_provider_writes_it(self, written: str) -> None:
         assert check_audio_codec("aac", subject=SUBJECT, allowed=(written,)) is None
+
+    def test_reads_a_matroska_audio_tracks_own_length(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A 3 s audio track in a 10 s MKV: ffprobe gives the track's length only as a DURATION tag.
+        self._answer(
+            monkeypatch,
+            {"codec_name": "aac", "tags": {"DURATION": "00:00:03.023000000"}},
+            {"format_name": "matroska,webm", "duration": "10.0"},
+        )
+        probe = local_audio_probe(str(clip))
+        assert probe is not None
+        assert probe.shortest_seconds == pytest.approx(3.023)
+
+    @pytest.mark.parametrize(
+        ("demuxer", "expected"),
+        [
+            ("asf", "audio/x-ms-wma"),
+            ("caf", "audio/x-caf"),
+            ("au", "audio/basic"),
+            ("ac3", "audio/ac3"),
+            ("tta", "audio/x-tta"),
+        ],
+    )
+    def test_names_more_audio_containers(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch, demuxer: str, expected: str
+    ) -> None:
+        self._answer(monkeypatch, {"codec_name": "wmav2", "duration": "1.0"}, {"format_name": demuxer})
+        probe = local_audio_probe(str(clip))
+        assert probe is not None
+        assert probe.mime_type == expected
 
 
 # Codec spellings real providers write, gathered over review; each must accept, or refuse, the codec.

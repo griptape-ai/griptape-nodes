@@ -68,7 +68,7 @@ from griptape_nodes.files.path_utils import is_url
 from griptape_nodes.utils.media_values import MediaKind, coerce_media_url_or_data_uri
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -261,6 +261,8 @@ class VideoProbe(NamedTuple):
     for a variable-frame-rate clip, so each frame-rate bound is checked against the easier of them.
     `mime_type` is the container, such as "video/mp4" or "video/quicktime", read from the file rather
     than its name, and `codec` the video stream's, as ffprobe names it, such as "h264" or "hevc".
+    `display_info` is the frame's shape as it plays when its pixels aren't square (anamorphic footage
+    such as 1440x1080 shown at 16:9), and None when they are, so `info` already gives the shape.
     Each part is None when ffprobe didn't report it.
     """
 
@@ -271,6 +273,7 @@ class VideoProbe(NamedTuple):
     nominal_fps: float | None = None
     mime_type: str | None = None
     codec: str | None = None
+    display_info: ImageInfo | None = None
 
     @property
     def shortest_seconds(self) -> float | None:
@@ -332,7 +335,7 @@ def local_video_probe(value: Any) -> VideoProbe | None:
     data = _run_ffprobe(value, ["-show_format", "-select_streams", "v:0", "-show_streams"], kind="video")
     if data is None:
         return None
-    stream_seconds = _seconds(_first_stream(data).get("duration"))
+    stream_seconds = _stream_seconds(_first_stream(data))
     container_seconds = _seconds(data.get("format", {}).get("duration"))
     seconds = stream_seconds
     if seconds is None:
@@ -345,6 +348,7 @@ def local_video_probe(value: Any) -> VideoProbe | None:
         nominal_fps=_nominal_frame_rate(data),
         mime_type=_video_mime_type(data),
         codec=_video_codec(data),
+        display_info=_display_frame_size(data),
     )
 
 
@@ -391,7 +395,7 @@ def local_audio_probe(value: Any) -> AudioProbe | None:
     stream = _first_stream(data)
     if not stream:
         return None
-    stream_seconds = _seconds(stream.get("duration"))
+    stream_seconds = _stream_seconds(stream)
     container_seconds = _seconds(data.get("format", {}).get("duration"))
     seconds = stream_seconds
     if seconds is None:
@@ -614,7 +618,8 @@ def _mime_type_error(
         return None
     # Names that differ but read the same, such as audio/wav and audio/x-wav, are listed once.
     formats = _join_or(list(dict.fromkeys(_format_name(name) for name in allowed)))
-    current = _format_name(mime_type)
+    # Pillow names every HEIC and HEIF photo image/heif; artists know a phone photo as HEIC.
+    current = _INPUT_FORMAT_NAMES.get(_canonical_mime_type(mime_type)) or _format_name(mime_type)
     return _error(f"{subject} is in {current} format. Convert it to {formats}.", docs_url)
 
 
@@ -913,8 +918,10 @@ def video_errors(  # noqa: PLR0913
     if probe is _PROBE_NOT_GIVEN:
         probe = local_video_probe(video)
     info = None
+    display_info = None
     if probe is not None:
         info = probe.info
+        display_info = probe.display_info
     errors.extend(
         _encoding_errors(
             probe,
@@ -946,6 +953,7 @@ def video_errors(  # noqa: PLR0913
             tallest=tallest,
             exact_aspect_ratios=exact_aspect_ratios,
             docs_url=docs_url,
+            display_info=display_info,
         )
     )
     # A variable-frame-rate clip's average and declared rates differ, and providers don't say which
@@ -1115,6 +1123,7 @@ def _frame_errors(  # noqa: PLR0913
     tallest: str | None,
     exact_aspect_ratios: Sequence[str],
     docs_url: str | None,
+    display_info: ImageInfo | None = None,
 ) -> list[NodeError | None]:
     """The pixel-size and shape checks `image_errors` and `video_errors` share, for those whose limits are given."""
     errors: list[NodeError | None] = []
@@ -1130,13 +1139,43 @@ def _frame_errors(  # noqa: PLR0913
                 docs_url=docs_url,
             )
         )
+    # Providers don't say whether they measure a frame's stored or displayed shape, so a shape check
+    # passes when either does, as the duration and frame-rate checks take the easier reading.
     if widest is not None and tallest is not None:
         errors.append(
-            check_aspect_ratio_range(info, subject=subject, widest=widest, tallest=tallest, docs_url=docs_url)
+            _easier_shape(
+                info,
+                display_info,
+                lambda size: check_aspect_ratio_range(
+                    size, subject=subject, widest=widest, tallest=tallest, docs_url=docs_url
+                ),
+            )
         )
     if exact_aspect_ratios:
-        errors.append(check_aspect_ratio_exact(info, subject=subject, ratios=exact_aspect_ratios, docs_url=docs_url))
+        errors.append(
+            _easier_shape(
+                info,
+                display_info,
+                lambda size: check_aspect_ratio_exact(
+                    size, subject=subject, ratios=exact_aspect_ratios, docs_url=docs_url
+                ),
+            )
+        )
     return errors
+
+
+def _easier_shape(
+    info: ImageInfo | None,
+    display_info: ImageInfo | None,
+    check: Callable[[ImageInfo | None], NodeError | None],
+) -> NodeError | None:
+    """A shape check's error for the stored frame, or None when the displayed frame passes it."""
+    error = check(info)
+    if error is None or display_info is None:
+        return error
+    if check(display_info) is None:
+        return None
+    return error
 
 
 def _duration_errors(  # noqa: PLR0913
@@ -1429,7 +1468,7 @@ def _audio_mime_type(data: dict[str, Any]) -> str | None:
         return _iso_audio_mime_type(format_info.get("tags", {}).get("major_brand"))
     if demuxer.startswith("matroska"):
         return _matroska_audio_mime_type(format_info, _stream_text(_first_stream(data), "codec_name"))
-    return _AUDIO_DEMUXER_MIME_TYPES.get(demuxer)
+    return _AUDIO_DEMUXER_MIME_TYPES.get(demuxer) or _unmapped_mime_type("audio", demuxer)
 
 
 def _iso_audio_mime_type(brand: Any) -> str:
@@ -1482,7 +1521,7 @@ def _video_mime_type(data: dict[str, Any]) -> str | None:
         if _is_webm(format_info, _video_codec(data), _WEBM_VIDEO_CODECS):
             return "video/webm"
         return "video/x-matroska"
-    return _DEMUXER_MIME_TYPES.get(demuxer)
+    return _DEMUXER_MIME_TYPES.get(demuxer) or _unmapped_mime_type("video", demuxer)
 
 
 def _is_webm(format_info: dict[str, Any], codec: str | None, webm_codecs: frozenset[str]) -> bool:
@@ -1491,6 +1530,15 @@ def _is_webm(format_info: dict[str, Any], codec: str | None, webm_codecs: frozen
     if doctype is not None:
         return doctype == "webm"
     return codec in webm_codecs
+
+
+def _unmapped_mime_type(kind: str, demuxer: str) -> str:
+    """A MIME type for a container ffprobe named but this module doesn't map, after its demuxer.
+
+    The probe read the file and named its format, so a format check refuses it rather than skipping
+    a format it has read, as `local_image_info` does for an image format Pillow has no type for.
+    """
+    return f"{kind}/x-{demuxer.split(',', 1)[0]}"
 
 
 def _iso_media_mime_type(brand: Any) -> str:
@@ -1526,6 +1574,38 @@ def _frame_size(data: dict[str, Any]) -> ImageInfo | None:
     if _is_quarter_turn(stream):
         return ImageInfo(width=height, height=width, mime_type=None)
     return ImageInfo(width=width, height=height, mime_type=None)
+
+
+def _display_frame_size(data: dict[str, Any]) -> ImageInfo | None:
+    """The frame's shape as it plays, when its pixels aren't square, or None when they are.
+
+    The width is scaled by the stream's sample aspect ratio, so 1440x1080 at 4:3 reads as 1920x1080.
+    Only shape checks use it; pixel-count limits apply to the stored frame.
+    """
+    stored = _frame_size(data)
+    if stored is None:
+        return None
+    sar = _parse_fraction(_first_stream(data).get("sample_aspect_ratio"))
+    if sar is None or sar == 1:
+        return None
+    stream = _first_stream(data)
+    if _is_quarter_turn(stream):
+        return ImageInfo(width=stored.width, height=round(stored.height * sar), mime_type=None)
+    return ImageInfo(width=round(stored.width * sar), height=stored.height, mime_type=None)
+
+
+def _parse_fraction(value: Any) -> float | None:
+    """An ffprobe "N:D" ratio as a positive number, or None when it's missing, "0:1" or "N/A"."""
+    if not isinstance(value, str):
+        return None
+    numerator, _, denominator = value.partition(":")
+    try:
+        ratio = float(numerator) / float(denominator)
+    except (ValueError, ZeroDivisionError):
+        return None
+    if not math.isfinite(ratio) or ratio <= 0:
+        return None
+    return ratio
 
 
 def _is_quarter_turn(stream: dict[str, Any]) -> bool:
@@ -1612,6 +1692,37 @@ def _whole_number(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _stream_seconds(stream: dict[str, Any]) -> float | None:
+    """A stream's duration in ffprobe's JSON, or None.
+
+    Matroska and WebM give a stream's length only as a "HH:MM:SS.nnnnnnnnn" DURATION tag, with
+    `duration` missing, so the tag is read when the field isn't there.
+    """
+    seconds = _seconds(stream.get("duration"))
+    if seconds is not None:
+        return seconds
+    tags = stream.get("tags")
+    if not isinstance(tags, dict):
+        return None
+    return _clock_seconds(tags.get("DURATION"))
+
+
+def _clock_seconds(value: Any) -> float | None:
+    """A "HH:MM:SS.fraction" duration as seconds, or None when it isn't one."""
+    # A sign would be lost in the hours ("-00" reads as 0), so a signed time isn't a duration.
+    if not isinstance(value, str) or value.strip().startswith(("-", "+")):
+        return None
+    hours, _, rest = value.partition(":")
+    minutes, _, secs = rest.partition(":")
+    try:
+        seconds = int(hours) * 3600 + int(minutes) * 60 + float(secs)
+    except ValueError:
+        return None
+    if not math.isfinite(seconds) or seconds < 0:
+        return None
+    return seconds
 
 
 def _seconds(value: Any) -> float | None:
@@ -1716,6 +1827,12 @@ _VIDEO_TO_AUDIO_CONTAINER = {
 
 # ffprobe demuxer names for audio containers that name one format each.
 _AUDIO_DEMUXER_MIME_TYPES = {
+    "asf": "audio/x-ms-wma",
+    "caf": "audio/x-caf",
+    "au": "audio/basic",
+    "ac3": "audio/ac3",
+    "avi": "video/x-msvideo",
+    "mpegts": "video/mp2t",
     "mp3": "audio/mpeg",
     "wav": "audio/wav",
     "flac": "audio/flac",
@@ -1727,6 +1844,9 @@ _AUDIO_DEMUXER_MIME_TYPES = {
 
 # ffprobe demuxer names for containers that name one format each.
 _DEMUXER_MIME_TYPES = {
+    "ogg": "video/ogg",
+    "mxf": "application/mxf",
+    "dv": "video/dv",
     "avi": "video/x-msvideo",
     "flv": "video/x-flv",
     "mpegts": "video/mp2t",
@@ -1734,6 +1854,9 @@ _DEMUXER_MIME_TYPES = {
     "asf": "video/x-ms-wmv",
     "gif": "image/gif",
 }
+
+# How a message names the input's own format where that differs from how a provider's list reads.
+_INPUT_FORMAT_NAMES = {"image/heif": "HEIC"}
 
 # Formats whose MIME subtype isn't the name an artist knows them by.
 _FORMAT_NAMES = {
@@ -1763,6 +1886,13 @@ _FORMAT_NAMES = {
     "audio/mp4a-latm": "M4A",
     "audio/x-mp4": "M4A",
     "audio/x-matroska": "MKA",
+    "audio/x-ms-wma": "WMA",
+    "audio/x-caf": "CAF",
+    "audio/basic": "AU",
+    "audio/ac3": "AC-3",
+    "application/mxf": "MXF",
+    "video/dv": "DV",
+    "video/ogg": "OGG",
     "audio/3gpp": "3GP",
     "audio/3gpp2": "3G2",
     "video/webm": "WebM",
