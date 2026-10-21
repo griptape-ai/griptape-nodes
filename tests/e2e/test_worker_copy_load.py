@@ -505,6 +505,18 @@ class TestListsReachTheNodeAsTheOrchestratorHoldsThem:
 
         assert result.parameter_output_values["echo"] == ["a", "b"]
 
+    @pytest.mark.usefixtures("worker")
+    @pytest.mark.asyncio
+    async def test_a_row_holding_a_list(self) -> None:
+        """A row that holds a list adds its items, on the copy as on the orchestrator."""
+        node = _create("ReadsAnInputListNode", "Nested")
+        _set("Nested", "items", [["a", "b"], "c"])
+        assert node.get_parameter_list_value("items") == ["a", "b", "c"]
+
+        result = await _run_successfully(node)
+
+        assert result.parameter_output_values["echo"] == ["a", "b", "c"]
+
     @pytest.mark.parametrize(
         ("node_type", "description"),
         [("ReadsAnInputListNode", "within its rows"), ("ReadsABoundedListNode", "past its max_items")],
