@@ -100,9 +100,10 @@ FRAME_RATE_TOLERANCE = 0.01
 # size, duration, frame rate) are skipped.
 FFPROBE_TIMEOUT_SECONDS = 2
 
-# The most one validation run spends probing videos, across all of a node's inputs. The engine
-# opens one `input_check_budget` around each node's `validate_before_node_run`; once it's spent,
-# the remaining videos are skipped rather than probed, so several slow probes can't add up.
+# How long after a node's validation starts it may still probe videos. The engine opens one
+# `input_check_budget` around each node's `validate_before_node_run`; once this much time has
+# passed, the remaining videos are skipped rather than probed, so several slow probes can't add up.
+# It counts all of the validation's time, not only probing.
 VALIDATION_PROBE_BUDGET_SECONDS = 5
 
 # When the current validation run's probe budget runs out, as a `time.monotonic()` reading, or None
@@ -271,12 +272,13 @@ _PROBE_NOT_GIVEN = VideoProbe(info=None, seconds=None)
 
 @contextmanager
 def input_check_budget(seconds: float = VALIDATION_PROBE_BUDGET_SECONDS) -> Iterator[None]:
-    """Cap the time the video probes inside this block spend, together, at `seconds`.
+    """Stop the video probes inside this block once `seconds` have passed since it opened.
 
     The engine opens one around each node's `validate_before_node_run`, so a node checking several
-    videos blocks the event loop for at most `seconds` in all. Inside it, each probe gets the
-    smaller of `FFPROBE_TIMEOUT_SECONDS` and the time left, and a probe that would start with no
-    time left is skipped. Opened inside another budget, it can shorten the time left but never
+    videos probes for at most `seconds` in all. The time counts from when the block opens, so it
+    includes any other checks the node runs first. Inside it, each probe gets the smaller of
+    `FFPROBE_TIMEOUT_SECONDS` and the time left, and a probe that would start with no time left is
+    skipped. Opened inside another budget, it can shorten the time left but never
     extend it.
     """
     deadline = time.monotonic() + seconds

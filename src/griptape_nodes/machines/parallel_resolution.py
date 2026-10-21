@@ -721,7 +721,7 @@ class ExecuteDagState(State):
             # Clear all of the current output values but don't broadcast the clearing.
             # to avoid any flickering in subscribers (UI).
             node_reference.node_reference.parameter_output_values.silent_clear()
-            # Caps the time the node's input checks spend probing videos, which blocks this loop.
+            # Stops the node's input checks probing videos, which blocks this loop, after a few seconds.
             with input_check_budget():
                 exceptions = node_reference.node_reference.validate_before_node_run()
             if exceptions:
