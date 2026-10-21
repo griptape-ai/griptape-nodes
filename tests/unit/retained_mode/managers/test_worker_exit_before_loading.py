@@ -45,7 +45,7 @@ class _FakeProc:
 def _worker_manager() -> WorkerManager:
     engine = MagicMock()
     engine.get_session_id.return_value = "sess-abc"
-    engine.config_manager.get_config_value.side_effect = lambda _key, default, cast_type=None: (
+    engine.config_manager.get_config_value.side_effect = lambda _key, default=None, cast_type=None, **_kwargs: (
         default if cast_type is None else cast_type(default)
     )
     engine.project_manager.get_pre_project_environ.return_value = {}

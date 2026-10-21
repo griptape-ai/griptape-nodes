@@ -205,6 +205,14 @@ GTN_CONFIG_DISCOVERY_MAX_DEPTH=20 gtn   # scan deeper-nested layouts
 
 A value of `0` scans only the top-level directory (no subdirectories).
 
+## Queueing Runs
+
+This is a beta feature. Turn on **Queue runs** on the Beta settings page. Without it, starting a run while another is in progress is refused. With it, the new run waits for the one in progress to finish, then starts. A run is what one click starts: running a workflow, a subflow, or a single node. Runs wait in the order they were started.
+
+Cancelling a flow whose run is waiting removes that run from the line without starting it, and leaves the run in progress alone.
+
+On a machine that also runs nodes for other workstations, as described in the next section, its own runs and theirs wait in the same line.
+
 ## Running a Library's Nodes on Another Machine
 
 This is a beta feature. Turn on **Distributed execution** on the Beta settings page on both machines: the artist's workstation and the machine that runs the nodes, such as a shared GPU machine. Then, on the workstation, assign each library to the machine that runs it with `distributed_execution.libraries`, a map of library name to that machine's engine ID:
@@ -239,6 +247,25 @@ An engine keeps its ID across restarts, so the other machine can move to a new a
 Both machines must run the same engine version and the same version of each assigned library, and see the same workspace. A node from a library the other machine refuses, or cannot reach, fails with the reason, such as the two versions that differ. Its worker on the other machine runs under the workstation's Griptape Nodes license, and asks the workstation for secrets.
 
 Library names are case-sensitive, so set this in a `griptape_nodes_config.json` file rather than an environment variable, whose name is lowercased before it becomes a config key.
+
+### Sharing a Machine Between Artists
+
+A machine running nodes for several workstations runs one artist's run at a time. A run is what one click starts: running a workflow, a subflow, or a single node. While one artist's run has the machine, another artist's nodes wait, and their editor is told their place in line. The run keeps the machine until it finishes, until `distributed_execution.idle_timeout_s` passes with none of its nodes running there (300 seconds by default), or until its workstation goes away, which the machine notices when the workstation's workers stop hearing from it.
+
+When the machine passes from one artist to another, it frees what the previous artist left loaded, as `distributed_execution.release` on that machine says:
+
+| `which`            | Frees                                                                          |
+| ------------------ | ------------------------------------------------------------------------------ |
+| `others` (default) | Every other artist's workers, so the incoming artist's own models stay loaded. |
+| `all`              | Every worker, the incoming artist's included.                                  |
+| `none`             | Nothing, for a machine dedicated to one pipeline.                              |
+
+| `how`                  | What freeing does                                                                                                             |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `drop_cache` (default) | Each worker drops what its libraries keep across runs, such as a loaded model, which the artist's next run there loads again. |
+| `recycle`              | Each worker is stopped, and started again the next time one of its nodes runs. The only guaranteed reset.                     |
+
+`distributed_execution.max_workers` caps how many workers the machine runs at once. A workstation needing another worker beyond it is refused, and its node fails with the reason.
 
 ## Workspace Directory
 

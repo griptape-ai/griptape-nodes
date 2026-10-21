@@ -247,6 +247,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointSubjectType,
 )
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+from griptape_nodes.retained_mode.managers.run_manager import runs_as_one_run
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands, encode_commands
@@ -3195,7 +3196,14 @@ class NodeManager(EngineScoped):
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
+    def parent_flow_name_or_none(self, node_name: str | None) -> str | None:
+        """The flow that holds `node_name`, or None if there is no such node."""
+        if node_name is None:
+            return None
+        return self._name_to_parent_flow_name.get(node_name)
+
     @handles(ResolveNodeRequest)
+    @runs_as_one_run(ResolveNodeResultFailure, lambda self, request: self.parent_flow_name_or_none(request.node_name))
     async def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         node_name = request.node_name
         debug_mode = request.debug_mode
@@ -3331,15 +3339,14 @@ class NodeManager(EngineScoped):
             #
             # The wait comes first: a worker is routable the moment it registers but loads its
             # library after, and forwarding into that window fails node creation over there.
-            try:
-                if library_name:
-                    await self.engine.worker_manager.wait_until_executable(library_name)
-                worker = library_manager.workers.get_worker_for_library(library_name) if library_name else None
-            except RuntimeError as err:
-                return ExecuteNodeResultFailure(result_details=str(err), exception=err)
+            #
+            # A worker on another machine also waits for that machine to admit the node, and is
+            # picked only after: the machine may stop it while the node waits, and the second
+            # wait starts it again.
             wm = self.engine.worker_manager
-            if wm is not None and worker is not None:
-                return await self._execute_node_via_worker(request, wm, worker)
+            in_library_worker = await self._execute_node_in_library_worker(request, wm, library_name)
+            if in_library_worker is not None:
+                return in_library_worker
             # A library's own worker comes first: that is where its dependencies are installed. Only a
             # node that would otherwise run here moves to the worker its Isolated Execution names.
             #
@@ -3479,6 +3486,28 @@ class NodeManager(EngineScoped):
         if library_info.lifecycle_state is LibraryManager.LibraryLifecycleState.LOADED:
             return None
         return library_manager.catalog.get_collated_problems_for_library(library_name)
+
+    async def _execute_node_in_library_worker(
+        self, request: ExecuteNodeRequest, wm: WorkerManager, library_name: str | None
+    ) -> ResultPayload | None:
+        """Run the node in its library's worker, here or on another machine, or None if it has none."""
+        library_manager = self.engine.library_manager
+        admission = None
+        try:
+            try:
+                if library_name:
+                    await wm.wait_until_executable(library_name)
+                    admission = await wm.admit_on_machine(library_name, request.node_name)
+                    await wm.wait_until_executable(library_name)
+                worker = library_manager.workers.get_worker_for_library(library_name) if library_name else None
+            except RuntimeError as err:
+                return ExecuteNodeResultFailure(result_details=str(err), exception=err)
+            if wm is not None and worker is not None:
+                return await self._execute_node_via_worker(request, wm, worker)
+            return None
+        finally:
+            if admission is not None:
+                await wm.end_admission(admission)
 
     async def _execute_node_in_isolated_execution_worker(
         self, request: ExecuteNodeRequest, wm: WorkerManager, scope: IsolatedExecutionScope

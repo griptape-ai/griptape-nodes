@@ -177,6 +177,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.file_metadata.workflow_metadata import FLOW_COMMANDS_KEY
+from griptape_nodes.retained_mode.managers.run_manager import runs_as_one_run
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 from griptape_nodes.retained_mode.managers.workflow.shape import (
     build_workflow_shape_from_parameter_info,
@@ -2775,6 +2776,7 @@ class FlowManager(EngineScoped):
         return f"{prefix}{sanitized_node_name}_{parameter_name}"
 
     @handles(StartFlowRequest)
+    @runs_as_one_run(StartFlowResultFailure, lambda self, request: self.flow_name_to_start(request.flow_name))
     async def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         # which flow
         flow_name = request.flow_name
@@ -2866,6 +2868,10 @@ class FlowManager(EngineScoped):
         return StartFlowResultSuccess(result_details=details)
 
     @handles(StartFlowFromNodeRequest)
+    @runs_as_one_run(
+        StartFlowFromNodeResultFailure,
+        lambda self, request: request.flow_name or self.engine.node_manager.parent_flow_name_or_none(request.node_name),
+    )
     async def on_start_flow_from_node_request(self, request: StartFlowFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         # Resolve the node first, falling back to the current-context node when node_name is
         # omitted. flow_name on this request is deprecated; when not supplied we derive it
@@ -3160,6 +3166,14 @@ class FlowManager(EngineScoped):
             result_details=details,
         )
 
+    def flow_name_to_start(self, flow_name: str | None) -> str | None:
+        """The flow a run request names, or the current-context flow it falls back to, or None."""
+        if flow_name:
+            return flow_name
+        if self.engine.context_manager.has_current_flow():
+            return self.engine.context_manager.get_current_flow().name
+        return None
+
     @handles(CancelFlowRequest)
     async def on_cancel_flow_request(self, request: CancelFlowRequest) -> ResultPayload:
         flow_name = request.flow_name
@@ -3173,6 +3187,12 @@ class FlowManager(EngineScoped):
             details = f"Could not cancel flow execution. Error: {err}"
 
             return CancelFlowResultFailure(result_details=details)
+        # A run of this flow waiting in the run queue never started, so cancelling it only removes it
+        # from the line, and leaves alone the run that is executing, which may be another flow's.
+        removed = self.engine.run_manager.cancel_waiting_runs(flow_name)
+        if removed and not self._is_running(flow_name):
+            details = f"Removed {removed} waiting run(s) of flow {flow_name} before they started."
+            return CancelFlowResultSuccess(result_details=details)
         try:
             await self.cancel_flow_run()
         except Exception as e:
@@ -4663,6 +4683,10 @@ class FlowManager(EngineScoped):
             return decode_commands(data, SerializedFlowCommands)
         except CommandsFormatError as error:
             raise ImageFlowCommandsError(str(error)) from error
+
+    def _is_running(self, flow_name: str) -> bool:
+        machine = self._global_control_flow_machine
+        return self.check_for_existing_running_flow() and machine is not None and machine.context.flow_name == flow_name
 
     def check_for_existing_running_flow(self) -> bool:
         if self._global_control_flow_machine is None:
