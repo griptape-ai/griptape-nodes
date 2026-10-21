@@ -1490,19 +1490,11 @@ class NodeManager(EngineScoped):
                         )
                         return DeleteNodeResultFailure(result_details=details)
 
-        # Every kind of group has to give up a node being deleted, not just a SubflowNodeGroup:
-        # a group that keeps naming a deleted child reports it as involved in the next run.
-        if isinstance(node.parent_group, BaseNodeGroup):
-            node.parent_group.delete_nodes_from_group([node])
-
-        parent_flow.remove_node(node.name)
-
         for key in releasable_handle_keys:
             node.local_objects.release_parked(key)
 
         # Now remove the record keeping
-        self.engine.object_manager.del_obj_by_name(node_name)
-        del self._name_to_parent_flow_name[node_name]
+        self._forget_node(node, parent_flow)
 
         # If we were part of the Current Context, pop it.
         if request.node_name is None:
@@ -1519,6 +1511,21 @@ class NodeManager(EngineScoped):
                 f"was still waiting on it."
             )
         return DeleteNodeResultSuccess(result_details=details)
+
+    def _forget_node(self, node: BaseNode, parent_flow: ControlFlow) -> None:
+        """Remove `node` from its group, its flow and the records.
+
+        The part of deleting a node that discarding a worker's copy shares.
+        """
+        # Every kind of group has to give up a node being deleted, not just a SubflowNodeGroup:
+        # a group that keeps naming a deleted child reports it as involved in the next run.
+        if isinstance(node.parent_group, BaseNodeGroup):
+            node.parent_group.delete_nodes_from_group([node])
+
+        parent_flow.remove_node(node.name)
+
+        self.engine.object_manager.del_obj_by_name(node.name)
+        del self._name_to_parent_flow_name[node.name]
 
     @handles(MoveNodeToNewFlowRequest)
     def on_move_node_to_new_flow_request(self, request: MoveNodeToNewFlowRequest) -> ResultPayload:  # noqa: PLR0911
@@ -3671,11 +3678,9 @@ class NodeManager(EngineScoped):
         flow = self.engine.object_manager.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         if flow is None:
             return
-        for node_name in list(flow.nodes):
-            flow.remove_node(node_name)
-            self.engine.object_manager.del_obj_by_name(node_name)
-            del self._name_to_parent_flow_name[node_name]
-        self.engine.flow_manager.forget_empty_flow(flow_name)
+        for node in list(flow.nodes.values()):
+            self._forget_node(node, flow)
+        self.engine.flow_manager.forget_empty_flow(flow)
 
     def _local_library_load_failure(self, library_name: str | None) -> str | None:
         """What THIS process recorded about failing to load ``library_name``, if anything.

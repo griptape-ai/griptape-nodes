@@ -169,7 +169,7 @@ class WorkflowNotAlteredMixin:
 
 
 class GraphAccessMixin:
-    """Marks a request that reads or changes connections, flows, or flow variables.
+    """Marks a request that reads or changes connections, flows, flow variables, or node group membership.
 
     A node must not send one while it is being created or having its saved state applied (strict-mode
     rule ``graph-access-while-loading``): the graph around a loading node is incomplete, so the answer

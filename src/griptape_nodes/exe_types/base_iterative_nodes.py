@@ -115,6 +115,9 @@ class BaseIterativeStartNode(BaseNode):
     state tracking, and validation logic used by iterative loop start nodes.
     """
 
+    # Mirrors the loop's tethering connection, and is set again from it whenever that connection is made.
+    attributes_outside_parameters = frozenset({"end_node"})
+
     end_node: BaseIterativeEndNode | None = None
     exec_out: ControlParameterOutput
     _current_iteration_count: int
@@ -597,6 +600,9 @@ class BaseIterativeEndNode(BaseNode):
     This class consolidates all shared signal logic, connection management,
     conditional evaluation, and result accumulation logic used by iterative loop end nodes.
     """
+
+    # Mirrors the loop's tethering connection, and is set again from it whenever that connection is made.
+    attributes_outside_parameters = frozenset({"start_node"})
 
     start_node: BaseIterativeStartNode | None = None
 

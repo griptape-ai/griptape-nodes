@@ -5,12 +5,24 @@ End-to-end behavior, through real nodes loaded in- and out of process, is in tes
 
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING
 
 import pytest
 
 from griptape_nodes.common.strict_mode import STRICT_MODE, StrictModeScopeKind
 from griptape_nodes.exe_types.node_loading import node_loading
+from griptape_nodes.retained_mode.events import (
+    connection_events,
+    context_events,
+    execution_events,
+    flow_events,
+    node_events,
+    parameter_events,
+    validation_events,
+    variable_events,
+)
+from griptape_nodes.retained_mode.events.base_events import GraphAccessMixin, RequestPayload
 from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
@@ -22,10 +34,57 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 if TYPE_CHECKING:
+    from types import ModuleType
+
     from griptape_nodes.common.strict_mode import StrictModeScope
-    from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
+    from griptape_nodes.retained_mode.events.base_events import ResultPayload
 
 LOADING = "Loading Node"
+
+# Every request in these modules is about the graph.
+GRAPH_MODULES = (connection_events, flow_events, variable_events)
+
+GRAPH_REQUESTS_ELSEWHERE = (
+    context_events.EnsureWorkflowAndFlowRequest,
+    execution_events.CancelFlowRequest,
+    execution_events.ContinueExecutionStepRequest,
+    execution_events.GetFlowStateRequest,
+    execution_events.GetIsFlowRunningRequest,
+    execution_events.ResolveNodeRequest,
+    execution_events.SingleExecutionStepRequest,
+    execution_events.SingleNodeStepRequest,
+    execution_events.StartFlowFromNodeRequest,
+    execution_events.StartFlowRequest,
+    execution_events.StartLocalSubflowRequest,
+    execution_events.UnresolveFlowRequest,
+    node_events.AddNodesToNodeGroupRequest,
+    node_events.DeleteNodeRequest,
+    node_events.DeserializeSelectedNodesFromCommandsRequest,
+    node_events.DuplicateSelectedNodesRequest,
+    node_events.GetAllNodeInfoRequest,
+    node_events.GetFlowForNodeRequest,
+    node_events.MoveNodeToNewFlowRequest,
+    node_events.RemoveNodeFromNodeGroupRequest,
+    node_events.SerializeSelectedNodesToCommandsRequest,
+    node_events.UnresolveNodeRequest,
+    parameter_events.GetConnectionsForParameterRequest,
+    parameter_events.RemoveParameterFromNodeRequest,
+    validation_events.ValidateFlowDependenciesRequest,
+)
+
+
+def _requests_defined_in(module: ModuleType) -> list[type[RequestPayload]]:
+    return [
+        member
+        for _, member in inspect.getmembers(module, inspect.isclass)
+        if issubclass(member, RequestPayload) and member is not RequestPayload and member.__module__ == module.__name__
+    ]
+
+
+GRAPH_REQUESTS = sorted(
+    {*GRAPH_REQUESTS_ELSEWHERE, *(request for module in GRAPH_MODULES for request in _requests_defined_in(module))},
+    key=lambda request: request.__name__,
+)
 
 
 def _answering(event_manager: EventManager) -> EventManager:
@@ -114,3 +173,9 @@ class TestGraphAccessWhileLoading:
             event_manager.handle_request(ListConnectionsForNodeRequest(node_name=LOADING))
 
         assert scope.violations == []
+
+
+class TestGraphRequestsAreMarked:
+    @pytest.mark.parametrize("request_type", GRAPH_REQUESTS, ids=lambda request_type: request_type.__name__)
+    def test_every_graph_request_carries_the_marker(self, request_type: type[RequestPayload]) -> None:
+        assert issubclass(request_type, GraphAccessMixin)

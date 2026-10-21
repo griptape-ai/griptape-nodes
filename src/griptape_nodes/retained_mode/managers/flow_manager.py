@@ -784,12 +784,7 @@ class FlowManager(EngineScoped):
 
             # If we've made it this far, we have deleted all the children Flows and their nodes.
             # Remove the flow from our map.
-            obj_mgr.del_obj_by_name(flow.name)
-            del self._name_to_parent_name[flow.name]
-
-            # Clean up referenced workflow tracking
-            if flow in self._flow_to_referenced_workflow_name:
-                del self._flow_to_referenced_workflow_name[flow]
+            self.forget_empty_flow(flow)
 
             # Clean up ControlFlowMachine and DAG orchestrator only if this is the global flow.
             # Isolated subflows have their own machines and should not clear the global state.
@@ -804,13 +799,18 @@ class FlowManager(EngineScoped):
         result = DeleteFlowResultSuccess(result_details=details)
         return result
 
-    def forget_empty_flow(self, flow_name: str) -> None:
-        """Drop an empty flow from the records, for a worker discarding the flow its copy of a node used.
+    def forget_empty_flow(self, flow: ControlFlow) -> None:
+        """Drop an empty flow from the records.
 
-        Not a delete: ``DeleteFlowRequest`` deletes the flow's nodes as well, which releases what they cached.
+        The part of deleting a flow that a worker discarding its copy's flow shares. Not a delete:
+        ``DeleteFlowRequest`` deletes the flow's nodes as well, which releases what they cached.
         """
-        self.engine.object_manager.del_obj_by_name(flow_name)
-        del self._name_to_parent_name[flow_name]
+        self.engine.object_manager.del_obj_by_name(flow.name)
+        del self._name_to_parent_name[flow.name]
+
+        # Clean up referenced workflow tracking
+        if flow in self._flow_to_referenced_workflow_name:
+            del self._flow_to_referenced_workflow_name[flow]
 
     @handles(GetIsFlowRunningRequest)
     def on_get_is_flow_running_request(self, request: GetIsFlowRunningRequest) -> ResultPayload:

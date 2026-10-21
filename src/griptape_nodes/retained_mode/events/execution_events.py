@@ -3,6 +3,7 @@ from typing import Required, TypedDict
 
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
+    GraphAccessMixin,
     RequestPayload,
     ResultDetails,
     ResultPayloadFailure,
@@ -20,7 +21,7 @@ from griptape_nodes.serialization.values import DisplayValue, Value
 
 @dataclass
 @PayloadRegistry.register
-class ResolveNodeRequest(RequestPayload):
+class ResolveNodeRequest(RequestPayload, GraphAccessMixin):
     """Resolve (execute) a specific node.
 
     Use when: Running individual nodes, testing node execution, debugging workflows,
@@ -57,7 +58,7 @@ class ResolveNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class StartFlowRequest(RequestPayload):
+class StartFlowRequest(RequestPayload, GraphAccessMixin):
     """Start executing a flow.
 
     Use when: Running workflows, beginning automated execution, testing complete flows.
@@ -102,7 +103,7 @@ class StartFlowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class StartLocalSubflowRequest(RequestPayload):
+class StartLocalSubflowRequest(RequestPayload, GraphAccessMixin):
     """Start an independent local subflow that runs concurrently with the main flow.
 
     Use when: Running loop iterations or other independent subflows that need their own
@@ -137,7 +138,7 @@ class StartLocalSubflowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class StartFlowFromNodeRequest(RequestPayload):
+class StartFlowFromNodeRequest(RequestPayload, GraphAccessMixin):
     """Start executing a flow from a specific node.
 
     Use when: Resuming execution from a particular node, debugging specific parts of a flow,
@@ -178,7 +179,7 @@ class StartFlowFromNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class CancelFlowRequest(RequestPayload):
+class CancelFlowRequest(RequestPayload, GraphAccessMixin):
     """Cancel a running flow execution.
 
     Use when: Stopping long-running workflows, handling user cancellation,
@@ -209,7 +210,7 @@ class CancelFlowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class UnresolveFlowRequest(RequestPayload):
+class UnresolveFlowRequest(RequestPayload, GraphAccessMixin):
     """Reset every node in a flow back to unresolved.
 
     Use when: Clearing cached results so the next run re-executes every node.
@@ -244,7 +245,7 @@ class UnresolveFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 # Step In: Execute one resolving step at a time (per parameter)
 @dataclass
 @PayloadRegistry.register
-class SingleExecutionStepRequest(RequestPayload):
+class SingleExecutionStepRequest(RequestPayload, GraphAccessMixin):
     # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
     flow_name: str | None = None
 
@@ -263,7 +264,7 @@ class SingleExecutionStepResultFailure(ResultPayloadFailure):
 # Step Over: Execute one node at a time (execute whole node and move on) IS THIS CONTROL NODE OR ANY NODE?
 @dataclass
 @PayloadRegistry.register
-class SingleNodeStepRequest(RequestPayload):
+class SingleNodeStepRequest(RequestPayload, GraphAccessMixin):
     # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
     flow_name: str | None = None
 
@@ -283,7 +284,7 @@ class SingleNodeStepResultFailure(ResolveNodeResultFailure):
 # Continue
 @dataclass
 @PayloadRegistry.register
-class ContinueExecutionStepRequest(RequestPayload):
+class ContinueExecutionStepRequest(RequestPayload, GraphAccessMixin):
     # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
     flow_name: str | None = None
 
@@ -302,7 +303,7 @@ class ContinueExecutionStepResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetFlowStateRequest(RequestPayload):
+class GetFlowStateRequest(RequestPayload, GraphAccessMixin):
     """Get the current execution state of a flow.
 
     Use when: Monitoring execution progress, debugging workflow state,
@@ -338,7 +339,7 @@ class GetFlowStateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class GetIsFlowRunningRequest(RequestPayload):
+class GetIsFlowRunningRequest(RequestPayload, GraphAccessMixin):
     """Check if a flow is currently running.
 
     Use when: Monitoring execution status, preventing concurrent execution,
