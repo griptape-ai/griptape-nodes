@@ -25,6 +25,9 @@ dependencies = [
   # so a 3.0 release cannot silently kill the MCP server thread again (see issue 5216).
   "mcp>=2.0,<3",
   "pillow>=11.3.0",
+  # Lets Pillow read HEIC/HEIF headers, so exe_types/input_checks.py can check an iPhone photo's
+  # format and size before a run instead of skipping it. Registered once in that module.
+  "pillow-heif>=1.8.1",
   "static-ffmpeg>=3.0",
   "watchfiles>=1.1.0",
   "typer>=0.15.0",
