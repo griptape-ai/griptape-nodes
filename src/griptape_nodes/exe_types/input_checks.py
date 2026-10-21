@@ -14,7 +14,7 @@ credits. These helpers let a node refuse it first, from what it can read locally
   tool to read it is missing or too slow.
 - **Checks** (`check_count`, `check_size`, `check_dimensions`, `check_aspect_ratio_range`,
   `check_aspect_ratio_exact`, `check_mime_type`, `check_video_codec`, `check_audio_codec`,
-  `check_duration`, `check_frame_rate`) compare one value with a limit and return a `NodeError`
+  `check_duration`, `check_total_duration`, `check_frame_rate`) compare one value with a limit and return a `NodeError`
   ready to append to `validate_before_node_run`'s list, or None when the value is within the limit
   or unknown.
 
@@ -92,6 +92,7 @@ __all__ = [
     "check_frame_rate",
     "check_mime_type",
     "check_size",
+    "check_total_duration",
     "check_video_codec",
     "image_errors",
     "input_check_budget",
@@ -286,11 +287,6 @@ class VideoProbe(NamedTuple):
         return [s for s in (self.seconds, self.container_seconds) if s is not None]
 
 
-# video_errors' default for `probe`, told apart by identity from a None the caller passes for a video
-# it couldn't read, so that video isn't probed a second time.
-_PROBE_NOT_GIVEN = VideoProbe(info=None, seconds=None)
-
-
 @cache
 def _register_heif_opener() -> None:
     """Let Pillow open HEIC and HEIF photos, once, when the first image is read rather than at import.
@@ -358,6 +354,12 @@ class AudioProbe(NamedTuple):
 
     def _durations(self) -> list[float]:
         return [s for s in (self.seconds, self.container_seconds) if s is not None]
+
+
+# video_errors' and audio_errors' defaults for `probe`, told apart by identity from a None the caller
+# passes for an input it couldn't read, so that input isn't probed a second time.
+_PROBE_NOT_GIVEN = VideoProbe(info=None, seconds=None)
+_AUDIO_PROBE_NOT_GIVEN = AudioProbe(mime_type=None, codec=None, profile=None, seconds=None)
 
 
 def local_audio_probe(value: Any) -> AudioProbe | None:
@@ -680,6 +682,43 @@ def check_duration(  # noqa: PLR0913
     return None
 
 
+def check_total_duration(  # noqa: PLR0913
+    durations: Sequence[float | None],
+    *,
+    parameters: str,
+    noun: str,
+    maximum: float,
+    fix: str,
+    docs_url: str | None = None,
+) -> NodeError | None:
+    """An error when several video or audio inputs are longer together than the provider accepts.
+
+    Checked only for two or more inputs, since for one its own maximum is usually the same number,
+    and only when every input's duration was read: a total missing one would be too low to judge.
+
+    Args:
+        durations: Each input's duration, None for one that couldn't be read. Pass a probe's
+            `shortest_seconds`, the reading `video_errors` and `audio_errors` check a maximum against.
+        parameters: The parameters holding the inputs as the UI shows them, quoted, such as
+            "'Reference Videos'" or "'Reference Video 1' and 'Reference Video 2'".
+        noun: What the inputs are, plural, such as "videos" or "clips".
+        maximum: The longest the inputs may be together, in seconds.
+        fix: What the artist can do about it, such as "Use a Trim Video node to shorten one, or remove one."
+        docs_url: The provider's page documenting the limit.
+    """
+    known = [seconds for seconds in durations if seconds is not None]
+    if len(durations) < 2 or len(known) < len(durations):  # noqa: PLR2004
+        return None
+    total = sum(known)
+    if total <= maximum:
+        return None
+    return _error(
+        f"Together, the {noun} in {parameters} are {_format_past(total, maximum, 2)} seconds long and the limit "
+        f"is {_format_limit(maximum)} seconds in total. {fix}",
+        docs_url,
+    )
+
+
 def check_frame_rate(  # noqa: PLR0913
     fps: float | None,
     *,
@@ -861,7 +900,7 @@ def video_errors(  # noqa: PLR0913
             `check_duration`'s.
         docs_url: The provider's page documenting the limits.
         probe: The video's `local_video_probe` result, when the node has already read it for a check
-            of its own, such as a total duration across several videos; None for a video it
+            of its own, such as `check_total_duration` across several videos; None for a video it
             couldn't read. Left out, the video is probed here.
 
     Raises:
@@ -960,6 +999,7 @@ def audio_errors(  # noqa: PLR0913
     max_seconds: float | None = None,
     duration_fix: str | None = None,
     docs_url: str | None = None,
+    probe: AudioProbe | None = _AUDIO_PROBE_NOT_GIVEN,
 ) -> list[NodeError]:
     """Every provider audio limit an audio input breaks, in one call.
 
@@ -983,6 +1023,9 @@ def audio_errors(  # noqa: PLR0913
         duration_fix: What the artist can do about a clip of the wrong length. Defaults to trimming it
             in an audio editor, or using a longer clip.
         docs_url: The provider's page documenting the limits.
+        probe: The clip's `local_audio_probe` result, when the node has already read it for a check
+            of its own, such as a total duration across several clips; None for a clip it couldn't
+            read. Left out, the clip is probed here.
 
     Raises:
         TypeError: If `allowed_mime_types` or `allowed_codecs` is a single string.
@@ -1004,7 +1047,8 @@ def audio_errors(  # noqa: PLR0913
     needs_probe = bool(allowed_mime_types) or bool(allowed_codecs) or min_seconds is not None or max_seconds is not None
     if not needs_probe:
         return [error for error in errors if error]
-    probe = local_audio_probe(audio)
+    if probe is _AUDIO_PROBE_NOT_GIVEN:
+        probe = local_audio_probe(audio)
     mime_type = None
     codec = None
     if probe is not None:

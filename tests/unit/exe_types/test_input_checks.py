@@ -32,6 +32,7 @@ from griptape_nodes.exe_types.input_checks import (
     check_frame_rate,
     check_mime_type,
     check_size,
+    check_total_duration,
     check_video_codec,
     image_errors,
     input_check_budget,
@@ -1269,6 +1270,21 @@ class TestAudio:
         ]
         assert len(calls) == 1
 
+    def test_uses_a_probe_it_is_given(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: pytest.fail("already probed"))
+        probe = AudioProbe(mime_type="audio/flac", codec="flac", profile=None, seconds=1.0)
+        errors = audio_errors(
+            str(clip), subject=SUBJECT, allowed_mime_types=("audio/mpeg",), min_seconds=2, probe=probe
+        )
+        assert [str(e) for e in errors] == [
+            f"{SUBJECT} is in FLAC format. Convert it to MP3.",
+            f"{SUBJECT} is 1.00 seconds long and the minimum is 2. Use a longer clip.",
+        ]
+
+    def test_skips_a_clip_given_as_unreadable(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: pytest.fail("already probed"))
+        assert audio_errors(str(clip), subject=SUBJECT, min_seconds=2, probe=None) == []
+
     def test_does_not_probe_for_a_size_limit_alone(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: pytest.fail("no probe needed"))
         assert audio_errors(str(clip), subject=SUBJECT, maximum_bytes=10**9) == []
@@ -1556,6 +1572,47 @@ class TestCheckMimeType:
         assert check_mime_type("image/png", subject=SUBJECT, allowed=()) is None
         assert check_video_codec("h264", subject=SUBJECT, allowed=()) is None
         assert check_audio_codec("mp3", subject=SUBJECT, allowed=()) is None
+
+
+class TestCheckTotalDuration:
+    def _check(self, durations: list[float | None], maximum: float = 15) -> str | None:
+        error = check_total_duration(
+            durations,
+            parameters="'Reference Videos'",
+            noun="videos",
+            maximum=maximum,
+            fix="Use a Trim Video node to shorten one, or remove one.",
+            docs_url=DOCS,
+        )
+        return None if error is None else str(error)
+
+    def test_refuses_inputs_longer_together_than_the_limit(self) -> None:
+        assert self._check([6.0, 6.0, 6.0]) == (
+            "Together, the videos in 'Reference Videos' are 18.00 seconds long and the limit is 15 seconds in "
+            "total. Use a Trim Video node to shorten one, or remove one."
+        )
+
+    def test_accepts_inputs_exactly_on_the_limit(self) -> None:
+        assert self._check([5.0, 5.0, 5.0]) is None
+
+    def test_shows_enough_places_that_a_total_just_over_doesnt_read_as_the_limit(self) -> None:
+        error = self._check([7.5, 7.501])
+        assert error is not None
+        assert "15.001 seconds" in error
+
+    def test_skips_the_total_when_a_duration_is_unread(self) -> None:
+        assert self._check([12.0, None, 12.0]) is None
+
+    def test_leaves_a_single_input_to_its_own_maximum(self) -> None:
+        assert self._check([20.0]) is None
+
+    def test_links_the_providers_page(self) -> None:
+        error = check_total_duration(
+            [10.0, 10.0], parameters="'Reference Audio'", noun="clips", maximum=15, fix="Trim one.", docs_url=DOCS
+        )
+        assert error is not None
+        assert error.links
+        assert error.links[0].url == DOCS
 
 
 class TestCheckDuration:
