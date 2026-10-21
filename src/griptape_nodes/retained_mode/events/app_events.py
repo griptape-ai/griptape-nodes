@@ -453,6 +453,15 @@ class EngineHeartbeatRequest(RequestPayload, SkipTheLineMixin):
 
 
 @dataclass
+class SessionClient:
+    """A client that identified itself to the active session, e.g. a Nuke host."""
+
+    client_id: str
+    client_type: str
+    connected_at: str
+
+
+@dataclass
 @PayloadRegistry.register
 class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
     """Engine heartbeat successful with comprehensive status information.
@@ -512,6 +521,11 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
     # always fills this in, so the "" default means the heartbeat came from an engine too old
     # to report it -- a client should show nothing rather than guess.
     engine_os: str = ""
+    # Clients that identified themselves to the active session (SessionManager.attach_client),
+    # so a discovery client can tell a free engine from one another host is already driving.
+    # Entries leave when the host is displaced or the session ends; nothing expires them, so a
+    # host that crashed stays listed until then. Defaulted for backward compatibility.
+    clients: list[SessionClient] = field(default_factory=list)
 
 
 @dataclass

@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.events.app_events import (
     AppGetSessionResultSuccess,
     AppStartSessionRequest,
     AppStartSessionResultSuccess,
+    SessionClient,
     SessionHeartbeatRequest,
     SessionHeartbeatResultFailure,
     SessionHeartbeatResultSuccess,
@@ -75,6 +76,9 @@ class SessionManager:
         self._engine_identity_manager = engine_identity_manager
         self._sessions_data = self._load_sessions_data()
         self._active_session_id = self._get_or_initialize_active_session()
+        # In memory only: a client's connection does not outlive the engine process, so
+        # persisting it next to the session would resurrect it on restart.
+        self._clients: dict[str, SessionClient] = {}
         if event_manager is not None:
             event_manager.register_request_handlers(self)
 
@@ -96,6 +100,27 @@ class SessionManager:
         """
         self._active_session_id = session_id
         logger.debug("Set active session ID to: %s", session_id)
+
+    @property
+    def clients(self) -> list[SessionClient]:
+        """Clients attached to the active session, in attach order."""
+        return list(self._clients.values())
+
+    def attach_client(self, client_id: str, client_type: str) -> bool:
+        """Attach a client to the active session; re-attaching refreshes connected_at. False when no session is active."""
+        if self._active_session_id is None:
+            logger.debug("Refused to attach client %s: no active session", client_id)
+            return False
+        self._clients[client_id] = SessionClient(
+            client_id=client_id,
+            client_type=client_type,
+            connected_at=datetime.now(tz=UTC).isoformat(),
+        )
+        logger.debug("Attached client %s (%s) to session %s", client_id, client_type, self._active_session_id)
+        return True
+
+    def detach_client(self, client_id: str) -> None:
+        self._clients.pop(client_id, None)
 
     @property
     def all_sessions(self) -> list[SessionData]:
@@ -289,6 +314,7 @@ class SessionManager:
                 details = f"Session '{previous_session_id}' ended at {datetime.now(tz=UTC)}."
                 logger.debug(details)
                 self.clear_saved_session()
+                self._clients.clear()
 
             return AppEndSessionResultSuccess(
                 session_id=previous_session_id, result_details="Session ended successfully."
