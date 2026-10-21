@@ -20,6 +20,7 @@ from griptape_nodes.exe_types import input_checks
 from griptape_nodes.exe_types.input_checks import (
     ImageInfo,
     VideoProbe,
+    check_aspect_ratio_exact,
     check_aspect_ratio_range,
     check_count,
     check_dimensions,
@@ -940,6 +941,40 @@ class TestCheckFrameRate:
     def test_rejects_a_high_frame_rate(self) -> None:
         error = check_frame_rate(120.0, subject=SUBJECT, minimum=24, maximum=60)
         assert str(error) == f"{SUBJECT} is 120 fps and the maximum is 60 fps. Re-export it at a lower frame rate."
+
+
+class TestCheckAspectRatioExact:
+    RATIOS = ("16:9", "9:16")
+
+    @pytest.mark.parametrize(
+        ("width", "height"),
+        [(1920, 1080), (3840, 2160), (1280, 720), (854, 480), (1366, 768), (426, 240), (1080, 1920), (480, 854)],
+    )
+    def test_allows_a_listed_ratio_including_sizes_rounded_to_whole_pixels(self, width: int, height: int) -> None:
+        assert check_aspect_ratio_exact(ImageInfo(width, height, None), subject=SUBJECT, ratios=self.RATIOS) is None
+
+    @pytest.mark.parametrize(("width", "height"), [(1440, 1080), (1000, 1000), (1920, 1088), (1920, 1000)])
+    def test_refuses_another_ratio(self, width: int, height: int) -> None:
+        error = check_aspect_ratio_exact(ImageInfo(width, height, None), subject=SUBJECT, ratios=self.RATIOS)
+        assert str(error) == f"{SUBJECT} is {width}x{height}, and its aspect ratio must be 16:9 or 9:16. Crop it."
+
+    def test_skips_an_unread_size(self) -> None:
+        assert check_aspect_ratio_exact(None, subject=SUBJECT, ratios=self.RATIOS) is None
+
+    def test_refuses_ratios_given_as_one_string(self) -> None:
+        with pytest.raises(TypeError, match="pass a tuple"):
+            check_aspect_ratio_exact(None, subject=SUBJECT, ratios="16:9")
+
+    @pytest.mark.parametrize("ratios", [(), ("16x9",)])
+    def test_refuses_no_ratios_or_a_bad_one_before_reading_anything(self, ratios: tuple[str, ...]) -> None:
+        with pytest.raises(ValueError, match="Attempted to check"):
+            check_aspect_ratio_exact(None, subject=SUBJECT, ratios=ratios)
+
+    def test_image_errors_checks_exact_ratios(self) -> None:
+        errors = image_errors(_data_uri(_png_bytes(400, 300)), subject=SUBJECT, exact_aspect_ratios=self.RATIOS)
+        assert [str(e) for e in errors] == [
+            f"{SUBJECT} is 400x300, and its aspect ratio must be 16:9 or 9:16. Crop it."
+        ]
 
 
 class TestCheckMimeType:

@@ -75,6 +75,7 @@ register_heif_opener()
 __all__ = [
     "ImageInfo",
     "VideoProbe",
+    "check_aspect_ratio_exact",
     "check_aspect_ratio_range",
     "check_count",
     "check_dimensions",
@@ -472,6 +473,38 @@ def check_aspect_ratio_range(
     )
 
 
+def check_aspect_ratio_exact(
+    info: ImageInfo | None, *, subject: str, ratios: Sequence[str], docs_url: str | None = None
+) -> NodeError | None:
+    """An error when an image or video frame isn't one of the exact aspect ratios the provider accepts.
+
+    For a provider that takes only certain shapes, such as "16:9 or 9:16", rather than a range. A
+    frame matches a ratio when its height is that ratio's height for its width, give or take a pixel,
+    so a size rounded to whole pixels such as 854x480 still reads as 16:9.
+
+    Args:
+        info: The pixel size, from `local_image_info` or a `local_video_probe` result's `info`. None skips
+            the check.
+        subject: The input, from `input_subject`.
+        ratios: The ratios accepted, as the provider writes them, such as ("16:9", "9:16").
+        docs_url: The provider's page documenting the limit.
+
+    Raises:
+        ValueError: If `ratios` is empty or one of them isn't a ratio such as "16:9".
+        TypeError: If `ratios` is a single string rather than a sequence of ratios.
+    """
+    _require_valid_exact_ratios(ratios)
+    if info is None or info.height == 0:
+        return None
+    for name in ratios:
+        if abs(info.width / _parse_ratio(name) - info.height) <= 1:
+            return None
+    return _error(
+        f"{subject} is {info.width}x{info.height}, and its aspect ratio must be {_join_or(list(ratios))}. Crop it.",
+        docs_url,
+    )
+
+
 def check_mime_type(
     mime_type: str | None, *, subject: str, allowed: Sequence[str], docs_url: str | None = None
 ) -> NodeError | None:
@@ -582,6 +615,7 @@ def image_errors(  # noqa: PLR0913
     max_megapixels: float | None = None,
     widest: str | None = None,
     tallest: str | None = None,
+    exact_aspect_ratios: Sequence[str] = (),
     docs_url: str | None = None,
 ) -> list[NodeError]:
     """Every provider image limit an image input breaks, in one call.
@@ -604,6 +638,8 @@ def image_errors(  # noqa: PLR0913
         max_megapixels: The most pixels accepted in total, in millions.
         widest: The widest aspect ratio accepted, as the provider writes it, such as "2.5:1".
         tallest: The tallest aspect ratio accepted, such as "1:2.5". Pass both bounds or neither.
+        exact_aspect_ratios: For a provider that takes only certain shapes rather than a range, those
+            ratios, such as ("16:9", "9:16"). See `check_aspect_ratio_exact`.
         docs_url: The provider's page documenting the limits.
 
     Raises:
@@ -612,6 +648,8 @@ def image_errors(  # noqa: PLR0913
     """
     _require_mime_type_sequence(allowed_mime_types)
     _require_valid_aspect_ratio_bounds(widest, tallest)
+    if exact_aspect_ratios:
+        _require_valid_exact_ratios(exact_aspect_ratios)
     # Reduce the input to one string once, and hand that to both readers.
     location = coerce_media_url_or_data_uri(image, kind="image")
     info = local_image_info(location)
@@ -631,22 +669,20 @@ def image_errors(  # noqa: PLR0913
                 docs_url=docs_url,
             )
         )
-    if min_side is not None or max_side is not None or min_megapixels is not None or max_megapixels is not None:
-        errors.append(
-            check_dimensions(
-                info,
-                subject=subject,
-                min_side=min_side,
-                max_side=max_side,
-                min_megapixels=min_megapixels,
-                max_megapixels=max_megapixels,
-                docs_url=docs_url,
-            )
+    errors.extend(
+        _frame_errors(
+            info,
+            subject=subject,
+            min_side=min_side,
+            max_side=max_side,
+            min_megapixels=min_megapixels,
+            max_megapixels=max_megapixels,
+            widest=widest,
+            tallest=tallest,
+            exact_aspect_ratios=exact_aspect_ratios,
+            docs_url=docs_url,
         )
-    if widest is not None and tallest is not None:
-        errors.append(
-            check_aspect_ratio_range(info, subject=subject, widest=widest, tallest=tallest, docs_url=docs_url)
-        )
+    )
     return [error for error in errors if error]
 
 
@@ -664,6 +700,7 @@ def video_errors(  # noqa: PLR0913
     max_megapixels: float | None = None,
     widest: str | None = None,
     tallest: str | None = None,
+    exact_aspect_ratios: Sequence[str] = (),
     min_fps: float | None = None,
     max_fps: float | None = None,
     duration_fix: str | None = None,
@@ -692,6 +729,8 @@ def video_errors(  # noqa: PLR0913
         max_megapixels: The most pixels accepted in total, in millions.
         widest: The widest aspect ratio accepted, as the provider writes it, such as "2.5:1".
         tallest: The tallest aspect ratio accepted, such as "1:2.5". Pass both bounds or neither.
+        exact_aspect_ratios: For a provider that takes only certain shapes rather than a range, those
+            ratios, such as ("16:9", "9:16"). See `check_aspect_ratio_exact`.
         min_fps: The lowest frame rate accepted.
         max_fps: The highest frame rate accepted.
         duration_fix: What the artist can do about a clip of the wrong length. Defaults to
@@ -705,6 +744,8 @@ def video_errors(  # noqa: PLR0913
         ValueError: If only one of `widest` and `tallest` is given, or one isn't a ratio such as "16:9".
     """
     _require_valid_aspect_ratio_bounds(widest, tallest)
+    if exact_aspect_ratios:
+        _require_valid_exact_ratios(exact_aspect_ratios)
     errors: list[NodeError | None] = []
     if maximum_bytes is not None:
         errors.append(
@@ -722,6 +763,7 @@ def video_errors(  # noqa: PLR0913
         or min_megapixels is not None
         or max_megapixels is not None
         or (widest is not None and tallest is not None)
+        or bool(exact_aspect_ratios)
     )
     needs_fps = min_fps is not None or max_fps is not None
     if min_seconds is None and max_seconds is None and not needs_frame and not needs_fps:
@@ -741,6 +783,45 @@ def video_errors(  # noqa: PLR0913
             docs_url=docs_url,
         )
     )
+    errors.extend(
+        _frame_errors(
+            info,
+            subject=subject,
+            min_side=min_side,
+            max_side=max_side,
+            min_megapixels=min_megapixels,
+            max_megapixels=max_megapixels,
+            widest=widest,
+            tallest=tallest,
+            exact_aspect_ratios=exact_aspect_ratios,
+            docs_url=docs_url,
+        )
+    )
+    # A variable-frame-rate clip's average and declared rates differ, and providers don't say which
+    # they mean, so each bound uses the rate it's easier to meet, as the duration checks do.
+    rates = _frame_rates(probe)
+    if max_fps is not None:
+        errors.append(check_frame_rate(min(rates, default=None), subject=subject, maximum=max_fps, docs_url=docs_url))
+    if min_fps is not None:
+        errors.append(check_frame_rate(max(rates, default=None), subject=subject, minimum=min_fps, docs_url=docs_url))
+    return [error for error in errors if error]
+
+
+def _frame_errors(  # noqa: PLR0913
+    info: ImageInfo | None,
+    *,
+    subject: str,
+    min_side: int | None,
+    max_side: int | None,
+    min_megapixels: float | None,
+    max_megapixels: float | None,
+    widest: str | None,
+    tallest: str | None,
+    exact_aspect_ratios: Sequence[str],
+    docs_url: str | None,
+) -> list[NodeError | None]:
+    """The pixel-size and shape checks `image_errors` and `video_errors` share, for those whose limits are given."""
+    errors: list[NodeError | None] = []
     if min_side is not None or max_side is not None or min_megapixels is not None or max_megapixels is not None:
         errors.append(
             check_dimensions(
@@ -757,14 +838,9 @@ def video_errors(  # noqa: PLR0913
         errors.append(
             check_aspect_ratio_range(info, subject=subject, widest=widest, tallest=tallest, docs_url=docs_url)
         )
-    # A variable-frame-rate clip's average and declared rates differ, and providers don't say which
-    # they mean, so each bound uses the rate it's easier to meet, as the duration checks do.
-    rates = _frame_rates(probe)
-    if max_fps is not None:
-        errors.append(check_frame_rate(min(rates, default=None), subject=subject, maximum=max_fps, docs_url=docs_url))
-    if min_fps is not None:
-        errors.append(check_frame_rate(max(rates, default=None), subject=subject, minimum=min_fps, docs_url=docs_url))
-    return [error for error in errors if error]
+    if exact_aspect_ratios:
+        errors.append(check_aspect_ratio_exact(info, subject=subject, ratios=exact_aspect_ratios, docs_url=docs_url))
+    return errors
 
 
 def _duration_errors(  # noqa: PLR0913
@@ -822,6 +898,21 @@ def _require_mime_type_sequence(allowed: Sequence[str]) -> None:
             "pass a tuple such as ('image/png',)."
         )
         raise TypeError(msg)
+
+
+def _require_valid_exact_ratios(ratios: Sequence[str]) -> None:
+    """Raise when `ratios` can't be checked: one string, empty, or holding something that isn't a ratio."""
+    if isinstance(ratios, str):
+        msg = (
+            "Attempted to check an exact aspect ratio. Failed because the ratios were one string; "
+            "pass a tuple such as ('16:9', '9:16')."
+        )
+        raise TypeError(msg)
+    if not ratios:
+        msg = "Attempted to check an exact aspect ratio. Failed because no ratios were given."
+        raise ValueError(msg)
+    for name in ratios:
+        _parse_ratio(name)
 
 
 def _require_valid_aspect_ratio_bounds(widest: str | None, tallest: str | None) -> None:
