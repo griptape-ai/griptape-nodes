@@ -610,7 +610,7 @@ def _mime_type_error(
     also_matching: Sequence[str] = (),
 ) -> NodeError | None:
     """`check_mime_type`, with `also_matching` names that widen the match but aren't listed in the message."""
-    if mime_type is None or _is_allowed(mime_type, (*allowed, *also_matching)):
+    if mime_type is None or not allowed or _is_allowed(mime_type, (*allowed, *also_matching)):
         return None
     # Names that differ but read the same, such as audio/wav and audio/x-wav, are listed once.
     formats = _join_or(list(dict.fromkeys(_format_name(name) for name in allowed)))
@@ -1054,7 +1054,8 @@ def _codec_error(  # noqa: PLR0913
             f"pass a tuple such as ('{example}',)."
         )
         raise TypeError(msg)
-    if codec is None:
+    # An empty list is no limit, as the combined checks treat it.
+    if codec is None or not allowed:
         return None
     # A codec matches however a provider writes it ("H.264", "AVC", "h264"), so a refusal never asks
     # for the input's own codec. Names that read the same are listed once.
@@ -1197,7 +1198,8 @@ def _is_allowed(mime_type: str, allowed: Sequence[str]) -> bool:
 
 def _canonical_mime_type(mime_type: str) -> str:
     """A MIME type's usual name, so its other names, and any capitalisation of them, compare equal to it."""
-    folded = mime_type.strip().lower()
+    # Parameters such as "; codecs=opus" name a codec, which `allowed_codecs` checks, not a format.
+    folded = mime_type.split(";", 1)[0].strip().lower()
     return _MIME_ALIASES.get(folded, folded)
 
 
@@ -1816,6 +1818,17 @@ _CODEC_ALIASES = {
     "mpeg1layer3": "mp3",
     "mpeglayer3": "mp3",
     "dnxhr": "dnxhd",
+    "pcm16": "pcm_s16le",
+    "mpegaudiolayeriii": "mp3",
+    "mpeg2audiolayeriii": "mp3",
+    "mpeg1layeriii": "mp3",
+    "amr": "amr_nb",
+    "amrnb": "amr_nb",
+    "amrwb": "amr_wb",
+    "speexwithheaderbyte": "speex",
+    "g711ulaw": "pcm_mulaw",
+    "g711mulaw": "pcm_mulaw",
+    "g711alaw": "pcm_alaw",
     "mulaw": "pcm_mulaw",
     "ulaw": "pcm_mulaw",
     "alaw": "pcm_alaw",
@@ -1828,6 +1841,7 @@ _LINEAR_PCM_WORDS = frozenset({"lpcm", "linearpcm", "linear16"})
 # ffprobe's prefixes for linear PCM: signed, unsigned and float samples.
 _LINEAR_PCM_PREFIXES = ("pcm_s", "pcm_u", "pcm_f")
 _LINEAR_PCM_PHRASE = re.compile(r"linear[\s_-]*pcm", re.IGNORECASE)
+_BIT_DEPTH = re.compile(r"\b(?:8|16|24|32)[\s-]*bits?\b", re.IGNORECASE)
 
 # What `_codecs_named` records for a generic PCM word, and for a linear-PCM one.
 _PCM = "pcm"
@@ -1836,6 +1850,8 @@ _LINEAR_PCM = "linear pcm"
 # What separates the words of a codec name a provider writes, such as "AAC LC" or "H.264/AVC".
 _CODEC_WORD_SPLIT = re.compile(r"[\s/,()_]+")
 _NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]")
+# What separates the codecs of a list a provider writes in one string.
+_CODEC_LIST_SPLIT = re.compile(r",|;|\s+(?:or|and)\s+", re.IGNORECASE)
 
 # ffprobe's codec names that aren't the name an artist knows a codec by.
 _CODEC_NAMES = {
@@ -1867,6 +1883,10 @@ _CODEC_NAMES = {
     "pcm_f32be": "32-bit float PCM (big-endian)",
     "pcm_u8": "8-bit PCM",
     "pcm_mulaw": "G.711 μ-law",
+    "amr_nb": "AMR-NB",
+    "amr_wb": "AMR-WB",
+    "speex": "Speex",
+    "h263": "H.263",
     "pcm_alaw": "G.711 A-law",
 }
 
@@ -1892,25 +1912,43 @@ def _codec_matches(codec: str, written: str) -> bool:
 def _codecs_named(written: str) -> set[str]:
     """The codecs a name a provider wrote mentions, by their ffprobe names; `_PCM` for any PCM word.
 
-    A list in one string ("H.264, MPEG-4 Part 2") is read piece by piece, so each piece names its own
-    codec and "MPEG-4" in one piece isn't taken as a qualifier of H.264 in another.
+    A list in one string ("H.264, MPEG-4 Part 2", "H.264 or H.263") is read piece by piece, so each
+    piece names its own codec and "MPEG-4" in one piece isn't taken as a qualifier of H.264 in another.
     """
-    pieces = [piece for piece in written.split(",") if piece.strip()]
+    pieces = [piece for piece in _CODEC_LIST_SPLIT.split(written) if piece.strip()]
     if len(pieces) > 1:
         return set().union(*(_codecs_named_in_one(piece) for piece in pieces))
     return _codecs_named_in_one(written)
 
 
 def _codecs_named_in_one(written: str) -> set[str]:
-    """`_codecs_named` for one codec name, with no commas."""
+    """`_codecs_named` for one codec name, not a list."""
     whole = _canonical_codec(written)
     if _is_known_codec(whole):
         return {whole}
+    # "G.711" alone names both its laws.
+    if _squash(written) == "g711":
+        return {"pcm_mulaw", "pcm_alaw"}
     named = set()
     # "Linear PCM" is one phrase; split, its word "PCM" would read as any PCM, companded included.
     if _LINEAR_PCM_PHRASE.search(written):
         named.add(_LINEAR_PCM)
         written = _LINEAR_PCM_PHRASE.sub(" ", written)
+    named |= _codecs_named_by_words(written)
+    # "MPEG-4" beside H.264 or HEVC names its family, as in "H.264 (MPEG-4 AVC)", not MPEG-4 Part 2.
+    if named & {"h264", "hevc"}:
+        named.discard("mpeg4")
+    # A name that says linear PCM or gives a bit depth ("Linear PCM (WAV)", "16-bit PCM") means linear
+    # PCM, so a generic PCM word beside it doesn't widen it to companded PCM.
+    if _PCM in named and (_LINEAR_PCM in named or _BIT_DEPTH.search(written)):
+        named.discard(_PCM)
+        named.add(_LINEAR_PCM)
+    return named
+
+
+def _codecs_named_by_words(written: str) -> set[str]:
+    """The codecs the words of one codec name name, with `_PCM` and `_LINEAR_PCM` for PCM words."""
+    named = set()
     for word in _CODEC_WORD_SPLIT.split(written.lower()):
         if not word:
             continue
@@ -1924,9 +1962,6 @@ def _codecs_named_in_one(written: str) -> set[str]:
         candidate = _canonical_codec(word)
         if _is_known_codec(candidate):
             named.add(candidate)
-    # "MPEG-4" beside H.264 or HEVC names its family, as in "H.264 (MPEG-4 AVC)", not MPEG-4 Part 2.
-    if named & {"h264", "hevc"}:
-        named.discard("mpeg4")
     return named
 
 
@@ -1965,7 +2000,7 @@ def _codec_name(codec: str) -> str:
 
 def _format_name(mime_type: str) -> str:
     """A MIME type's format as a message shows it: "image/x-icon" reads "ICON"."""
-    folded = mime_type.strip().lower()
+    folded = mime_type.split(";", 1)[0].strip().lower()
     known = _FORMAT_NAMES.get(folded)
     if known:
         return known

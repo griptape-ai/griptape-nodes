@@ -1375,6 +1375,21 @@ CODEC_SPELLINGS_ACCEPTED = [
     ("pcm_s16le", "LINEAR16"),
     ("pcm_mulaw", "MULAW"),
     ("pcm_mulaw", "PCM"),
+    ("mpeg4", "H.264 or MPEG-4 Part 2"),
+    ("mpeg4", "H.264; MPEG-4 Part 2"),
+    ("h263", "H.263"),
+    ("h263", "H.263 or H.264"),
+    ("pcm_s16le", "pcm16"),
+    ("pcm_mulaw", "g711_ulaw"),
+    ("pcm_alaw", "g711_alaw"),
+    ("pcm_mulaw", "G.711"),
+    ("pcm_alaw", "G.711"),
+    ("mp3", "MPEG Audio Layer III"),
+    ("mp3", "MPEG-2 Audio Layer III"),
+    ("amr_nb", "AMR"),
+    ("speex", "SPEEX_WITH_HEADER_BYTE"),
+    ("pcm_s16le", "Linear PCM (WAV)"),
+    ("pcm_s16le", "16-bit PCM"),
 ]
 CODEC_SPELLINGS_REFUSED = [
     ("mpeg4", "H.264 (MPEG-4 AVC)"),
@@ -1398,6 +1413,14 @@ CODEC_SPELLINGS_REFUSED = [
     ("pcm_mulaw", "LPCM"),
     ("pcm_alaw", "LINEAR16"),
     ("pcm_mulaw", "ALAW"),
+    # A linear-PCM name or a bit depth means linear PCM, even beside a container word such as WAV.
+    ("pcm_mulaw", "Linear PCM (WAV)"),
+    ("pcm_mulaw", "LINEAR16 (WAV)"),
+    ("pcm_mulaw", "LPCM (WAV)"),
+    ("pcm_mulaw", "WAV (16-bit linear PCM)"),
+    ("pcm_mulaw", "16-bit PCM"),
+    ("pcm_s16le", "g711_ulaw"),
+    ("h264", "H.263"),
 ]
 
 
@@ -1507,6 +1530,22 @@ class TestCheckMimeType:
     )
     def test_matches_any_capitalisation_and_registered_spelling(self, mime_type: str, allowed: tuple[str, ...]) -> None:
         assert check_mime_type(mime_type, subject=SUBJECT, allowed=allowed) is None
+
+    @pytest.mark.parametrize(
+        ("mime_type", "allowed"),
+        [("audio/ogg", ("audio/ogg; codecs=opus",)), ("audio/webm", ("audio/webm;codecs=opus",))],
+    )
+    def test_ignores_mime_type_parameters(self, mime_type: str, allowed: tuple[str, ...]) -> None:
+        assert check_mime_type(mime_type, subject=SUBJECT, allowed=allowed) is None
+
+    def test_names_a_parameterised_type_without_its_parameters(self) -> None:
+        error = check_mime_type("audio/flac", subject=SUBJECT, allowed=("audio/webm;codecs=opus",))
+        assert str(error) == f"{SUBJECT} is in FLAC format. Convert it to WebM."
+
+    def test_treats_an_empty_list_as_no_limit(self) -> None:
+        assert check_mime_type("image/png", subject=SUBJECT, allowed=()) is None
+        assert check_video_codec("h264", subject=SUBJECT, allowed=()) is None
+        assert check_audio_codec("mp3", subject=SUBJECT, allowed=()) is None
 
 
 class TestCheckDuration:
