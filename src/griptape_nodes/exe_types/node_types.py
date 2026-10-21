@@ -1424,6 +1424,9 @@ class BaseNode(ABC):
         execute in a worker is installed here with its edit-time dependencies only, and a value produced
         by a worker is held there and cannot be read from here.
 
+        The one exception is a media input's file limits: `griptape_nodes.exe_types.input_checks` reads
+        files and data URIs on this machine, with a bounded cost, and skips any value it can't read here.
+
         For anything that needs the real thing -- a loaded model, a tensor an upstream node produced --
         use `validate_in_execution_environment`, which runs where the node runs.
         """

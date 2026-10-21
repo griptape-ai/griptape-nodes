@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import pytest
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
-from PIL import Image
+from PIL import Image, PngImagePlugin
 
 from griptape_nodes.exe_types import input_checks
 from griptape_nodes.exe_types.input_checks import (
@@ -67,12 +67,12 @@ def _png_bytes(width: int, height: int) -> bytes:
     return buffer.getvalue()
 
 
-def _rotated_jpeg_bytes(width: int, height: int, orientation: int) -> bytes:
-    """A JPEG stored `width`x`height` with an EXIF Orientation tag, as phones save a rotated shot."""
+def _rotated_jpeg_bytes(width: int, height: int, orientation: int, image_format: str = "JPEG") -> bytes:
+    """An image stored `width`x`height` with an EXIF Orientation tag, as phones save a rotated shot."""
     exif = Image.Exif()
     exif[0x0112] = orientation
     buffer = BytesIO()
-    Image.new("RGB", (width, height)).save(buffer, format="JPEG", exif=exif.tobytes())
+    Image.new("RGB", (width, height)).save(buffer, format=image_format, exif=exif.tobytes())
     return buffer.getvalue()
 
 
@@ -128,6 +128,19 @@ class TestLocalImageInfo:
     def test_keeps_the_stored_size_when_exif_does_not_rotate_a_quarter_turn(self, orientation: int) -> None:
         image = _data_uri(_rotated_jpeg_bytes(400, 300, orientation), "image/jpeg")
         assert local_image_info(image) == ImageInfo(400, 300, "image/jpeg")
+
+    @pytest.mark.parametrize(("image_format", "mime_type"), [("PNG", "image/png"), ("TIFF", "image/tiff")])
+    def test_reads_exif_rotation_from_other_formats(self, image_format: str, mime_type: str) -> None:
+        image = _data_uri(_rotated_jpeg_bytes(400, 300, 6, image_format), mime_type)
+        assert local_image_info(image) == ImageInfo(300, 400, mime_type)
+
+    def test_does_not_decode_a_png_without_exif(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Pillow's PNG plugin decodes the whole image to look for EXIF after the pixel data.
+        def no_decode(*_args: Any, **_kwargs: Any) -> None:
+            pytest.fail("a pre-run input check must read only the image header")
+
+        monkeypatch.setattr(PngImagePlugin.PngImageFile, "load", no_decode)
+        assert local_image_info(_data_uri(_png_bytes(400, 300))) == ImageInfo(400, 300, "image/png")
 
     def test_reads_a_local_file(self, tmp_path: Path) -> None:
         path = tmp_path / "image.jpg"

@@ -204,7 +204,18 @@ def local_image_info(value: Any) -> ImageInfo | None:
 
 
 def _exif_orientation(image: Image.Image) -> int | None:
-    """An image's EXIF Orientation tag, read from its header, or None if it has none or it can't be read."""
+    """The EXIF Orientation tag of an image Pillow reports at its stored size, read from its header.
+
+    None if it has none, if it can't be read, or if Pillow already reports the displayed size: its
+    TIFF plugin applies the orientation itself, so applying it again would turn the image back.
+    Pillow's PNG plugin decodes every pixel to look for an eXIf chunk after the image data, so a PNG
+    is read only when its header already held one. An eXIf chunk after the data is rare, and such a
+    PNG keeps its stored size.
+    """
+    if image.format == "TIFF":
+        return None
+    if image.format == "PNG" and "exif" not in image.info:
+        return None
     try:
         orientation = image.getexif().get(_EXIF_ORIENTATION_TAG)
     except (OSError, ValueError, SyntaxError) as e:
