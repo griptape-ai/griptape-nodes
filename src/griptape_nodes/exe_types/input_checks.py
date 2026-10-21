@@ -319,9 +319,9 @@ def input_check_budget(seconds: float = VALIDATION_PROBE_BUDGET_SECONDS) -> Iter
 
 
 def local_video_probe(value: Any) -> VideoProbe | None:
-    """The frame size, duration and frame rate of a video input, or None if it can't be read locally.
+    """A video input's container, codec, frame size, duration and frame rate, or None if unreadable here.
 
-    One ffprobe run reads all three, so a node checking several on the same clip waits on at most
+    One ffprobe run reads them all, so a node checking several on the same clip waits on at most
     one `FFPROBE_TIMEOUT_SECONDS`, and the values come from the same read of the file. Inside an
     `input_check_budget`, the probe also stops when the budget does.
     Probes only a file on this machine, with an ffprobe that is already installed; see
@@ -447,11 +447,14 @@ def check_size(  # noqa: PLR0913
     if size_bytes is None:
         return None
     if strict and size_bytes >= maximum_bytes:
-        return _error(
-            f"{subject} is {_format_past(size_bytes / BYTES_PER_MB, maximum_bytes / BYTES_PER_MB, 1)} MB and it must "
-            f"be under {_format_limit(maximum_bytes / BYTES_PER_MB)} MB. {fix}",
-            docs_url,
-        )
+        limit = _format_limit(maximum_bytes / BYTES_PER_MB)
+        # A file at exactly the limit is the one a strict limit adds; printed past it, it would round
+        # onto the allowed side and read as smaller than the limit.
+        if size_bytes == maximum_bytes:
+            shown = f"exactly {limit}"
+        else:
+            shown = _format_past(size_bytes / BYTES_PER_MB, maximum_bytes / BYTES_PER_MB, 1)
+        return _error(f"{subject} is {shown} MB and it must be under {limit} MB. {fix}", docs_url)
     if size_bytes <= maximum_bytes:
         return None
     return _error(
@@ -732,8 +735,9 @@ def image_errors(  # noqa: PLR0913
 
     Reads the image once and runs only the checks whose limits are given: the format when
     `allowed_mime_types` is set, the file size with `maximum_bytes`, the sides and area with
-    `min_side`, `max_side`, `min_megapixels` or `max_megapixels`, and the aspect ratio when both
-    `widest` and `tallest` are set. Like the checks it runs, it skips anything it can't read locally.
+    `min_side`, `max_side`, `min_megapixels` or `max_megapixels`, the aspect ratio when both
+    `widest` and `tallest` are set, and the exact shape with `exact_aspect_ratios`. Like the checks
+    it runs, it skips anything it can't read locally.
 
     Args:
         image: The image input.
@@ -824,8 +828,10 @@ def video_errors(  # noqa: PLR0913
     Probes the video once, with `local_video_probe`, and runs only the checks whose limits are
     given: the file size with `maximum_bytes`, the duration with `min_seconds` or `max_seconds`,
     the displayed frame's sides and area with `min_side`, `max_side`, `min_megapixels` or
-    `max_megapixels`, the aspect ratio when both `widest` and `tallest` are set, and the frame rate
-    with `min_fps` or `max_fps`. Like the checks it runs, it skips anything it can't read locally.
+    `max_megapixels`, the aspect ratio when both `widest` and `tallest` are set, the exact shape with
+    `exact_aspect_ratios`, the frame rate with `min_fps` or `max_fps`, the container with
+    `allowed_mime_types`, and the codec with `allowed_codecs`. Like the checks it runs, it skips
+    anything it can't read locally.
 
     Args:
         video: The video input.
@@ -967,8 +973,8 @@ def audio_errors(  # noqa: PLR0913
             `maximum_bytes` is refused too.
         min_seconds: The shortest clip accepted.
         max_seconds: The longest clip accepted.
-        duration_fix: What the artist can do about a clip of the wrong length. Defaults to
-            `check_duration`'s.
+        duration_fix: What the artist can do about a clip of the wrong length. Defaults to trimming it
+            in an audio editor, or using a longer clip.
         docs_url: The provider's page documenting the limits.
 
     Raises:
@@ -1007,6 +1013,7 @@ def audio_errors(  # noqa: PLR0913
             max_seconds=max_seconds,
             fix=duration_fix,
             docs_url=docs_url,
+            too_long_fix="Trim it in an audio editor.",
         )
     )
     return [error for error in errors if error]
@@ -1094,8 +1101,12 @@ def _duration_errors(  # noqa: PLR0913
     max_seconds: float | None,
     fix: str | None,
     docs_url: str | None,
+    too_long_fix: str | None = None,
 ) -> list[NodeError | None]:
     """`video_errors`' and `audio_errors`' duration checks.
+
+    `fix` is the node's own advice for both bounds. Without it, `too_long_fix` replaces
+    `check_duration`'s default for a clip over the maximum, which suggests a video trim node.
 
     Providers don't say whether they measure the video stream or the whole container, so each bound
     uses the reading it's easier to meet: the shorter for a maximum, the longer for a minimum.
@@ -1107,7 +1118,12 @@ def _duration_errors(  # noqa: PLR0913
         longest = probe.longest_seconds
     errors: list[NodeError | None] = []
     if max_seconds is not None:
-        errors.append(check_duration(shortest, subject=subject, maximum=max_seconds, fix=fix, docs_url=docs_url))
+        maximum_fix = fix
+        if maximum_fix is None:
+            maximum_fix = too_long_fix
+        errors.append(
+            check_duration(shortest, subject=subject, maximum=max_seconds, fix=maximum_fix, docs_url=docs_url)
+        )
     if min_seconds is not None:
         errors.append(check_duration(longest, subject=subject, minimum=min_seconds, fix=fix, docs_url=docs_url))
     return errors
@@ -1128,7 +1144,10 @@ def _is_allowed(mime_type: str, allowed: Sequence[str]) -> bool:
     their usual name.
     """
     canonical = _canonical_mime_type(mime_type)
-    return any(_canonical_mime_type(name) == canonical for name in allowed)
+    shown = _format_name(mime_type)
+    # A name that reads the same as the input's in a message also matches, so a refusal can never
+    # name the input's format among the ones it asks for.
+    return any(_canonical_mime_type(name) == canonical or _format_name(name) == shown for name in allowed)
 
 
 def _canonical_mime_type(mime_type: str) -> str:
@@ -1324,13 +1343,24 @@ def _audio_mime_type(data: dict[str, Any]) -> str | None:
     if not isinstance(demuxer, str):
         return None
     if demuxer.startswith("mov,"):
-        brand = format_info.get("tags", {}).get("major_brand")
-        if _iso_media_mime_type(brand) == "video/quicktime":
-            return "video/quicktime"
-        return "audio/mp4"
+        return _iso_audio_mime_type(format_info.get("tags", {}).get("major_brand"))
     if demuxer.startswith("matroska"):
-        return "audio/webm"
+        return _matroska_audio_mime_type(_stream_text(_first_stream(data), "codec_name"))
     return _AUDIO_DEMUXER_MIME_TYPES.get(demuxer)
+
+
+def _iso_audio_mime_type(brand: Any) -> str:
+    """An ISO media file's container for an audio check: a MOV stays a MOV, and the rest reads as M4A."""
+    if _iso_media_mime_type(brand) == "video/quicktime":
+        return "video/quicktime"
+    return "audio/mp4"
+
+
+def _matroska_audio_mime_type(codec: str | None) -> str:
+    """A Matroska file's container for an audio check: WebM for the codecs WebM allows, MKA otherwise."""
+    if codec in _WEBM_AUDIO_CODECS:
+        return "audio/webm"
+    return "audio/x-matroska"
 
 
 def _video_codec(data: dict[str, Any]) -> str | None:
@@ -1529,11 +1559,17 @@ def _format_past(value: float, limit: float, decimals: int) -> str:
     return repr(value)
 
 
-# Formats whose MIME subtype isn't the name an artist knows them by.
 # Other names providers and `mimetypes` use for a format, mapped to the one the readers return.
 # HEIC and HEIF share one container, which Pillow names HEIF.
 _MIME_ALIASES = {
     "image/heic": "image/heif",
+    "image/jpg": "image/jpeg",
+    "image/pjpeg": "image/jpeg",
+    "video/mov": "video/quicktime",
+    "video/avi": "video/x-msvideo",
+    "video/msvideo": "video/x-msvideo",
+    "video/wmv": "video/x-ms-wmv",
+    "video/mpg": "video/mpeg",
     "audio/mp3": "audio/mpeg",
     "audio/x-mpeg": "audio/mpeg",
     "audio/x-wav": "audio/wav",
@@ -1544,10 +1580,16 @@ _MIME_ALIASES = {
     "audio/x-flac": "audio/flac",
     "audio/x-aiff": "audio/aiff",
     "audio/x-aac": "audio/aac",
+    "audio/x-ogg": "audio/ogg",
+    "audio/aif": "audio/aiff",
+    "audio/x-aif": "audio/aiff",
+    "audio/mp4a-latm": "audio/mp4",
+    "audio/x-mp4": "audio/mp4",
 }
 
-# Video codecs a WebM file may carry; Matroska with any other codec is an MKV.
+# Video and audio codecs a WebM file may carry; Matroska with any other codec is an MKV or MKA.
 _WEBM_VIDEO_CODECS = frozenset({"vp8", "vp9", "av1"})
+_WEBM_AUDIO_CODECS = frozenset({"opus", "vorbis"})
 
 # ffprobe demuxer names for audio containers that name one format each.
 _AUDIO_DEMUXER_MIME_TYPES = {
@@ -1570,6 +1612,7 @@ _DEMUXER_MIME_TYPES = {
     "gif": "image/gif",
 }
 
+# Formats whose MIME subtype isn't the name an artist knows them by.
 _FORMAT_NAMES = {
     "image/vnd.adobe.photoshop": "PSD",
     "image/x-portable-anymap": "PPM",
@@ -1577,6 +1620,19 @@ _FORMAT_NAMES = {
     "video/quicktime": "MOV",
     "video/x-matroska": "MKV",
     "video/x-msvideo": "AVI",
+    "video/avi": "AVI",
+    "video/msvideo": "AVI",
+    "video/mov": "MOV",
+    "image/jpg": "JPEG",
+    "image/pjpeg": "JPEG",
+    "video/mpg": "MPEG",
+    "video/wmv": "WMV",
+    "audio/x-ogg": "OGG",
+    "audio/aif": "AIFF",
+    "audio/x-aif": "AIFF",
+    "audio/mp4a-latm": "M4A",
+    "audio/x-mp4": "M4A",
+    "audio/x-matroska": "MKA",
     "video/webm": "WebM",
     "video/3gpp": "3GP",
     "video/3gpp2": "3G2",
@@ -1616,10 +1672,15 @@ _CODEC_NAMES = {
     "opus": "Opus",
     "vorbis": "Vorbis",
     "alac": "ALAC",
-    "pcm_s16le": "16-bit PCM",
-    "pcm_s24le": "24-bit PCM",
-    "pcm_s32le": "32-bit PCM",
-    "pcm_f32le": "32-bit float PCM",
+    "pcm_s16le": "16-bit PCM (little-endian)",
+    "pcm_s24le": "24-bit PCM (little-endian)",
+    "pcm_s32le": "32-bit PCM (little-endian)",
+    "pcm_f32le": "32-bit float PCM (little-endian)",
+    "pcm_s16be": "16-bit PCM (big-endian)",
+    "pcm_s24be": "24-bit PCM (big-endian)",
+    "pcm_s32be": "32-bit PCM (big-endian)",
+    "pcm_f32be": "32-bit float PCM (big-endian)",
+    "pcm_u8": "8-bit PCM",
 }
 
 

@@ -497,7 +497,12 @@ class TestCheckSize:
 
     def test_refuses_exactly_the_maximum_when_strict(self) -> None:
         error = check_size(30 * 1024 * 1024, maximum_bytes=30 * 1024 * 1024, subject=SUBJECT, strict=True)
-        assert str(error) == f"{SUBJECT} is 30.0 MB and it must be under 30 MB. Use a smaller file."
+        assert str(error) == f"{SUBJECT} is exactly 30 MB and it must be under 30 MB. Use a smaller file."
+
+    def test_reports_a_file_at_a_decimal_strict_limit_as_exactly_it(self) -> None:
+        # Providers writing "less than 30 MB" often mean decimal megabytes.
+        error = check_size(30_000_000, maximum_bytes=30_000_000, subject=SUBJECT, strict=True)
+        assert str(error) == f"{SUBJECT} is exactly 28.6102 MB and it must be under 28.6102 MB. Use a smaller file."
 
     def test_allows_just_under_the_maximum_when_strict(self) -> None:
         assert check_size(30 * 1024 * 1024 - 1, maximum_bytes=30 * 1024 * 1024, subject=SUBJECT, strict=True) is None
@@ -1069,7 +1074,7 @@ class TestAudio:
             ("mov,mp4,m4a,3gp,3g2,mj2", "M4A ", "audio/mp4"),
             ("mov,mp4,m4a,3gp,3g2,mj2", "isom", "audio/mp4"),
             ("mov,mp4,m4a,3gp,3g2,mj2", "qt  ", "video/quicktime"),
-            ("matroska,webm", None, "audio/webm"),
+            ("matroska,webm", None, "audio/x-matroska"),
         ],
     )
     def test_reads_the_container_from_the_file(
@@ -1123,7 +1128,7 @@ class TestAudio:
         )
         assert [str(e) for e in errors] == [
             f"{SUBJECT} is in FLAC format. Convert it to WAV or MP3.",
-            f"{SUBJECT} is encoded as FLAC. Re-encode it as MP3 or 16-bit PCM.",
+            f"{SUBJECT} is encoded as FLAC. Re-encode it as MP3 or 16-bit PCM (little-endian).",
             f"{SUBJECT} is 2.00 seconds long and the minimum is 3. Use a longer clip.",
         ]
         assert len(calls) == 1
@@ -1135,6 +1140,33 @@ class TestAudio:
     def test_refuses_codecs_given_as_one_string(self) -> None:
         with pytest.raises(TypeError, match="pass a tuple"):
             check_audio_codec("mp3", subject=SUBJECT, allowed="mp3")
+
+    @pytest.mark.parametrize(
+        ("codec", "expected"), [("opus", "audio/webm"), ("vorbis", "audio/webm"), ("aac", "audio/x-matroska")]
+    )
+    def test_tells_webm_from_mka_by_codec(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch, codec: str, expected: str
+    ) -> None:
+        self._answer(monkeypatch, {"codec_name": codec, "duration": "3.0"}, {"format_name": "matroska,webm"})
+        probe = local_audio_probe(str(clip))
+        assert probe is not None
+        assert probe.mime_type == expected
+
+    def test_suggests_an_audio_editor_for_audio_that_is_too_long(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        probe = AudioProbe(mime_type="audio/wav", codec="pcm_s16le", profile=None, seconds=3.0)
+        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: probe)
+        assert [str(e) for e in audio_errors(str(clip), subject=SUBJECT, max_seconds=1, min_seconds=5)] == [
+            f"{SUBJECT} is 3.00 seconds long and the limit is 1. Trim it in an audio editor.",
+            f"{SUBJECT} is 3.00 seconds long and the minimum is 5. Use a longer clip.",
+        ]
+
+    def test_names_pcm_byte_order(self) -> None:
+        error = check_audio_codec("pcm_s16be", subject=SUBJECT, allowed=("mp3", "pcm_s16le"))
+        assert str(error) == (
+            f"{SUBJECT} is encoded as 16-bit PCM (big-endian). Re-encode it as MP3 or 16-bit PCM (little-endian)."
+        )
 
 
 class TestCheckMimeType:
@@ -1198,6 +1230,25 @@ class TestCheckMimeType:
             str(check_mime_type("audio/flac", subject=SUBJECT, allowed=("audio/wav", "audio/x-wav", "audio/mp3")))
             == f"{SUBJECT} is in FLAC format. Convert it to WAV or MP3."
         )
+
+    @pytest.mark.parametrize(
+        ("mime_type", "allowed"),
+        [
+            ("image/jpeg", ("image/jpg", "image/png")),
+            ("video/quicktime", ("video/mp4", "video/mov")),
+            ("video/x-msvideo", ("video/avi",)),
+            ("audio/ogg", ("audio/x-ogg",)),
+            ("audio/aiff", ("audio/aif",)),
+            ("audio/mp4", ("audio/mp4a-latm",)),
+        ],
+    )
+    def test_accepts_more_provider_spellings(self, mime_type: str, allowed: tuple[str, ...]) -> None:
+        assert check_mime_type(mime_type, subject=SUBJECT, allowed=allowed) is None
+
+    def test_never_names_the_input_format_among_the_ones_it_asks_for(self) -> None:
+        # An unlisted spelling that reads the same in a message still matches.
+        assert check_mime_type("audio/x-made-up", subject=SUBJECT, allowed=("audio/x-made-up",)) is None
+        assert check_mime_type("video/x-made-up", subject=SUBJECT, allowed=("video/made-up",)) is None
 
 
 class TestCheckDuration:
