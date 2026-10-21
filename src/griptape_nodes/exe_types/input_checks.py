@@ -1809,16 +1809,32 @@ _CODEC_ALIASES = {
     "dolbydigitalplus": "eac3",
     "mjpeg": "mjpeg",
     "motionjpeg": "mjpeg",
+    "applelossless": "alac",
+    "mpeg1audiolayer3": "mp3",
+    "mpeg1audiolayeriii": "mp3",
+    "mpegaudiolayer3": "mp3",
+    "mpeg1layer3": "mp3",
+    "mpeglayer3": "mp3",
+    "dnxhr": "dnxhd",
+    "mulaw": "pcm_mulaw",
+    "ulaw": "pcm_mulaw",
+    "alaw": "pcm_alaw",
 }
 
-# Words a provider writes for PCM without naming a bit depth or byte order; any of them accepts any PCM.
-_GENERIC_PCM_WORDS = frozenset({"pcm", "lpcm", "linearpcm", "wav", "wave", "uncompressed"})
+# Words a provider writes for PCM without naming a bit depth or byte order. "PCM" and "WAV" accept any
+# PCM codec; the "linear" ones exclude companded PCM (G.711 mu-law and A-law), which isn't linear.
+_GENERIC_PCM_WORDS = frozenset({"pcm", "wav", "wave", "uncompressed"})
+_LINEAR_PCM_WORDS = frozenset({"lpcm", "linearpcm", "linear16"})
+# ffprobe's prefixes for linear PCM: signed, unsigned and float samples.
+_LINEAR_PCM_PREFIXES = ("pcm_s", "pcm_u", "pcm_f")
+_LINEAR_PCM_PHRASE = re.compile(r"linear[\s_-]*pcm", re.IGNORECASE)
 
-# What `_codecs_named` records for a generic PCM word.
+# What `_codecs_named` records for a generic PCM word, and for a linear-PCM one.
 _PCM = "pcm"
+_LINEAR_PCM = "linear pcm"
 
 # What separates the words of a codec name a provider writes, such as "AAC LC" or "H.264/AVC".
-_CODEC_WORD_SPLIT = re.compile(r"[\s/,()]+")
+_CODEC_WORD_SPLIT = re.compile(r"[\s/,()_]+")
 _NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]")
 
 # ffprobe's codec names that aren't the name an artist knows a codec by.
@@ -1850,6 +1866,8 @@ _CODEC_NAMES = {
     "pcm_s32be": "32-bit PCM (big-endian)",
     "pcm_f32be": "32-bit float PCM (big-endian)",
     "pcm_u8": "8-bit PCM",
+    "pcm_mulaw": "G.711 μ-law",
+    "pcm_alaw": "G.711 A-law",
 }
 
 
@@ -1866,20 +1884,42 @@ def _codec_matches(codec: str, written: str) -> bool:
     named = _codecs_named(written)
     if canonical.startswith("pcm_") and _PCM in named:
         return True
+    if canonical.startswith(_LINEAR_PCM_PREFIXES) and _LINEAR_PCM in named:
+        return True
     return canonical in named
 
 
 def _codecs_named(written: str) -> set[str]:
-    """The codecs a name a provider wrote mentions, by their ffprobe names; `_PCM` for any PCM word."""
+    """The codecs a name a provider wrote mentions, by their ffprobe names; `_PCM` for any PCM word.
+
+    A list in one string ("H.264, MPEG-4 Part 2") is read piece by piece, so each piece names its own
+    codec and "MPEG-4" in one piece isn't taken as a qualifier of H.264 in another.
+    """
+    pieces = [piece for piece in written.split(",") if piece.strip()]
+    if len(pieces) > 1:
+        return set().union(*(_codecs_named_in_one(piece) for piece in pieces))
+    return _codecs_named_in_one(written)
+
+
+def _codecs_named_in_one(written: str) -> set[str]:
+    """`_codecs_named` for one codec name, with no commas."""
     whole = _canonical_codec(written)
     if _is_known_codec(whole):
         return {whole}
     named = set()
+    # "Linear PCM" is one phrase; split, its word "PCM" would read as any PCM, companded included.
+    if _LINEAR_PCM_PHRASE.search(written):
+        named.add(_LINEAR_PCM)
+        written = _LINEAR_PCM_PHRASE.sub(" ", written)
     for word in _CODEC_WORD_SPLIT.split(written.lower()):
         if not word:
             continue
-        if _squash(word) in _GENERIC_PCM_WORDS:
+        squashed = _squash(word)
+        if squashed in _GENERIC_PCM_WORDS:
             named.add(_PCM)
+            continue
+        if squashed in _LINEAR_PCM_WORDS:
+            named.add(_LINEAR_PCM)
             continue
         candidate = _canonical_codec(word)
         if _is_known_codec(candidate):

@@ -1324,6 +1324,93 @@ class TestAudio:
         assert check_audio_codec("aac", subject=SUBJECT, allowed=(written,)) is None
 
 
+# Codec spellings real providers write, gathered over review; each must accept, or refuse, the codec.
+CODEC_SPELLINGS_ACCEPTED = [
+    ("h264", "H.264"),
+    ("h264", "AVC"),
+    ("h264", "H.264/AVC"),
+    ("h264", "MPEG-4 AVC"),
+    ("h264", "H.264 (MPEG-4 AVC)"),
+    ("h264", "MPEG-4 AVC/H.264"),
+    ("h264", "H.264/MPEG-4 AVC"),
+    ("h264", "AVC (MPEG-4 Part 10)"),
+    ("h264", "H264"),
+    ("hevc", "HEVC"),
+    ("hevc", "h265"),
+    ("hevc", "H.265 (HEVC)"),
+    ("prores", "ProRes"),
+    ("prores", "Apple ProRes"),
+    ("prores", "ProRes 422"),
+    ("mpeg4", "MPEG-4"),
+    ("mpeg4", "MPEG-4 Part 2"),
+    ("mpeg4", "H.264, MPEG-4 Part 2"),
+    ("mpeg4", "AVC, HEVC, MPEG-4 Visual"),
+    ("dnxhd", "DNxHR"),
+    ("dnxhd", "Avid DNxHR"),
+    ("mjpeg", "M-JPEG"),
+    ("mjpeg", "Motion-JPEG"),
+    ("vp9", "VP9"),
+    ("av1", "AV1"),
+    ("aac", "AAC-LC"),
+    ("aac", "AAC LC"),
+    ("aac", "MPEG-4 AAC"),
+    ("aac", "HE-AACv2"),
+    ("opus", "Opus"),
+    ("opus", "OGG_OPUS"),
+    ("opus", "WEBM_OPUS"),
+    ("vorbis", "Vorbis"),
+    ("mp3", "MP3"),
+    ("mp3", "MPEG-1 Audio Layer III"),
+    ("mp3", "MPEG Audio Layer 3"),
+    ("alac", "Apple Lossless"),
+    ("ac3", "AC-3"),
+    ("ac3", "Dolby Digital (AC-3)"),
+    ("eac3", "E-AC-3"),
+    ("pcm_s16le", "PCM"),
+    ("pcm_s24le", "WAV"),
+    ("pcm_s16be", "LPCM"),
+    ("pcm_s16le", "16-bit PCM"),
+    ("pcm_s16le", "PCM (WAV)"),
+    ("pcm_s16le", "Linear PCM, 16-bit"),
+    ("pcm_s16le", "LINEAR16"),
+    ("pcm_mulaw", "MULAW"),
+    ("pcm_mulaw", "PCM"),
+]
+CODEC_SPELLINGS_REFUSED = [
+    ("mpeg4", "H.264 (MPEG-4 AVC)"),
+    ("mpeg4", "MPEG-4 AVC/H.264"),
+    ("mpeg4", "AVC (MPEG-4 Part 10)"),
+    ("mpeg4", "MPEG-4 AVC"),
+    ("hevc", "Apple ProRes"),
+    ("vp9", "H.264/AVC"),
+    ("h264", "HEVC"),
+    ("hevc", "H.264"),
+    ("vp8", "VP9"),
+    ("prores", "H.264 (MPEG-4 AVC)"),
+    ("flac", "PCM"),
+    ("flac", "16-bit PCM"),
+    ("mp3", "AAC"),
+    ("aac", "MP3"),
+    ("eac3", "AC-3"),
+    ("ac3", "E-AC-3"),
+    ("opus", "OGG_VORBIS"),
+    ("pcm_mulaw", "Linear PCM"),
+    ("pcm_mulaw", "LPCM"),
+    ("pcm_alaw", "LINEAR16"),
+    ("pcm_mulaw", "ALAW"),
+]
+
+
+class TestCodecSpellings:
+    @pytest.mark.parametrize(("codec", "written"), CODEC_SPELLINGS_ACCEPTED)
+    def test_accepts_the_codec_it_names(self, codec: str, written: str) -> None:
+        assert input_checks._codec_matches(codec, written)
+
+    @pytest.mark.parametrize(("codec", "written"), CODEC_SPELLINGS_REFUSED)
+    def test_refuses_a_codec_it_does_not_name(self, codec: str, written: str) -> None:
+        assert not input_checks._codec_matches(codec, written)
+
+
 class TestCheckMimeType:
     def test_allows_a_listed_type(self) -> None:
         assert check_mime_type("image/png", subject=SUBJECT, allowed=("image/jpeg", "image/png")) is None
