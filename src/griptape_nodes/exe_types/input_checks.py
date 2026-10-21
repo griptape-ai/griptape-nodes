@@ -47,6 +47,7 @@ import binascii
 import json
 import logging
 import math
+import re
 import shutil
 import subprocess
 import sys
@@ -1057,10 +1058,13 @@ def _codec_error(  # noqa: PLR0913
         return None
     # A codec matches however a provider writes it ("H.264", "AVC", "h264"), so a refusal never asks
     # for the input's own codec. Names that read the same are listed once.
-    canonical = _canonical_codec(codec)
-    if any(_canonical_codec(name) == canonical for name in allowed):
+    if any(_codec_matches(codec, name) for name in allowed):
         return None
     shown = _codec_name(codec)
+    # Last guard: a refusal that would list the input's own codec, under any spelling not matched
+    # above, would contradict itself, so the codec is let through instead.
+    if any(_codec_name(name).lower() == shown.lower() for name in allowed):
+        return None
     codecs = _join_or(list(dict.fromkeys(_codec_name(name) for name in allowed)))
     return _error(f"{subject} is encoded as {shown}. Re-encode it as {codecs}.", docs_url)
 
@@ -1192,8 +1196,9 @@ def _is_allowed(mime_type: str, allowed: Sequence[str]) -> bool:
 
 
 def _canonical_mime_type(mime_type: str) -> str:
-    """A MIME type's usual name, so its other names compare equal to it."""
-    return _MIME_ALIASES.get(mime_type, mime_type)
+    """A MIME type's usual name, so its other names, and any capitalisation of them, compare equal to it."""
+    folded = mime_type.strip().lower()
+    return _MIME_ALIASES.get(folded, folded)
 
 
 def _require_mime_type_sequence(allowed: Sequence[str]) -> None:
@@ -1659,6 +1664,12 @@ _MIME_ALIASES = {
     "image/jpg": "image/jpeg",
     "image/pjpeg": "image/jpeg",
     "video/mov": "video/quicktime",
+    "video/matroska": "video/x-matroska",
+    "video/mkv": "video/x-matroska",
+    "audio/matroska": "audio/x-matroska",
+    "audio/mka": "audio/x-matroska",
+    "audio/mpeg3": "audio/mpeg",
+    "audio/x-mpeg-3": "audio/mpeg",
     "video/avi": "video/x-msvideo",
     "video/msvideo": "video/x-msvideo",
     "video/wmv": "video/x-ms-wmv",
@@ -1733,6 +1744,12 @@ _FORMAT_NAMES = {
     "video/avi": "AVI",
     "video/msvideo": "AVI",
     "video/mov": "MOV",
+    "video/matroska": "MKV",
+    "video/mkv": "MKV",
+    "audio/matroska": "MKA",
+    "audio/mka": "MKA",
+    "audio/mpeg3": "MP3",
+    "audio/x-mpeg-3": "MP3",
     "image/jpg": "JPEG",
     "image/pjpeg": "JPEG",
     "video/mpg": "MPEG",
@@ -1780,12 +1797,19 @@ _CODEC_ALIASES = {
     "x265": "hevc",
     "aac-lc": "aac",
     "he-aac": "aac",
+    "he-aacv2": "aac",
+    "mpeg-4 avc": "h264",
+    "mpeg-4 aac": "aac",
     "mpeg-4": "mpeg4",
     "mpeg-2": "mpeg2video",
     "mp2": "mp2",
-    "pcm": "pcm_s16le",
-    "wav": "pcm_s16le",
 }
+
+# Codec names a provider writes for PCM without a bit depth or byte order; they accept any PCM codec.
+_GENERIC_PCM_NAMES = frozenset({"pcm", "lpcm", "linear pcm", "wav", "wave", "uncompressed"})
+
+# What separates the words of a codec name a provider writes, such as "AAC LC" or "H.264/AVC".
+_CODEC_WORD_SPLIT = re.compile(r"[\s/,()]+")
 
 # ffprobe's codec names that aren't the name an artist knows a codec by.
 _CODEC_NAMES = {
@@ -1817,6 +1841,32 @@ _CODEC_NAMES = {
 }
 
 
+def _codec_matches(codec: str, written: str) -> bool:
+    """Whether a codec name a provider wrote accepts the input's codec, from ffprobe.
+
+    It matches when the whole name, or any word in it, names the codec, so "AAC LC", "MPEG-4 AAC",
+    "H.264/AVC" and "Apple ProRes" all accept the codec they name. A generic "PCM" or "WAV" accepts
+    any PCM codec, whatever its bit depth or byte order.
+    """
+    canonical = _canonical_codec(codec)
+    folded = written.strip().lower()
+    if canonical.startswith("pcm_") and folded in _GENERIC_PCM_NAMES:
+        return True
+    whole = _canonical_codec(written)
+    if whole == canonical:
+        return True
+    # The words of a name are tried only when the whole name isn't one known codec, so "MPEG-4 AVC"
+    # (H.264) doesn't accept MPEG-4 Part 2 through its word "MPEG-4".
+    if _is_known_codec(whole):
+        return False
+    return any(_canonical_codec(word) == canonical for word in _CODEC_WORD_SPLIT.split(folded) if word)
+
+
+def _is_known_codec(canonical: str) -> bool:
+    """Whether a canonical codec name is one this module knows by name."""
+    return canonical in _CODEC_NAMES or canonical in _CODEC_ALIASES.values()
+
+
 def _canonical_codec(name: str) -> str:
     """A codec's ffprobe name, however it's written: "H.264", "AVC" and "h264" all give "h264"."""
     folded = name.strip().lower()
@@ -1834,15 +1884,19 @@ def _codec_name(codec: str) -> str:
     known = _CODEC_NAMES.get(_canonical_codec(codec))
     if known:
         return known
-    return codec.upper()
+    # ffprobe writes codecs in lowercase ("vp9"); a name a provider wrote ("Apple ProRes") keeps its case.
+    if codec == codec.lower():
+        return codec.upper()
+    return codec
 
 
 def _format_name(mime_type: str) -> str:
     """A MIME type's format as a message shows it: "image/x-icon" reads "ICON"."""
-    known = _FORMAT_NAMES.get(mime_type)
+    folded = mime_type.strip().lower()
+    known = _FORMAT_NAMES.get(folded)
     if known:
         return known
-    return mime_type.split("/", 1)[-1].removeprefix("x-").removeprefix("vnd.").upper()
+    return folded.split("/", 1)[-1].removeprefix("x-").removeprefix("vnd.").upper()
 
 
 def _parse_ratio(name: str) -> float:

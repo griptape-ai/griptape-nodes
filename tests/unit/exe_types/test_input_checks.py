@@ -1095,6 +1095,32 @@ class TestVideoEncoding:
         error = check_video_codec("vp9", subject=SUBJECT, allowed=("ProRes", "HEVC"))
         assert str(error) == f"{SUBJECT} is encoded as VP9. Re-encode it as ProRes or H.265."
 
+    @pytest.mark.parametrize(
+        ("codec", "written", "accepted"),
+        [
+            ("h264", "MPEG-4 AVC", True),
+            ("h264", "H.264/AVC", True),
+            ("prores", "Apple ProRes", True),
+            ("prores", "ProRes 422", True),
+            ("mpeg4", "MPEG-4", True),
+            # "MPEG-4 AVC" is H.264, so its word "MPEG-4" must not accept MPEG-4 Part 2.
+            ("mpeg4", "MPEG-4 AVC", False),
+            ("hevc", "Apple ProRes", False),
+            ("vp9", "H.264/AVC", False),
+        ],
+    )
+    def test_matches_a_codec_named_inside_a_longer_name(
+        self,
+        codec: str,
+        written: str,
+        accepted: bool,  # noqa: FBT001
+    ) -> None:
+        assert input_checks._codec_matches(codec, written) is accepted
+
+    def test_shows_a_provider_written_codec_name_as_written(self) -> None:
+        error = check_video_codec("hevc", subject=SUBJECT, allowed=("Apple ProRes", "vp9"))
+        assert str(error) == f"{SUBJECT} is encoded as H.265. Re-encode it as Apple ProRes or VP9."
+
 
 class TestAudio:
     @pytest.fixture
@@ -1265,6 +1291,19 @@ class TestAudio:
         assert probe is not None
         assert probe.mime_type == "audio/3gpp"
 
+    @pytest.mark.parametrize("codec", ["pcm_s16le", "pcm_s24le", "pcm_s16be", "pcm_f32le", "pcm_u8"])
+    @pytest.mark.parametrize("written", ["PCM", "WAV", "LPCM"])
+    def test_a_generic_pcm_name_accepts_any_pcm(self, codec: str, written: str) -> None:
+        assert check_audio_codec(codec, subject=SUBJECT, allowed=(written,)) is None
+
+    def test_a_generic_pcm_name_still_refuses_a_compressed_codec(self) -> None:
+        error = check_audio_codec("flac", subject=SUBJECT, allowed=("PCM",))
+        assert str(error) == f"{SUBJECT} is encoded as FLAC. Re-encode it as PCM."
+
+    @pytest.mark.parametrize("written", ["AAC LC", "MPEG-4 AAC", "HE-AACv2", "AAC-LC"])
+    def test_matches_aac_however_a_provider_writes_it(self, written: str) -> None:
+        assert check_audio_codec("aac", subject=SUBJECT, allowed=(written,)) is None
+
 
 class TestCheckMimeType:
     def test_allows_a_listed_type(self) -> None:
@@ -1346,6 +1385,22 @@ class TestCheckMimeType:
         # An unlisted spelling that reads the same in a message still matches.
         assert check_mime_type("audio/x-made-up", subject=SUBJECT, allowed=("audio/x-made-up",)) is None
         assert check_mime_type("video/x-made-up", subject=SUBJECT, allowed=("video/made-up",)) is None
+
+    @pytest.mark.parametrize(
+        ("mime_type", "allowed"),
+        [
+            ("audio/mpeg", ("audio/MPEG",)),
+            ("video/webm", ("video/WebM",)),
+            ("video/quicktime", ("video/QuickTime",)),
+            ("audio/wav", ("audio/X-WAV",)),
+            ("video/x-matroska", ("video/matroska",)),
+            ("video/x-matroska", ("video/mkv",)),
+            ("audio/x-matroska", ("audio/matroska",)),
+            ("audio/mpeg", ("audio/mpeg3",)),
+        ],
+    )
+    def test_matches_any_capitalisation_and_registered_spelling(self, mime_type: str, allowed: tuple[str, ...]) -> None:
+        assert check_mime_type(mime_type, subject=SUBJECT, allowed=allowed) is None
 
 
 class TestCheckDuration:
