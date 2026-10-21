@@ -43,6 +43,16 @@ For enforcement, use the
 [machine-level update policy](../../enterprise/disabling_app_updates.md).
 An environment override is not binding because users control their launch environment.
 
+## `PYTHONPATH`
+
+Modules in `PYTHONPATH` folders, such as studio tools a pipeline launcher adds, can be imported
+from nodes. They are searched after the packages the app ships with, so a studio copy of a package
+the engine uses, such as `pydantic`, never replaces the engine's own.
+
+The app passes these folders to the engine as `GTN_APPEND_PYTHONPATH`. Other launchers can set
+`GTN_APPEND_PYTHONPATH` the same way to get this search order, separating folders like `PATH`
+entries (`:` on macOS and Linux, `;` on Windows).
+
 ## `GRIPTAPE_NODES_LICENSE`
 
 Supplies the license token for that run, taking precedence over the stored active
