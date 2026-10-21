@@ -395,7 +395,8 @@ The checks follow these rules:
     and data URIs, and use ffprobe only when it is already installed. A local probe takes tens of
     milliseconds. Each one is given at most 2 seconds, and no probe starts more than 5 seconds after
     the node's validation began, so its videos together block for at most that long; a video left
-    when the time runs out is skipped. The 5 seconds count the node's other checks too. An image given as a
+    when the time runs out is skipped. The 5 seconds count the node's other checks too, and apply per
+    node: when the engine starts several nodes at once, each can block for that long. An image given as a
     file path costs only a header read, except a WebP or AVIF file, which Pillow reads in full
     without decoding its pixels. One given as a data URI or an in-memory artifact is decoded in
     full, so its check takes longer the larger it is; pass file paths where you can.

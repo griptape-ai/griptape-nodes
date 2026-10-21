@@ -102,8 +102,9 @@ FFPROBE_TIMEOUT_SECONDS = 2
 
 # How long after a node's validation starts it may still probe videos. The engine opens one
 # `input_check_budget` around each node's `validate_before_node_run`; once this much time has
-# passed, the remaining videos are skipped rather than probed, so several slow probes can't add up.
-# It counts all of the validation's time, not only probing.
+# passed, the remaining videos are skipped rather than probed, so one node's slow probes can't add up.
+# It counts all of the validation's time, not only probing. The cap is per node: when the engine
+# starts several nodes in one pass, each can block for this long.
 VALIDATION_PROBE_BUDGET_SECONDS = 5
 
 # When the current validation run's probe budget runs out, as a `time.monotonic()` reading, or None
@@ -432,13 +433,18 @@ def check_aspect_ratio_range(
         widest: The widest ratio accepted, as the provider writes it, such as "3:1".
         tallest: The tallest ratio accepted, such as "1:3".
         docs_url: The provider's page documenting the limit.
+
+    Raises:
+        ValueError: If `widest` or `tallest` isn't a ratio such as "16:9".
     """
+    widest_ratio = _parse_ratio(widest)
+    tallest_ratio = _parse_ratio(tallest)
     if info is None or info.height == 0:
         return None
     ratio = info.width / info.height
-    if _parse_ratio(tallest) <= ratio <= _parse_ratio(widest):
+    if tallest_ratio <= ratio <= widest_ratio:
         return None
-    if ratio > _parse_ratio(widest):
+    if ratio > widest_ratio:
         shape = "wide"
     else:
         shape = "tall"
@@ -459,7 +465,11 @@ def check_mime_type(
         subject: The input, from `input_subject`.
         allowed: The MIME types the provider accepts, such as ("image/jpeg", "image/png").
         docs_url: The provider's page documenting the limit.
+
+    Raises:
+        TypeError: If `allowed` is a single string rather than a sequence of MIME types.
     """
+    _require_mime_type_sequence(allowed)
     if mime_type is None or mime_type in allowed:
         return None
     formats = _join_or([_format_name(name) for name in allowed])
@@ -577,9 +587,11 @@ def image_errors(  # noqa: PLR0913
         docs_url: The provider's page documenting the limits.
 
     Raises:
-        ValueError: If only one of `widest` and `tallest` is given, which would check nothing.
+        ValueError: If only one of `widest` and `tallest` is given, or one isn't a ratio such as "16:9".
+        TypeError: If `allowed_mime_types` is a single string.
     """
-    _require_both_aspect_ratio_bounds(widest, tallest)
+    _require_mime_type_sequence(allowed_mime_types)
+    _require_valid_aspect_ratio_bounds(widest, tallest)
     # Reduce the input to one string once, and hand that to both readers.
     location = coerce_media_url_or_data_uri(image, kind="image")
     info = local_image_info(location)
@@ -666,9 +678,9 @@ def video_errors(  # noqa: PLR0913
             couldn't read. Left out, the video is probed here.
 
     Raises:
-        ValueError: If only one of `widest` and `tallest` is given, which would check nothing.
+        ValueError: If only one of `widest` and `tallest` is given, or one isn't a ratio such as "16:9".
     """
-    _require_both_aspect_ratio_bounds(widest, tallest)
+    _require_valid_aspect_ratio_bounds(widest, tallest)
     errors: list[NodeError | None] = []
     if maximum_bytes is not None:
         errors.append(
@@ -761,12 +773,27 @@ def _frame_rates(probe: VideoProbe | None) -> list[float]:
     return [rate for rate in (probe.fps, probe.nominal_fps) if rate is not None]
 
 
-def _require_both_aspect_ratio_bounds(widest: str | None, tallest: str | None) -> None:
-    """Raise when only one aspect-ratio bound is given, which `check_aspect_ratio_range` can't check."""
-    if (widest is None) == (tallest is None):
-        return
-    msg = "Attempted to check an aspect ratio. Failed because only one of widest and tallest was given; pass both."
-    raise ValueError(msg)
+def _require_mime_type_sequence(allowed: Sequence[str]) -> None:
+    """Raise when `allowed` is one string: it would match by substring and list its letters."""
+    if isinstance(allowed, str):
+        msg = (
+            "Attempted to check a format. Failed because the allowed formats were one string; "
+            "pass a tuple such as ('image/png',)."
+        )
+        raise TypeError(msg)
+
+
+def _require_valid_aspect_ratio_bounds(widest: str | None, tallest: str | None) -> None:
+    """Raise when the aspect-ratio bounds can't be checked: only one is given, or one isn't a ratio.
+
+    Runs before anything is read, so a bad bound fails on every call, not only once an input can be read.
+    """
+    if (widest is None) != (tallest is None):
+        msg = "Attempted to check an aspect ratio. Failed because only one of widest and tallest was given; pass both."
+        raise ValueError(msg)
+    for bound in (widest, tallest):
+        if bound is not None:
+            _parse_ratio(bound)
 
 
 def _error(message: str, docs_url: str | None) -> NodeError:
@@ -1067,8 +1094,23 @@ def _format_name(mime_type: str) -> str:
 
 
 def _parse_ratio(name: str) -> float:
-    width, height = name.split(":", 1)
-    return float(width) / float(height)
+    """A ratio written the way providers write it, such as "16:9", as width over height.
+
+    Raises:
+        ValueError: If `name` isn't two positive numbers joined by a colon.
+    """
+    width, separator, height = name.partition(":")
+    msg = f"Attempted to check an aspect ratio. Failed because {name!r} is not a ratio such as '16:9'."
+    if not separator:
+        raise ValueError(msg)
+    try:
+        width_value = float(width)
+        height_value = float(height)
+    except ValueError as e:
+        raise ValueError(msg) from e
+    if not width_value > 0 or not height_value > 0:
+        raise ValueError(msg)
+    return width_value / height_value
 
 
 def _join_or(names: Sequence[str]) -> str:

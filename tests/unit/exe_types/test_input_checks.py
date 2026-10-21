@@ -663,6 +663,22 @@ class TestImageErrors:
         )
         assert [str(e) for e in errors] == [f"{SUBJECT} is in {image_format} format. Convert it to JPEG or PNG."]
 
+    @pytest.mark.parametrize("bound", ["16x9", "2.5", "3:0", "0:1", "a:b", ""])
+    def test_refuses_a_bound_that_is_not_a_ratio_before_reading_anything(self, bound: str) -> None:
+        # A remote URL is never read, so a bad bound must fail on its own, not only for a local file.
+        with pytest.raises(ValueError, match="is not a ratio such as '16:9'"):
+            image_errors("https://example.com/image.png", subject=SUBJECT, widest=bound, tallest="1:2")
+
+    def test_accepts_decimal_ratios(self) -> None:
+        errors = image_errors(_data_uri(_png_bytes(400, 100)), subject=SUBJECT, widest="2.5:1", tallest="1:2.5")
+        assert [str(e) for e in errors] == [
+            f"{SUBJECT} is 400x100, which is too wide. The aspect ratio must be between 1:2.5 and 2.5:1. Crop it."
+        ]
+
+    def test_refuses_allowed_formats_given_as_one_string(self) -> None:
+        with pytest.raises(TypeError, match="pass a tuple"):
+            image_errors("https://example.com/image.png", subject=SUBJECT, allowed_mime_types="image/png")
+
 
 class TestVideoErrors:
     @pytest.fixture
@@ -922,6 +938,10 @@ class TestCheckMimeType:
     def test_names_the_format_the_way_artists_know_it(self, mime_type: str, name: str) -> None:
         error = check_mime_type(mime_type, subject=SUBJECT, allowed=("image/jpeg", "image/png"))
         assert str(error) == f"{SUBJECT} is in {name} format. Convert it to JPEG or PNG."
+
+    def test_refuses_allowed_formats_given_as_one_string(self) -> None:
+        with pytest.raises(TypeError, match="pass a tuple"):
+            check_mime_type("image/gif", subject=SUBJECT, allowed="image/png, image/jpeg")
 
 
 class TestCheckDuration:
