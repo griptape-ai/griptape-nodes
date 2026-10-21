@@ -1839,7 +1839,7 @@ _CODEC_ALIASES = {
 # Words a provider writes for PCM without naming a bit depth or byte order. "PCM" and "WAV" accept any
 # PCM codec; the "linear" ones exclude companded PCM (G.711 mu-law and A-law), which isn't linear.
 _GENERIC_PCM_WORDS = frozenset({"pcm", "wav", "wave", "uncompressed"})
-_LINEAR_PCM_WORDS = frozenset({"lpcm", "linearpcm", "linear16", "l16"})
+_LINEAR_PCM_WORDS = frozenset({"lpcm", "linearpcm", "linear16", "linear32", "l16"})
 # ffprobe's prefixes for linear PCM: signed, unsigned and float samples.
 _LINEAR_PCM_PREFIXES = ("pcm_s", "pcm_u", "pcm_f")
 _LINEAR_PCM_PHRASE = re.compile(r"linear[\s_-]*pcm", re.IGNORECASE)
@@ -1967,7 +1967,28 @@ def _codecs_named_by_words(written: str) -> set[str]:
         elif "-" in word:
             # A hyphenated word that isn't one codec ("ogg-opus", as Deepgram and AWS write it) is
             # read part by part. Whole names such as "AC-3" and "AAC-LC" matched above first.
-            named |= _codecs_named_by_words(word.replace("-", " "))
+            named |= _codecs_named_by_hyphenated_parts(word.split("-"))
+    return named
+
+
+def _codecs_named_by_hyphenated_parts(parts: list[str]) -> set[str]:
+    """The codecs the parts of a hyphenated word name.
+
+    Two adjacent parts are joined first when together they name a codec, so Azure's "amr-wb-16000hz"
+    names AMR-WB, not AMR-NB.
+    """
+    parts = [part for part in parts if part]
+    named: set[str] = set()
+    index = 0
+    while index < len(parts):
+        if index + 1 < len(parts):
+            pair = parts[index] + parts[index + 1]
+            if _is_known_codec(_canonical_codec(pair)):
+                named |= _codecs_named_by_words(pair)
+                index += 2
+                continue
+        named |= _codecs_named_by_words(parts[index])
+        index += 1
     return named
 
 

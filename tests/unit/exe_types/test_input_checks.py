@@ -1396,6 +1396,11 @@ CODEC_SPELLINGS_ACCEPTED = [
     ("pcm_mulaw", "PCMU"),
     ("pcm_alaw", "PCMA"),
     ("pcm_s16le", "L16"),
+    ("pcm_f32le", "linear32"),
+    ("amr_wb", "amr-wb-16000hz"),
+    ("pcm_s16le", "riff-16khz-16bit-mono-pcm"),
+    ("pcm_mulaw", "raw-8khz-8bit-mono-mulaw"),
+    ("opus", "ogg-24khz-16bit-mono-opus"),
 ]
 CODEC_SPELLINGS_REFUSED = [
     ("mpeg4", "H.264 (MPEG-4 AVC)"),
@@ -1431,6 +1436,10 @@ CODEC_SPELLINGS_REFUSED = [
     ("pcm_alaw", "μ-law"),
     ("pcm_mulaw", "PCMA"),
     ("pcm_mulaw", "L16"),
+    ("pcm_mulaw", "linear32"),
+    ("amr_nb", "amr-wb-16000hz"),
+    ("pcm_mulaw", "riff-16khz-16bit-mono-pcm"),
+    ("vorbis", "ogg-24khz-16bit-mono-opus"),
 ]
 
 
