@@ -354,3 +354,17 @@ ISOLATED_EXECUTION_IN_WORKER = register_beta_feature(
         remove_by=date(2027, 4, 1),
     )
 )
+
+
+RUN_QUEUE = register_beta_feature(
+    BetaFeature(
+        id="run_queue",
+        name="Queue runs",
+        description=(
+            "Running a workflow, a subflow, or a node while another run is in progress waits for that run "
+            "to finish instead of being refused. Cancelling a run that is waiting removes it from the line."
+        ),
+        owner="@cjkindel",
+        remove_by=date(2027, 4, 1),
+    )
+)

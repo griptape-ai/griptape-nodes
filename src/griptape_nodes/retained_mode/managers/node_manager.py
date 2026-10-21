@@ -247,6 +247,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointSubjectType,
 )
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+from griptape_nodes.retained_mode.managers.run_manager import runs_as_one_run
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands, encode_commands
@@ -3195,7 +3196,14 @@ class NodeManager(EngineScoped):
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
+    def parent_flow_name_or_none(self, node_name: str | None) -> str | None:
+        """The flow that holds `node_name`, or None if there is no such node."""
+        if node_name is None:
+            return None
+        return self._name_to_parent_flow_name.get(node_name)
+
     @handles(ResolveNodeRequest)
+    @runs_as_one_run(ResolveNodeResultFailure, lambda self, request: self.parent_flow_name_or_none(request.node_name))
     async def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         node_name = request.node_name
         debug_mode = request.debug_mode
