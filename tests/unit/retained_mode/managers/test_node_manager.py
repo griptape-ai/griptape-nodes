@@ -1163,6 +1163,7 @@ class TestApplyHydratedValues:
         self, engine: Engine, caplog: pytest.LogCaptureFixture
     ) -> None:
         node = MagicMock(spec=BaseNode)
+        node.name = "Worker Node"
         node.parameter_values = {}
         node._list_rows = MagicMock()
         node._list_rows.set_as_rows_if_unconnected.return_value = False

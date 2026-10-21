@@ -432,6 +432,18 @@ class _OutputsAnUnsendableValueNode(DataNode):
         self.parameter_output_values["text"] = "fine"
 
 
+class _RefusesAValueNode(_EchoNode):
+    """Refuses one value of `text`, however it is set."""
+
+    REFUSED = "refused"
+
+    def before_value_set(self, parameter: Parameter, value: Any) -> Any:
+        if parameter.name == "text" and value == self.REFUSED:
+            msg = f"'{self.REFUSED}' is not allowed"
+            raise ValueError(msg)
+        return super().before_value_set(parameter, value)
+
+
 class _PlainGroup(BaseNodeGroup):
     """A plain visual grouping, with no subflow."""
 
@@ -467,7 +479,7 @@ def library_name() -> Iterator[str]:
         nodes=[],
     )
     library = LibraryRegistry.generate_new_library(library_data=schema)
-    for node_class in (_EchoNode, _OutputsAnUnsendableValueNode, _PlainGroup):
+    for node_class in (_EchoNode, _RefusesAValueNode, _OutputsAnUnsendableValueNode, _PlainGroup):
         library.register_new_node_type(
             node_class, NodeMetadata(category="test", description="", display_name=node_class.__name__)
         )
@@ -594,6 +606,33 @@ class TestTheWorkerLoadsACopy:
         assert "DeleteConnectionRequest" in str(result.result_details)
         create_node.assert_not_called()
         assert _what_the_worker_holds(worker_engine) == {_WORKER_COPIES_FLOW}
+
+    @pytest.mark.asyncio
+    async def test_a_structure_command_that_fails_fails_the_run_and_leaves_nothing(self, worker_engine: Engine) -> None:
+        alter_missing = AlterParameterDetailsRequest(node_name="Echo", parameter_name="no_such_parameter", type="int")
+
+        result = await worker_engine.ahandle_request(
+            _request_for("_EchoNode", element_modification_commands=[alter_missing])
+        )
+
+        assert isinstance(result, ExecuteNodeResultFailure)
+        assert "Attempted to prepare node 'Echo'" in str(result.result_details)
+        assert _what_the_worker_holds(worker_engine) == {_WORKER_COPIES_FLOW}
+
+    @pytest.mark.asyncio
+    async def test_a_value_the_copy_refuses_fails_the_run_and_leaves_nothing(self, worker_engine: Engine) -> None:
+        result = await worker_engine.ahandle_request(
+            _request_for("_RefusesAValueNode", parameter_values={"text": _RefusesAValueNode.REFUSED})
+        )
+
+        assert isinstance(result, ExecuteNodeResultFailure)
+        assert "Attempted to set parameter 'text' on node 'Echo'" in str(result.result_details)
+        assert _what_the_worker_holds(worker_engine) == {_WORKER_COPIES_FLOW}
+
+    def test_discarding_a_flow_that_is_already_gone_does_nothing(self, worker_engine: Engine) -> None:
+        worker_engine.node_manager._discard_worker_copy("__worker_node_copies___gone")
+
+        assert _what_the_worker_holds(worker_engine) == set()
 
     @pytest.mark.asyncio
     async def test_a_node_group_is_refused(self, worker_engine: Engine) -> None:
@@ -728,6 +767,25 @@ class TestPreparingTheRequestForAWorker:
         assert failure is None
         assert node.get_parameter_value("text") == "from the run"
         assert request.parameter_values["text"] == "from the run"
+
+    def test_a_value_the_live_node_refuses_fails_before_anything_is_sent(self, engine: Engine, flow_name: str) -> None:
+        result = engine.handle_request(
+            CreateNodeRequest(
+                node_type="_RefusesAValueNode",
+                specific_library_name=_LIBRARY_NAME,
+                node_name="Refuses",
+                override_parent_flow_name=flow_name,
+            )
+        )
+        assert isinstance(result, CreateNodeResultSuccess), result
+        node = engine.node_manager.get_node_by_name(result.node_name)
+        request = _request_for("_RefusesAValueNode", parameter_values={"text": _RefusesAValueNode.REFUSED})
+
+        failure = engine.node_manager._prepare_for_worker(node, request)
+
+        assert isinstance(failure, ExecuteNodeResultFailure)
+        assert "'text'" in str(failure.result_details)
+        assert request.element_modification_commands == []
 
     def test_the_values_sent_are_the_ones_the_node_stores(self, engine: Engine, flow_name: str) -> None:
         node = _create_echo_node(engine, flow_name)

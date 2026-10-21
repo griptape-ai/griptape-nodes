@@ -190,3 +190,21 @@ class TestStateReadBypassingRequests:
 
         assert engine.event_manager.in_node_execution() is False
         assert scope.violations == []
+
+    def test_a_manager_read_while_a_worker_loads_its_copy_is_allowed_while_another_node_runs(
+        self, engine: Engine
+    ) -> None:
+        """The load answers from the worker's own graph, whatever else the worker is doing."""
+        engine.library_manager._is_worker = True
+
+        with (
+            STRICT_MODE.open_scope(
+                kind=StrictModeScopeKind.RUNTIME_EXECUTE, subject="Loading", library_name=None, is_worker=True
+            ) as scope,
+            engine.event_manager.node_execution_scope(),
+            engine.event_manager.rebuild_scope("Loading"),
+        ):
+            config_manager = GriptapeNodes.ConfigManager()
+
+        assert config_manager is engine.config_manager
+        assert scope.violations == []

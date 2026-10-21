@@ -3613,23 +3613,8 @@ class NodeManager(EngineScoped):
         """Set the values `request` carried on a worker's copy, as a saved workflow sets them. Returns a failure or None."""
         node_name = request.node_name
         for parameter_name, value in hydrate_parameter_values(request.parameter_values).items():
-            if node.get_parameter_by_name(parameter_name) is None:
-                logger.warning(
-                    "Node '%s' received a value for parameter '%s', which does not exist on the "
-                    "executing copy. The value was left unapplied for this run.",
-                    node_name,
-                    parameter_name,
-                )
+            if not self._can_receive_value(node, parameter_name, value):
                 continue
-            if type(value) is UndecodedValue:
-                # Still set: nodes that read artifact-shaped dicts can use it.
-                logger.warning(
-                    "Node '%s' received a value for parameter '%s' that this process cannot "
-                    "rebuild, so it arrives as plain data instead of its type. %s",
-                    node_name,
-                    parameter_name,
-                    value.reason,
-                )
             value_result = self.engine.handle_request(
                 SetParameterValueRequest(
                     parameter_name=parameter_name, node_name=node_name, value=value, initial_setup=True
@@ -4068,6 +4053,31 @@ class NodeManager(EngineScoped):
                 yield current
             current = current.__cause__
 
+    @staticmethod
+    def _can_receive_value(node: BaseNode, parameter_name: str, value: Any) -> bool:
+        """Whether a value an ExecuteNodeRequest carried can be set on `node`, warning about any that can't.
+
+        A value for a parameter the node doesn't have is skipped. One this process could not rebuild into
+        its type is still set, since nodes that read artifact-shaped dicts can use it.
+        """
+        if node.get_parameter_by_name(parameter_name) is None:
+            logger.warning(
+                "Node '%s' received a value for parameter '%s', which it does not have. "
+                "The value was left unapplied for this run.",
+                node.name,
+                parameter_name,
+            )
+            return False
+        if type(value) is UndecodedValue:
+            logger.warning(
+                "Node '%s' received a value for parameter '%s' that this process cannot "
+                "rebuild, so it arrives as plain data instead of its type. %s",
+                node.name,
+                parameter_name,
+                value.reason,
+            )
+        return True
+
     def _apply_hydrated_values(
         self, node: BaseNode, node_name: str, parameter_values: dict[str, Any]
     ) -> ExecuteNodeResultFailure | None:
@@ -4077,30 +4087,15 @@ class NodeManager(EngineScoped):
         doesn't have is skipped with a warning.
         """
         for param_name, value in parameter_values.items():
-            parameter = node.get_parameter_by_name(param_name)
-            if parameter is None:
-                logger.warning(
-                    "Node '%s' received a value for parameter '%s', which it does not have. "
-                    "The value was left unapplied for this run.",
-                    node_name,
-                    param_name,
-                )
-                continue
             # Skip when the node already holds this value: setting it again would fire
             # before/after_value_set and emit a lifecycle event for no change -- observably breaking
             # nodes like LoadImage.
             current = node.parameter_values.get(param_name, _PARAM_MISSING)
             if current is value or current == value:
                 continue
-            if type(value) is UndecodedValue:
-                # Still set: nodes that read artifact-shaped dicts can use it.
-                logger.warning(
-                    "Node '%s' received a value for parameter '%s' that this process cannot "
-                    "rebuild, so it arrives as plain data instead of its type. %s",
-                    node_name,
-                    param_name,
-                    value.reason,
-                )
+            if not self._can_receive_value(node, param_name, value):
+                continue
+            parameter = cast("Parameter", node.get_parameter_by_name(param_name))
             try:
                 if not node._list_rows.set_as_rows_if_unconnected(parameter, value):
                     node.set_parameter_value(param_name, value)

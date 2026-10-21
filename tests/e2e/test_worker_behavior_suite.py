@@ -468,7 +468,7 @@ class TestAnInputListFilledInTheEditor:
             result = await _execute("ReadsAnInputListNode", node.name)
 
         assert result.parameter_output_values["echo"] == ["a", "c"]
-        assert "does not exist on the executing copy" not in caplog.text
+        assert "which it does not have" not in caplog.text
 
     @pytest.mark.parametrize("in_a_worker", [False, True])
     @pytest.mark.asyncio

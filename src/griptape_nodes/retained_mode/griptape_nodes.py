@@ -112,6 +112,11 @@ def _check_manager_access_during_execution(manager_name: str, request_hint: str)
     engine = current_engine()
     if not engine.event_manager.in_node_execution():
         return
+    # A worker loading its copy of a node answers everything from its own graph, which its own managers
+    # hold. Decided per chain, as the load is: the execution count is for the whole process, so it is
+    # also set while another node runs.
+    if engine.event_manager.rebuilding_node_name() is not None:
+        return
     scope = STRICT_MODE.current_scope()
     if scope is not None and scope.kind is StrictModeScopeKind.RUNTIME_EXECUTE:
         rule = RULES["state-read-bypassing-requests"]
