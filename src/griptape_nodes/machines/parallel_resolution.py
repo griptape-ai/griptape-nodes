@@ -192,6 +192,56 @@ class ParallelResolutionContext(EngineScoped):
             self.dag_builder.clear()
 
 
+async def collect_upstream_values_into(engine: Engine, current_node: BaseNode) -> None:
+    """Set each connected input of `current_node` to the value its upstream node holds now.
+
+    Iterates through the node's input parameters, finds each one's connected upstream node, reads that
+    node's output value, and sets it with SetParameterValueRequest, the same as setting it by hand, so the
+    node's `after_value_set` hooks run. The resolution machine calls this just before a node runs, and the
+    pre-run validation calls it for nodes whose upstream values are already final.
+
+    Args:
+        engine: The engine whose connections and request bus this run belongs to.
+        current_node: The node to collect values for.
+    """
+    # A locked node is frozen: it is skipped for execution and keeps its existing output
+    # values so downstream nodes consume those frozen outputs. Pushing an upstream value into
+    # it would be rejected by the SetParameterValueRequest handler and escalated into a fatal
+    # error, so halt propagation into the locked node quietly instead. Mirrors the
+    # editor/manual set-parameter path, which already skips locked destination nodes.
+    if current_node.lock:
+        return
+
+    connections = engine.flow_manager.get_connections()
+
+    for parameter in current_node.parameters:
+        # Get the connected upstream node for this parameter
+        upstream_connection = connections.get_connected_node(current_node, parameter, direction=Direction.UPSTREAM)
+        if upstream_connection:
+            upstream_node, upstream_parameter = upstream_connection
+
+            # If the upstream node is resolved, collect its output value
+            if upstream_parameter.name in upstream_node.parameter_output_values:
+                output_value = upstream_node.parameter_output_values[upstream_parameter.name]
+            else:
+                output_value = upstream_node._get_raw_parameter_value(upstream_parameter.name)
+
+            # Pass the value through using the same mechanism as normal resolution
+            result = await engine.ahandle_request(
+                SetParameterValueRequest(
+                    parameter_name=parameter.name,
+                    node_name=current_node.name,
+                    value=output_value,
+                    data_type=upstream_parameter.output_type,
+                    incoming_connection_source_node_name=upstream_node.name,
+                    incoming_connection_source_parameter_name=upstream_parameter.name,
+                )
+            )
+            if isinstance(result, SetParameterValueResultFailure):
+                msg = f"Failed to set parameter value for node '{current_node.name}' and parameter '{parameter.name}'. Details: {result.result_details}"
+                raise RuntimeError(msg)
+
+
 class ExecuteDagState(State):
     @staticmethod
     def check_for_new_start_nodes(
@@ -487,52 +537,11 @@ class ExecuteDagState(State):
     async def collect_values_from_upstream_nodes(engine: Engine, node_reference: DagNode) -> None:
         """Collect output values from resolved upstream nodes and pass them to the current node.
 
-        This method iterates through all input parameters of the current node, finds their
-        connected upstream nodes, and if those nodes are resolved, retrieves their output
-        values and passes them through using SetParameterValueRequest.
-
         Args:
             engine (Engine): The engine whose connections and request bus this run belongs to.
             node_reference (DagOrchestrator.DagNode): The node to collect values for.
         """
-        current_node = node_reference.node_reference
-
-        # A locked node is frozen: it is skipped for execution and keeps its existing output
-        # values so downstream nodes consume those frozen outputs. Pushing an upstream value into
-        # it would be rejected by the SetParameterValueRequest handler and escalated into a fatal
-        # error, so halt propagation into the locked node quietly instead. Mirrors the
-        # editor/manual set-parameter path, which already skips locked destination nodes.
-        if current_node.lock:
-            return
-
-        connections = engine.flow_manager.get_connections()
-
-        for parameter in current_node.parameters:
-            # Get the connected upstream node for this parameter
-            upstream_connection = connections.get_connected_node(current_node, parameter, direction=Direction.UPSTREAM)
-            if upstream_connection:
-                upstream_node, upstream_parameter = upstream_connection
-
-                # If the upstream node is resolved, collect its output value
-                if upstream_parameter.name in upstream_node.parameter_output_values:
-                    output_value = upstream_node.parameter_output_values[upstream_parameter.name]
-                else:
-                    output_value = upstream_node._get_raw_parameter_value(upstream_parameter.name)
-
-                # Pass the value through using the same mechanism as normal resolution
-                result = await engine.ahandle_request(
-                    SetParameterValueRequest(
-                        parameter_name=parameter.name,
-                        node_name=current_node.name,
-                        value=output_value,
-                        data_type=upstream_parameter.output_type,
-                        incoming_connection_source_node_name=upstream_node.name,
-                        incoming_connection_source_parameter_name=upstream_parameter.name,
-                    )
-                )
-                if isinstance(result, SetParameterValueResultFailure):
-                    msg = f"Failed to set parameter value for node '{current_node.name}' and parameter '{parameter.name}'. Details: {result.result_details}"
-                    raise RuntimeError(msg)
+        await collect_upstream_values_into(engine, node_reference.node_reference)
 
     @staticmethod
     def build_node_states(context: ParallelResolutionContext) -> NodeStatesResult:

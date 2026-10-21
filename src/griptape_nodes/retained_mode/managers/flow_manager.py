@@ -3309,7 +3309,7 @@ class FlowManager(EngineScoped):
                 all_exceptions = all_exceptions + exceptions
         # Nodes whose inputs are already known are checked now, so a bad input stops the run before
         # anything runs, and every such problem is reported at once, each on its node.
-        for failure in validate_nodes_with_known_inputs(nodes, self.get_connections()):
+        for failure in await validate_nodes_with_known_inputs(self.engine, nodes, self.get_connections()):
             all_exceptions = all_exceptions + failure.exceptions
             await self.engine.event_manager.aput_event(
                 ExecutionGriptapeNodeEvent(
