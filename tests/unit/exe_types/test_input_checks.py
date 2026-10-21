@@ -1048,7 +1048,13 @@ class TestVideoEncoding:
             ("matroska,webm", None, "h264", "video/x-matroska"),
             ("avi", None, "mpeg4", "video/x-msvideo"),
             # A container ffprobe named but this module doesn't map is named after it, so it can be refused.
-            ("something_new", None, "h264", "video/x-something_new"),
+            ("something_new", None, "h264", "video/x-ffprobe-something_new"),
+            # HEIC and AVIF photos are ISO media files; they read as images, so a video check refuses them.
+            ("mov,mp4,m4a,3gp,3g2,mj2", "heic", "hevc", "image/heif"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "mif1", "hevc", "image/heif"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "avif", "av1", "image/avif"),
+            # A still image ffprobe opens with an image demuxer reads as that image format.
+            ("png_pipe", None, "png", "image/png"),
         ],
     )
     def test_reads_the_container_from_the_file_not_its_name(
@@ -1186,6 +1192,17 @@ class TestVideoEncoding:
         assert probe.seconds == pytest.approx(3.023)
         assert probe.container_seconds == 10.0
 
+    def test_reads_a_duration_tag_named_for_its_language(self) -> None:
+        assert input_checks._stream_seconds({"tags": {"DURATION-eng": "00:00:03.500000000"}}) == pytest.approx(3.5)
+
+    def test_names_an_unmapped_container_in_a_refusal(self) -> None:
+        error = check_mime_type("video/x-ffprobe-something_new", subject=SUBJECT, allowed=("video/mp4",))
+        assert str(error) == f"{SUBJECT} is in SOMETHING_NEW format. Convert it to MP4."
+
+    def test_refuses_a_still_image_by_its_image_format(self) -> None:
+        error = check_mime_type("image/png", subject=SUBJECT, allowed=("video/mp4",))
+        assert str(error) == f"{SUBJECT} is in PNG format. Convert it to MP4."
+
     @pytest.mark.parametrize("tag", ["N/A", "", "1:2", "bad", "-00:00:01.0"])
     def test_ignores_a_duration_tag_that_isnt_a_clock_time(self, tag: str) -> None:
         assert input_checks._stream_seconds({"tags": {"DURATION": tag}}) is None
@@ -1230,6 +1247,10 @@ class TestAudio:
             ("mov,mp4,m4a,3gp,3g2,mj2", "isom", "audio/mp4"),
             ("mov,mp4,m4a,3gp,3g2,mj2", "qt  ", "video/quicktime"),
             ("matroska,webm", None, "audio/x-matroska"),
+            # A DVD's MPEG program stream holds MP2 audio, but it isn't an MP3 file.
+            ("mpeg", None, "video/mpeg"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "heic", "image/heif"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "avif", "image/avif"),
         ],
     )
     def test_reads_the_container_from_the_file(
@@ -1244,6 +1265,10 @@ class TestAudio:
         probe = local_audio_probe(str(clip))
         assert probe is not None
         assert probe.mime_type == expected
+
+    def test_refuses_an_mpeg_program_stream_where_mp3_is_asked(self) -> None:
+        error = check_mime_type("video/mpeg", subject=SUBJECT, allowed=("audio/mpeg",))
+        assert str(error) == f"{SUBJECT} is in MPEG format. Convert it to MP3."
 
     def test_reads_an_aac_profile_and_drops_ffprobes_unknown(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         self._answer(
@@ -1406,7 +1431,7 @@ class TestAudio:
             ("caf", "audio/x-caf"),
             ("au", "audio/basic"),
             ("ac3", "audio/ac3"),
-            ("tta", "audio/x-tta"),
+            ("tta", "audio/x-ffprobe-tta"),
         ],
     )
     def test_names_more_audio_containers(

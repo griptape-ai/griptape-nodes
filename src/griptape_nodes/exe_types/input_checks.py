@@ -252,7 +252,7 @@ def _exif_orientation(image: Image.Image) -> int | None:
 
 
 class VideoProbe(NamedTuple):
-    """A video's displayed frame size, duration and frame rate, read with one ffprobe run.
+    """A video's frame size (as stored, turned upright), duration and frame rate, read with one ffprobe run.
 
     `seconds` is the video stream's duration, falling back to the container's. The container's
     duration covers every stream, so a longer audio track can make it longer than the video;
@@ -849,7 +849,7 @@ def video_errors(  # noqa: PLR0913
 
     Probes the video once, with `local_video_probe`, and runs only the checks whose limits are
     given: the file size with `maximum_bytes`, the duration with `min_seconds` or `max_seconds`,
-    the displayed frame's sides and area with `min_side`, `max_side`, `min_megapixels` or
+    the frame's sides and area as stored (turned upright for a rotated clip) with `min_side`, `max_side`, `min_megapixels` or
     `max_megapixels`, the aspect ratio when both `widest` and `tallest` are set, the exact shape with
     `exact_aspect_ratios`, the frame rate with `min_fps` or `max_fps`, the container with
     `allowed_mime_types`, and the codec with `allowed_codecs`. Like the checks it runs, it skips
@@ -1477,8 +1477,8 @@ def _iso_audio_mime_type(brand: Any) -> str:
     A MOV stays a MOV, a 3GP reads as 3GP audio, and the rest reads as M4A.
     """
     match _iso_media_mime_type(brand):
-        case "video/quicktime":
-            return "video/quicktime"
+        case "video/quicktime" | "image/heif" | "image/avif":
+            return _iso_media_mime_type(brand)
         case "video/3gpp":
             return "audio/3gpp"
         case "video/3gpp2":
@@ -1538,19 +1538,26 @@ def _unmapped_mime_type(kind: str, demuxer: str) -> str:
     The probe read the file and named its format, so a format check refuses it rather than skipping
     a format it has read, as `local_image_info` does for an image format Pillow has no type for.
     """
-    return f"{kind}/x-{demuxer.split(',', 1)[0]}"
+    name = demuxer.split(",", 1)[0]
+    # ffmpeg reads a still image with a "<format>_pipe" demuxer; name it as the image it is.
+    if name.endswith("_pipe"):
+        return f"image/{name.removesuffix('_pipe')}"
+    # A "-ffprobe-" name can't collide with an alias such as audio/x-mpeg, which means MP3.
+    return f"{kind}/x-ffprobe-{name}"
 
 
 def _iso_media_mime_type(brand: Any) -> str:
     """The MIME type an ISO media file's major brand names.
 
-    A file with no brand is old QuickTime, so it reads as MOV, like one branded "qt".
+    A file with no brand is old QuickTime, so it reads as MOV, like one branded "qt". HEIC and AVIF
+    photos are ISO media files too; they read as images, so a video check refuses them.
     """
     if not isinstance(brand, str):
         return "video/quicktime"
     brand = brand.strip().lower()
-    if brand in {"", "qt"}:
-        return "video/quicktime"
+    known = _ISO_BRAND_MIME_TYPES.get(brand)
+    if known is not None:
+        return known
     if brand.startswith("3gp"):
         return "video/3gpp"
     if brand.startswith("3g2"):
@@ -1559,7 +1566,7 @@ def _iso_media_mime_type(brand: Any) -> str:
 
 
 def _frame_size(data: dict[str, Any]) -> ImageInfo | None:
-    """The displayed frame size in ffprobe's JSON for the first video stream, or None."""
+    """The frame size, turned upright for a rotated clip, in ffprobe's JSON for the first video stream, or None."""
     streams = data.get("streams")
     if not streams:
         return None
@@ -1706,7 +1713,14 @@ def _stream_seconds(stream: dict[str, Any]) -> float | None:
     tags = stream.get("tags")
     if not isinstance(tags, dict):
         return None
-    return _clock_seconds(tags.get("DURATION"))
+    seconds = _clock_seconds(tags.get("DURATION"))
+    if seconds is not None:
+        return seconds
+    # A tag can carry a language suffix, such as DURATION-eng, when no plain one was written.
+    for key, value in tags.items():
+        if isinstance(key, str) and key.upper().startswith("DURATION-"):
+            return _clock_seconds(value)
+    return None
 
 
 def _clock_seconds(value: Any) -> float | None:
@@ -1816,6 +1830,15 @@ _DOCTYPE_KEY = "griptape_doctype"
 _WEBM_VIDEO_CODECS = frozenset({"vp8", "vp9", "av1"})
 _WEBM_AUDIO_CODECS = frozenset({"opus", "vorbis"})
 
+# ISO media major brands that name something other than MP4 video: QuickTime, and HEIC/HEIF and AVIF
+# still images.
+_ISO_BRAND_MIME_TYPES = {
+    "": "video/quicktime",
+    "qt": "video/quicktime",
+    **dict.fromkeys(("heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1"), "image/heif"),
+    **dict.fromkeys(("avif", "avis"), "image/avif"),
+}
+
 # The audio reading of a video container, for an audio check of a video file's audio track.
 _VIDEO_TO_AUDIO_CONTAINER = {
     "video/mp4": "audio/mp4",
@@ -1833,6 +1856,7 @@ _AUDIO_DEMUXER_MIME_TYPES = {
     "ac3": "audio/ac3",
     "avi": "video/x-msvideo",
     "mpegts": "video/mp2t",
+    "mpeg": "video/mpeg",
     "mp3": "audio/mpeg",
     "wav": "audio/wav",
     "flac": "audio/flac",
@@ -2165,7 +2189,7 @@ def _format_name(mime_type: str) -> str:
     known = _FORMAT_NAMES.get(folded)
     if known:
         return known
-    return folded.split("/", 1)[-1].removeprefix("x-").removeprefix("vnd.").upper()
+    return folded.split("/", 1)[-1].removeprefix("x-").removeprefix("ffprobe-").removeprefix("vnd.").upper()
 
 
 def _parse_ratio(name: str) -> float:
