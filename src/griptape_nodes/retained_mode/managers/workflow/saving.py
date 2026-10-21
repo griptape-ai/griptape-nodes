@@ -842,8 +842,13 @@ class WorkflowSaver(EngineScoped):
             if template_workflow is None or template_workflow.file_path is None:
                 msg = "Save From Template scenario requires a disk-backed template workflow."
                 raise ValueError(msg)
-            # Use the registry key as base name, independent of the display name in metadata.
-            base_name = requested_file_name or derive_registry_key(template_workflow.file_path)
+            # A requested name that is the library workflow's own key is a plain save, not a Save As.
+            # Its key is a path inside the library, so the copy takes the file's stem instead, as
+            # CreateWorkflowFromTemplateRequest does, and lands where workflows are saved.
+            if requested_file_name and not self.is_library_workflow(target_workflow):
+                base_name = requested_file_name
+            else:
+                base_name = Path(template_workflow.file_path).stem
             file_name = self.generate_unique_filename(base_name)
             creation_date = datetime.now(tz=UTC)
             branched_from = None

@@ -6521,6 +6521,51 @@ class TestSaveFromTemplateRoutesOnTheOwningLibrary:
             assert target.scenario == SaveWorkflowScenario.OVERWRITE_EXISTING
             assert target.file_path == temp_dir / "my_template.py"
 
+    def test_saving_a_library_template_writes_the_copy_where_workflows_are_saved(
+        self, engine: Engine, temp_dir: Path
+    ) -> None:
+        """A plain save sends the template's own key, an absolute path inside the library.
+
+        Naming the copy after that key would put it in the library's folder, which the workspace
+        scan skips, so the copy would be gone from the picker after a restart.
+        """
+        library_template = temp_dir / "libraries" / "my_lib" / "templates" / "bar.py"
+        library_template.parent.mkdir(parents=True)
+        library_template.write_text("# stub")
+        registry_key = library_template.with_suffix("").as_posix()
+        metadata = WorkflowMetadata(
+            name="bar",
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="test",
+            node_libraries_referenced=[],
+            creation_date=datetime.now(UTC),
+            is_template=True,
+        )
+        with patch.dict(engine.workflow_registry._workflows, {}, clear=True):
+            engine.workflow_registry.generate_new_workflow(
+                registry_key=registry_key, metadata=metadata, file_path=str(library_template), library_name="MyLib"
+            )
+
+            target = self._determine(engine, registry_key)
+
+            assert target.scenario == SaveWorkflowScenario.SAVE_FROM_TEMPLATE
+            assert target.file_name == "bar"
+            assert target.relative_file_path is not None
+            assert "libraries" not in Path(target.relative_file_path).parts
+
+    def test_save_as_from_a_library_template_keeps_the_requested_name(self, engine: Engine, temp_dir: Path) -> None:
+        with patch.dict(engine.workflow_registry._workflows, {}, clear=True):
+            self._register_template(engine, temp_dir, registry_key="lib_template", library_name="MyLib")
+
+            target = engine.workflow_manager.saver._determine_save_target(
+                requested_file_name="my_copy",
+                current_workflow_name="lib_template",
+                create_versioned=False,
+            )
+
+            assert target.scenario == SaveWorkflowScenario.SAVE_FROM_TEMPLATE
+            assert target.file_name == "my_copy"
+
 
 class TestNodeLibraryDelegates:
     """Node libraries call these on `GriptapeNodes.WorkflowManager()`; they must reach the parts."""
