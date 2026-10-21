@@ -3,17 +3,20 @@
 A request a provider is certain to reject still costs the artist an upload and a wait, and sometimes
 credits. These helpers let a node refuse it first, from what it can read locally.
 
-- **Combined checks** (`image_errors`, `video_errors`) run every image or video check a provider
-  documents in one call, reading the input once. Most nodes need only these.
-- **Readers** (`local_size_bytes`, `local_image_info`, `local_video_probe`) read a media input's
-  properties from data already on this machine. `local_video_probe` reads a video's frame size,
-  durations and frame rates in one ffprobe run. None of them makes a network call or downloads a
-  tool: the video reader uses ffprobe only if it is already installed. They return None when the value is a remote URL, can't be found or parsed,
-  or when the tool to read it is missing or too slow.
+- **Combined checks** (`image_errors`, `video_errors`, `audio_errors`) run every image, video or
+  audio check a provider documents in one call, reading the input once. Most nodes need only these.
+- **Readers** (`local_size_bytes`, `local_image_info`, `local_video_probe`, `local_audio_probe`)
+  read a media input's properties from data already on this machine. `local_video_probe` reads a
+  video's container, codec, frame size, durations and frame rates in one ffprobe run, and
+  `local_audio_probe` an audio input's container, codec and durations. None of them makes a network
+  call or downloads a tool: the video and audio readers use ffprobe only if it is already
+  installed. They return None when the value is a remote URL, can't be found or parsed, or when the
+  tool to read it is missing or too slow.
 - **Checks** (`check_count`, `check_size`, `check_dimensions`, `check_aspect_ratio_range`,
-  `check_mime_type`, `check_duration`, `check_frame_rate`) compare one value with a limit and
-  return a `NodeError` ready to append to `validate_before_node_run`'s list, or None when the value
-  is within the limit or unknown.
+  `check_aspect_ratio_exact`, `check_mime_type`, `check_video_codec`, `check_audio_codec`,
+  `check_duration`, `check_frame_rate`) compare one value with a limit and return a `NodeError`
+  ready to append to `validate_before_node_run`'s list, or None when the value is within the limit
+  or unknown.
 
 A limit is enforced only where it can be read cheaply; anything else is left for the provider.
 
@@ -73,10 +76,13 @@ logger = logging.getLogger("griptape_nodes")
 register_heif_opener()
 
 __all__ = [
+    "AudioProbe",
     "ImageInfo",
     "VideoProbe",
+    "audio_errors",
     "check_aspect_ratio_exact",
     "check_aspect_ratio_range",
+    "check_audio_codec",
     "check_count",
     "check_dimensions",
     "check_duration",
@@ -87,6 +93,7 @@ __all__ = [
     "image_errors",
     "input_check_budget",
     "input_subject",
+    "local_audio_probe",
     "local_image_info",
     "local_size_bytes",
     "local_video_probe",
@@ -318,9 +325,9 @@ def local_video_probe(value: Any) -> VideoProbe | None:
     one `FFPROBE_TIMEOUT_SECONDS`, and the values come from the same read of the file. Inside an
     `input_check_budget`, the probe also stops when the budget does.
     Probes only a file on this machine, with an ffprobe that is already installed; see
-    `_probe_local_video`.
+    `_run_ffprobe`.
     """
-    data = _probe_local_video(value, ["-show_format", "-select_streams", "v:0", "-show_streams"])
+    data = _run_ffprobe(value, ["-show_format", "-select_streams", "v:0", "-show_streams"], kind="video")
     if data is None:
         return None
     stream_seconds = _seconds(_first_stream(data).get("duration"))
@@ -336,6 +343,63 @@ def local_video_probe(value: Any) -> VideoProbe | None:
         nominal_fps=_nominal_frame_rate(data),
         mime_type=_video_mime_type(data),
         codec=_video_codec(data),
+    )
+
+
+class AudioProbe(NamedTuple):
+    """An audio input's container, codec and duration, read with one ffprobe run.
+
+    `mime_type` is the container, such as "audio/mpeg" or "audio/wav", read from the file rather than
+    its name. `codec` is the first audio stream's codec as ffprobe names it, such as "mp3", "aac" or
+    "pcm_s16le", and `profile` its profile where it has one, such as "LC" for AAC-LC. `seconds` is the
+    audio stream's duration, falling back to the file's; `container_seconds` keeps the file's, which a
+    longer video track can stretch. Each part is None when ffprobe didn't report it.
+    """
+
+    mime_type: str | None
+    codec: str | None
+    profile: str | None
+    seconds: float | None
+    container_seconds: float | None = None
+
+    @property
+    def shortest_seconds(self) -> float | None:
+        """The shorter of the stream and container durations; a maximum is checked against this one."""
+        return min(self._durations(), default=None)
+
+    @property
+    def longest_seconds(self) -> float | None:
+        """The longer of the stream and container durations; a minimum is checked against this one."""
+        return max(self._durations(), default=None)
+
+    def _durations(self) -> list[float]:
+        return [s for s in (self.seconds, self.container_seconds) if s is not None]
+
+
+def local_audio_probe(value: Any) -> AudioProbe | None:
+    """The container, codec and duration of an audio input, or None if it can't be read locally.
+
+    Reads the first audio stream, so an audio track inside a video file is read too. Probes only a
+    file on this machine, with an ffprobe that is already installed, under the same time limits as
+    `local_video_probe`; see `_run_ffprobe`.
+    """
+    data = _run_ffprobe(value, ["-show_format", "-select_streams", "a:0", "-show_streams"], kind="audio")
+    if data is None:
+        return None
+    stream = _first_stream(data)
+    if not stream:
+        return None
+    stream_seconds = _seconds(stream.get("duration"))
+    container_seconds = _seconds(data.get("format", {}).get("duration"))
+    seconds = stream_seconds
+    if seconds is None:
+        seconds = container_seconds
+    return AudioProbe(
+        mime_type=_audio_mime_type(data),
+        codec=_stream_text(stream, "codec_name"),
+        profile=_stream_text(stream, "profile"),
+        seconds=seconds,
+        container_seconds=container_seconds,
     )
 
 
@@ -553,6 +617,33 @@ def check_video_codec(
         msg = (
             "Attempted to check a video codec. Failed because the allowed codecs were one string; "
             "pass a tuple such as ('h264',)."
+        )
+        raise TypeError(msg)
+    if codec is None or codec in allowed:
+        return None
+    codecs = _join_or([_codec_name(name) for name in allowed])
+    return _error(f"{subject} is encoded as {_codec_name(codec)}. Re-encode it as {codecs}.", docs_url)
+
+
+def check_audio_codec(
+    codec: str | None, *, subject: str, allowed: Sequence[str], docs_url: str | None = None
+) -> NodeError | None:
+    """An error when an audio input's codec isn't one the provider accepts.
+
+    Args:
+        codec: The audio stream's codec as ffprobe names it, from `local_audio_probe`, such as "mp3".
+            None skips the check.
+        subject: The input, from `input_subject`.
+        allowed: The codecs the provider accepts, as ffprobe names them, such as ("mp3", "aac").
+        docs_url: The provider's page documenting the limit.
+
+    Raises:
+        TypeError: If `allowed` is a single string rather than a sequence of codecs.
+    """
+    if isinstance(allowed, str):
+        msg = (
+            "Attempted to check an audio codec. Failed because the allowed codecs were one string; "
+            "pass a tuple such as ('mp3',)."
         )
         raise TypeError(msg)
     if codec is None or codec in allowed:
@@ -859,6 +950,83 @@ def video_errors(  # noqa: PLR0913
     return [error for error in errors if error]
 
 
+def audio_errors(  # noqa: PLR0913
+    audio: Any,
+    *,
+    subject: str,
+    allowed_mime_types: Sequence[str] = (),
+    allowed_codecs: Sequence[str] = (),
+    maximum_bytes: int | None = None,
+    strict_maximum_bytes: bool = False,
+    min_seconds: float | None = None,
+    max_seconds: float | None = None,
+    duration_fix: str | None = None,
+    docs_url: str | None = None,
+) -> list[NodeError]:
+    """Every provider audio limit an audio input breaks, in one call.
+
+    Probes the audio once, with `local_audio_probe`, and runs only the checks whose limits are given:
+    the container with `allowed_mime_types`, the codec with `allowed_codecs`, the file size with
+    `maximum_bytes`, and the duration with `min_seconds` or `max_seconds`. Like the checks it runs,
+    it skips anything it can't read locally.
+
+    Args:
+        audio: The audio input.
+        subject: The input, from `input_subject`.
+        allowed_mime_types: The containers the provider accepts, such as ("audio/mpeg", "audio/wav").
+            The container is read from the file, so an MP3 renamed to .wav is still an MP3.
+        allowed_codecs: The audio codecs the provider accepts, as ffprobe names them, such as
+            ("mp3", "aac"). A WAV's codec is a PCM one, such as "pcm_s16le".
+        maximum_bytes: The largest file the provider accepts.
+        strict_maximum_bytes: For a provider that writes "less than": a file of exactly
+            `maximum_bytes` is refused too.
+        min_seconds: The shortest clip accepted.
+        max_seconds: The longest clip accepted.
+        duration_fix: What the artist can do about a clip of the wrong length. Defaults to
+            `check_duration`'s.
+        docs_url: The provider's page documenting the limits.
+
+    Raises:
+        TypeError: If `allowed_mime_types` or `allowed_codecs` is a single string.
+    """
+    _require_mime_type_sequence(allowed_mime_types)
+    errors: list[NodeError | None] = []
+    if maximum_bytes is not None:
+        errors.append(
+            check_size(
+                local_size_bytes(audio, kind="audio"),
+                maximum_bytes=maximum_bytes,
+                subject=subject,
+                strict=strict_maximum_bytes,
+                docs_url=docs_url,
+            )
+        )
+    needs_probe = bool(allowed_mime_types) or bool(allowed_codecs) or min_seconds is not None or max_seconds is not None
+    if not needs_probe:
+        return [error for error in errors if error]
+    probe = local_audio_probe(audio)
+    mime_type = None
+    codec = None
+    if probe is not None:
+        mime_type = probe.mime_type
+        codec = probe.codec
+    if allowed_mime_types:
+        errors.append(check_mime_type(mime_type, subject=subject, allowed=allowed_mime_types, docs_url=docs_url))
+    if allowed_codecs:
+        errors.append(check_audio_codec(codec, subject=subject, allowed=allowed_codecs, docs_url=docs_url))
+    errors.extend(
+        _duration_errors(
+            probe,
+            subject=subject,
+            min_seconds=min_seconds,
+            max_seconds=max_seconds,
+            fix=duration_fix,
+            docs_url=docs_url,
+        )
+    )
+    return [error for error in errors if error]
+
+
 def _encoding_errors(
     probe: VideoProbe | None,
     *,
@@ -918,7 +1086,7 @@ def _frame_errors(  # noqa: PLR0913
 
 
 def _duration_errors(  # noqa: PLR0913
-    probe: VideoProbe | None,
+    probe: VideoProbe | AudioProbe | None,
     *,
     subject: str,
     min_seconds: float | None,
@@ -926,7 +1094,7 @@ def _duration_errors(  # noqa: PLR0913
     fix: str | None,
     docs_url: str | None,
 ) -> list[NodeError | None]:
-    """`video_errors`' duration checks.
+    """`video_errors`' and `audio_errors`' duration checks.
 
     Providers don't say whether they measure the video stream or the whole container, so each bound
     uses the reading it's easier to meet: the shorter for a maximum, the longer for a minimum.
@@ -1020,15 +1188,15 @@ def _image_source(location: str) -> BytesIO | Path | None:
         return None
 
 
-def _probe_local_video(value: Any, args: list[str]) -> dict[str, Any] | None:  # noqa: PLR0911
-    """The JSON ffprobe prints for a video input on this machine, or None.
+def _run_ffprobe(value: Any, args: list[str], *, kind: MediaKind) -> dict[str, Any] | None:  # noqa: PLR0911
+    """The JSON ffprobe prints for a video or audio input on this machine, or None.
 
     Only a file on this machine is probed: a remote URL would make ffprobe download it, and a data
     URI is too large to pass on its command line. ffprobe is used only if it is already installed
     (see `_installed_ffprobe`), never fetched, and is given `FFPROBE_TIMEOUT_SECONDS` to answer, or
     what's left of the current `input_check_budget` if that's less.
     """
-    location = coerce_media_url_or_data_uri(value, kind="video")
+    location = coerce_media_url_or_data_uri(value, kind=kind)
     if not location or location.startswith("data:"):
         return None
     path = _local_path(location)
@@ -1036,11 +1204,11 @@ def _probe_local_video(value: Any, args: list[str]) -> dict[str, Any] | None:  #
         return None
     ffprobe = _installed_ffprobe()
     if ffprobe is None:
-        logger.debug("ffprobe is not installed, skipping a pre-run video check")
+        logger.debug("ffprobe is not installed, skipping a pre-run %s check", kind)
         return None
     timeout = _probe_timeout()
     if timeout is None:
-        logger.debug("This validation run's probe budget is spent, skipping a pre-run video check")
+        logger.debug("This validation run's probe budget is spent, skipping a pre-run %s check", kind)
         return None
     cmd = [ffprobe, "-v", "error", "-print_format", "json", *args, str(path)]
     try:
@@ -1055,12 +1223,12 @@ def _probe_local_video(value: Any, args: list[str]) -> dict[str, Any] | None:  #
             timeout=timeout,
         )
     except (subprocess.SubprocessError, OSError, ValueError) as e:
-        logger.debug("Could not probe a video for a pre-run input check, skipping it: %s", e)
+        logger.debug("Could not probe a %s for a pre-run input check, skipping it: %s", kind, e)
         return None
     try:
         data = json.loads(result.stdout)
     except ValueError as e:
-        logger.debug("Could not probe a video for a pre-run input check, skipping it: %s", e)
+        logger.debug("Could not probe a %s for a pre-run input check, skipping it: %s", kind, e)
         return None
     if not isinstance(data, dict):
         return None
@@ -1129,6 +1297,36 @@ def _first_stream(data: dict[str, Any]) -> dict[str, Any]:
     if not streams:
         return {}
     return streams[0]
+
+
+def _stream_text(stream: dict[str, Any], key: str) -> str | None:
+    """A text field of an ffprobe stream, or None when it's missing or ffprobe's "unknown"."""
+    value = stream.get(key)
+    if not isinstance(value, str) or not value or value == "unknown":
+        return None
+    return value
+
+
+def _audio_mime_type(data: dict[str, Any]) -> str | None:
+    """An audio input's container as a MIME type, read from ffprobe's JSON, or None if it isn't named here.
+
+    ffprobe names MP4 and M4A with one demuxer, so an MP4 reads as audio/mp4 here, the audio in it
+    being what an audio check looks at.
+    """
+    format_info = data.get("format")
+    if not isinstance(format_info, dict):
+        return None
+    demuxer = format_info.get("format_name")
+    if not isinstance(demuxer, str):
+        return None
+    if demuxer.startswith("mov,"):
+        brand = format_info.get("tags", {}).get("major_brand")
+        if _iso_media_mime_type(brand) == "video/quicktime":
+            return "video/quicktime"
+        return "audio/mp4"
+    if demuxer.startswith("matroska"):
+        return "audio/webm"
+    return _AUDIO_DEMUXER_MIME_TYPES.get(demuxer)
 
 
 def _video_codec(data: dict[str, Any]) -> str | None:
@@ -1333,6 +1531,17 @@ _HEIF_MIME_TYPES = frozenset({"image/heic", "image/heif"})
 # Video codecs a WebM file may carry; Matroska with any other codec is an MKV.
 _WEBM_VIDEO_CODECS = frozenset({"vp8", "vp9", "av1"})
 
+# ffprobe demuxer names for audio containers that name one format each.
+_AUDIO_DEMUXER_MIME_TYPES = {
+    "mp3": "audio/mpeg",
+    "wav": "audio/wav",
+    "flac": "audio/flac",
+    "ogg": "audio/ogg",
+    "aac": "audio/aac",
+    "aiff": "audio/aiff",
+    "w64": "audio/wav",
+}
+
 # ffprobe demuxer names for containers that name one format each.
 _DEMUXER_MIME_TYPES = {
     "avi": "video/x-msvideo",
@@ -1355,6 +1564,13 @@ _FORMAT_NAMES = {
     "video/3gpp2": "3G2",
     "video/mp2t": "MPEG-TS",
     "video/x-ms-wmv": "WMV",
+    "audio/mpeg": "MP3",
+    "audio/mp4": "M4A",
+    "audio/wav": "WAV",
+    "audio/x-wav": "WAV",
+    "audio/ogg": "OGG",
+    "audio/webm": "WebM",
+    "audio/aiff": "AIFF",
 }
 
 
@@ -1370,6 +1586,16 @@ _CODEC_NAMES = {
     "mpeg2video": "MPEG-2",
     "mjpeg": "Motion JPEG",
     "dnxhd": "DNxHD",
+    "mp3": "MP3",
+    "aac": "AAC",
+    "flac": "FLAC",
+    "opus": "Opus",
+    "vorbis": "Vorbis",
+    "alac": "ALAC",
+    "pcm_s16le": "16-bit PCM",
+    "pcm_s24le": "24-bit PCM",
+    "pcm_s32le": "32-bit PCM",
+    "pcm_f32le": "32-bit float PCM",
 }
 
 

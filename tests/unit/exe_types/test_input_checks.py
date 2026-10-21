@@ -18,10 +18,13 @@ from PIL import Image, PngImagePlugin, features
 
 from griptape_nodes.exe_types import input_checks
 from griptape_nodes.exe_types.input_checks import (
+    AudioProbe,
     ImageInfo,
     VideoProbe,
+    audio_errors,
     check_aspect_ratio_exact,
     check_aspect_ratio_range,
+    check_audio_codec,
     check_count,
     check_dimensions,
     check_duration,
@@ -32,6 +35,7 @@ from griptape_nodes.exe_types.input_checks import (
     image_errors,
     input_check_budget,
     input_subject,
+    local_audio_probe,
     local_image_info,
     local_size_bytes,
     local_video_probe,
@@ -1028,6 +1032,97 @@ class TestVideoEncoding:
     def test_refuses_codecs_given_as_one_string(self) -> None:
         with pytest.raises(TypeError, match="pass a tuple"):
             check_video_codec("h264", subject=SUBJECT, allowed="h264")
+
+
+class TestAudio:
+    @pytest.fixture
+    def clip(self, tmp_path: Path) -> Path:
+        path = tmp_path / "clip.wav"
+        path.write_bytes(b"audio")
+        return path
+
+    def _answer(self, monkeypatch: pytest.MonkeyPatch, stream: dict[str, Any], format_info: dict[str, Any]) -> None:
+        """Pretend ffprobe is installed and answers with one audio stream and this container."""
+        monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: "/usr/bin/ffprobe")
+        answer = json.dumps({"streams": [stream], "format": format_info})
+        monkeypatch.setattr(input_checks.subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout=answer))
+
+    @pytest.mark.parametrize(
+        ("demuxer", "brand", "expected"),
+        [
+            ("mp3", None, "audio/mpeg"),
+            ("wav", None, "audio/wav"),
+            ("flac", None, "audio/flac"),
+            ("ogg", None, "audio/ogg"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "M4A ", "audio/mp4"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "isom", "audio/mp4"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "qt  ", "video/quicktime"),
+            ("matroska,webm", None, "audio/webm"),
+        ],
+    )
+    def test_reads_the_container_from_the_file(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch, demuxer: str, brand: str | None, expected: str
+    ) -> None:
+        tags = {} if brand is None else {"major_brand": brand}
+        self._answer(
+            monkeypatch,
+            {"codec_name": "mp3", "duration": "3.0"},
+            {"format_name": demuxer, "duration": "3.0", "tags": tags},
+        )
+        probe = local_audio_probe(str(clip))
+        assert probe is not None
+        assert probe.mime_type == expected
+
+    def test_reads_an_aac_profile_and_drops_ffprobes_unknown(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._answer(
+            monkeypatch,
+            {"codec_name": "aac", "profile": "HE-AAC", "duration": "4.0"},
+            {"format_name": "mov,mp4,m4a,3gp,3g2,mj2", "duration": "4.0", "tags": {"major_brand": "M4A "}},
+        )
+        assert local_audio_probe(str(clip)) == AudioProbe(
+            mime_type="audio/mp4", codec="aac", profile="HE-AAC", seconds=4.0, container_seconds=4.0
+        )
+        self._answer(monkeypatch, {"codec_name": "mp3", "profile": "unknown"}, {"format_name": "mp3"})
+        probe = local_audio_probe(str(clip))
+        assert probe is not None
+        assert probe.profile is None
+
+    def test_reads_nothing_from_a_file_with_no_audio(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: "/usr/bin/ffprobe")
+        answer = json.dumps({"streams": [], "format": {"format_name": "mp4"}})
+        monkeypatch.setattr(input_checks.subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout=answer))
+        assert local_audio_probe(str(clip)) is None
+
+    def test_checks_format_codec_and_duration_from_one_probe(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[Any] = []
+
+        def probe(value: Any) -> AudioProbe:
+            calls.append(value)
+            return AudioProbe(mime_type="audio/flac", codec="flac", profile=None, seconds=2.0)
+
+        monkeypatch.setattr(input_checks, "local_audio_probe", probe)
+        errors = audio_errors(
+            str(clip),
+            subject=SUBJECT,
+            allowed_mime_types=("audio/wav", "audio/mpeg"),
+            allowed_codecs=("mp3", "pcm_s16le"),
+            min_seconds=3,
+            max_seconds=30,
+        )
+        assert [str(e) for e in errors] == [
+            f"{SUBJECT} is in FLAC format. Convert it to WAV or MP3.",
+            f"{SUBJECT} is encoded as FLAC. Re-encode it as MP3 or 16-bit PCM.",
+            f"{SUBJECT} is 2.00 seconds long and the minimum is 3. Use a longer clip.",
+        ]
+        assert len(calls) == 1
+
+    def test_does_not_probe_for_a_size_limit_alone(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: pytest.fail("no probe needed"))
+        assert audio_errors(str(clip), subject=SUBJECT, maximum_bytes=10**9) == []
+
+    def test_refuses_codecs_given_as_one_string(self) -> None:
+        with pytest.raises(TypeError, match="pass a tuple"):
+            check_audio_codec("mp3", subject=SUBJECT, allowed="mp3")
 
 
 class TestCheckMimeType:

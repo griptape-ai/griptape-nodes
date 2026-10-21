@@ -334,16 +334,22 @@ When its documentation gives limits on the files it accepts, check them in
 `validate_before_node_run` so the node fails before it starts. `griptape_nodes.exe_types.input_checks`
 reads what it needs locally and builds the `NodeError` for you:
 
-| Helper                                    | Use it when                                                                      |
-| ----------------------------------------- | -------------------------------------------------------------------------------- |
-| `image_errors(image, subject=..., ...)`   | An image input has limits on its format, file size, pixel size, or aspect ratio. |
-| `video_errors(video, subject=..., ...)`   | A video input has limits on its file size, length, frame size, or frame rate.    |
-| `check_count(count, maximum=..., ...)`    | A list parameter accepts only so many items.                                     |
-| `input_subject(parameter, noun=..., ...)` | You need the start of the message, such as "Image 2 in 'reference images'".      |
+| Helper                                    | Use it when                                                                                              |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `image_errors(image, subject=..., ...)`   | An image input has limits on its format, file size, pixel size, or aspect ratio (a range or exact ones). |
+| `video_errors(video, subject=..., ...)`   | A video input has limits on its container, codec, file size, length, frame size, or frame rate.          |
+| `audio_errors(audio, subject=..., ...)`   | An audio input has limits on its container, codec, file size, or length.                                 |
+| `check_count(count, maximum=..., ...)`    | A list parameter accepts only so many items.                                                             |
+| `input_subject(parameter, noun=..., ...)` | You need the start of the message, such as "Image 2 in 'reference images'".                              |
 
 Each takes only the limits you pass and returns a list of errors, empty when the input is within
 them. The single checks they use (`check_size`, `check_dimensions`, `check_duration` and the rest)
 are there too for a limit that isn't about one file.
+
+Formats are read from the file, not its name: a MOV renamed to `.mp4` is still refused as a MOV,
+and an MP3 renamed to `.wav` as an MP3. HEIC and HEIF photos are read like any other image, and a
+provider listing either `image/heic` or `image/heif` accepts both. For a provider that writes "less
+than 30 MB", pass `strict_maximum_bytes=True` so a file of exactly 30 MB is refused too.
 
 ```python
 from griptape_nodes.exe_types.input_checks import check_count, image_errors, input_subject
