@@ -3234,7 +3234,7 @@ class NodeManager(EngineScoped):
         if flow_mgr.check_for_existing_running_flow() and flow_mgr.global_single_node_resolution:
             return await self._resolve_node_run(node, flow, debug_mode=debug_mode)
         return await flow_mgr.run_when_machine_is_free(
-            lambda: self._resolve_node_run(node, flow, debug_mode=debug_mode)
+            flow.name, lambda: self._resolve_node_run(node, flow, debug_mode=debug_mode)
         )
 
     async def _resolve_node_run(self, node: BaseNode, flow: ControlFlow, *, debug_mode: bool) -> ResultPayload:  # noqa: C901, PLR0911

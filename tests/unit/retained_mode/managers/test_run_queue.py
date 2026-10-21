@@ -113,3 +113,53 @@ class TestRunQueue:
         queue.release(_A, "r1")
 
         assert queue.holder is None
+
+
+class TestPlaceInLine:
+    """Each waiting run hears its place in line when it changes, and 0 once it stops waiting."""
+
+    @staticmethod
+    def _queue() -> tuple[RunQueue, list[tuple[str, int]]]:
+        heard: list[tuple[str, int]] = []
+        queue = RunQueue(on_position=lambda _session, run_id, position: heard.append((run_id, position)))
+        return queue, heard
+
+    @pytest.mark.asyncio
+    async def test_a_run_that_gets_a_free_machine_hears_nothing(self) -> None:
+        queue, heard = self._queue()
+
+        await queue.acquire(_A, "r1")
+
+        assert heard == []
+
+    @pytest.mark.asyncio
+    async def test_waiting_runs_hear_their_place_and_move_up_as_the_line_moves(self) -> None:
+        queue, heard = self._queue()
+        await queue.acquire(_A, "first")
+        second = asyncio.ensure_future(queue.acquire(_A, "second"))
+        third = asyncio.ensure_future(queue.acquire(_B, "third"))
+        await _settle()
+        assert heard == [("second", 1), ("third", 2)]
+
+        queue.release(_A, "first")
+        await asyncio.wait_for(second, timeout=1.0)
+
+        assert heard[2:] == [("second", 0), ("third", 1)]
+        queue.release(_A, "second")
+        await asyncio.wait_for(third, timeout=1.0)
+        assert heard[-1] == ("third", 0)
+
+    @pytest.mark.asyncio
+    async def test_a_run_that_stops_waiting_hears_0_and_the_runs_behind_it_move_up(self) -> None:
+        queue, heard = self._queue()
+        await queue.acquire(_A, "first")
+        cancelled = asyncio.ensure_future(queue.acquire(_A, "cancelled"))
+        behind = asyncio.ensure_future(queue.acquire(_B, "behind"))
+        await _settle()
+
+        cancelled.cancel()
+        await asyncio.gather(cancelled, return_exceptions=True)
+
+        assert heard[2:] == [("cancelled", 0), ("behind", 1)]
+        queue.release(_A, "first")
+        await asyncio.wait_for(behind, timeout=1.0)

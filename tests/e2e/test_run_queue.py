@@ -19,6 +19,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ContinueExecutionStepRequest,
     ResolveNodeRequest,
     ResolveNodeResultSuccess,
+    RunQueuedEvent,
     StartFlowFromNodeRequest,
     StartFlowFromNodeResultSuccess,
 )
@@ -137,6 +138,40 @@ async def test_a_run_started_while_another_is_in_progress_waits_for_it_to_end(
     assert isinstance(await _finish(waiting), StartFlowFromNodeResultSuccess)
     assert _state(engine, "Next") is NodeResolutionState.RESOLVED
     assert engine.flow_manager.check_for_existing_running_flow() is False, flow_name
+
+
+@pytest.mark.usefixtures("parallel_mode")
+@pytest.mark.asyncio
+async def test_the_editor_hears_a_waiting_runs_place_in_line_until_it_starts(
+    engine: Engine, flow_name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The editor learns the run is next in line while it waits, and that it stopped waiting once it starts."""
+    heard = _record_run_queued(engine, monkeypatch)
+    holding = asyncio.create_task(engine.ahandle_request(ResolveNodeRequest(node_name="Holder")))
+    await _wait_for_state(engine, "Holder", NodeResolutionState.RESOLVING)
+    waiting = asyncio.create_task(engine.ahandle_request(StartFlowFromNodeRequest(node_name="Next")))
+    await asyncio.sleep(_WAITING_SECONDS)
+
+    assert heard == [(flow_name, 1)], "the editor was not told the run is next in line"
+
+    _open_gate(tmp_path)
+    await _finish(holding)
+    await _finish(waiting)
+    assert heard == [(flow_name, 1), (flow_name, 0)]
+
+
+def _record_run_queued(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, int]]:
+    heard: list[tuple[str, int]] = []
+    real_put_event = engine.event_manager.put_event
+
+    def _collect(event: object) -> None:
+        payload = getattr(getattr(event, "wrapped_event", None), "payload", None)
+        if isinstance(payload, RunQueuedEvent):
+            heard.append((payload.flow_name, payload.position))
+        real_put_event(event)
+
+    monkeypatch.setattr(engine.event_manager, "put_event", _collect)
+    return heard
 
 
 @pytest.mark.usefixtures("parallel_mode")

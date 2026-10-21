@@ -75,6 +75,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     GetIsFlowRunningResultFailure,
     GetIsFlowRunningResultSuccess,
     InvolvedNodesEvent,
+    RunQueuedEvent,
     SingleExecutionStepRequest,
     SingleExecutionStepResultFailure,
     SingleExecutionStepResultSuccess,
@@ -355,8 +356,10 @@ class FlowManager(EngineScoped):
         self._global_single_node_resolution = False
         self._global_dag_builder = DagBuilder(self.engine)
         self._node_executor = NodeExecutor(self.engine)
-        self._run_queue = RunQueue()
+        self._run_queue = RunQueue(on_position=self._report_place_in_line)
         self._run_in_progress: _RunInProgress | None = None
+        # The flow of each run waiting for the machine, by run, for telling the editor where it is in line.
+        self._waiting_run_flows: dict[str, str] = {}
 
     @property
     def global_single_node_resolution(self) -> bool:
@@ -2817,7 +2820,7 @@ class FlowManager(EngineScoped):
         except KeyError as err:
             details = f"Cannot start flow. Error: {err}"
             return StartFlowResultFailure(validation_exceptions=[err], result_details=details)
-        return await self.run_when_machine_is_free(lambda: self._start_flow_run(request, flow_name, flow))
+        return await self.run_when_machine_is_free(flow_name, lambda: self._start_flow_run(request, flow_name, flow))
 
     async def _start_flow_run(  # noqa: C901, PLR0911, PLR0912
         self, request: StartFlowRequest, flow_name: str, flow: ControlFlow
@@ -2922,7 +2925,7 @@ class FlowManager(EngineScoped):
             details = f"Cannot start flow. Error: {err}"
             return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
         return await self.run_when_machine_is_free(
-            lambda: self._start_flow_from_node_run(request, flow_name, flow, start_node)
+            flow_name, lambda: self._start_flow_from_node_run(request, flow_name, flow, start_node)
         )
 
     async def _start_flow_from_node_run(  # noqa: PLR0911
@@ -4700,8 +4703,10 @@ class FlowManager(EngineScoped):
         except CommandsFormatError as error:
             raise ImageFlowCommandsError(str(error)) from error
 
-    async def run_when_machine_is_free(self, start: Callable[[], Awaitable[ResultPayload]]) -> ResultPayload:
-        """Await `start` as a run of its own once the run in progress ends, waiting its turn behind any others.
+    async def run_when_machine_is_free(
+        self, flow_name: str, start: Callable[[], Awaitable[ResultPayload]]
+    ) -> ResultPayload:
+        """Await `start` as a run of `flow_name` once the run in progress ends, waiting its turn behind any others.
 
         A request made from inside the run in progress belongs to that run, so `start` is awaited at
         once: waiting would wait on itself.
@@ -4709,7 +4714,11 @@ class FlowManager(EngineScoped):
         if self._is_inside_run_in_progress():
             return await start()
         run = _RunInProgress(session=self.engine.get_session_id() or "local", run_id=str(uuid4()))
-        await self._run_queue.acquire(run.session, run.run_id)
+        self._waiting_run_flows[run.run_id] = flow_name
+        try:
+            await self._run_queue.acquire(run.session, run.run_id)
+        finally:
+            del self._waiting_run_flows[run.run_id]
         self._run_in_progress = run
         token = _current_run_id.set(run.run_id)
         try:
@@ -4718,6 +4727,15 @@ class FlowManager(EngineScoped):
             _current_run_id.reset(token)
             run.starting = False
             self._release_machine_if_run_ended()
+
+    def _report_place_in_line(self, _session: str, run_id: str, position: int) -> None:
+        self.engine.event_manager.put_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(
+                    payload=RunQueuedEvent(run_id=run_id, flow_name=self._waiting_run_flows[run_id], position=position)
+                )
+            )
+        )
 
     def _is_inside_run_in_progress(self) -> bool:
         run = self._run_in_progress

@@ -424,6 +424,25 @@ class ControlFlowCancelledEvent(ExecutionPayload):
 
 @dataclass
 @PayloadRegistry.register
+class RunQueuedEvent(ExecutionPayload):
+    """A run is waiting for the machine while another run has it.
+
+    Sent when the run starts waiting, each time its place in line changes, and once more with
+    position 0 when it stops waiting, whether it got the machine or its request was cancelled.
+
+    Args:
+        run_id: The waiting run.
+        flow_name: The flow the run executes.
+        position: Its place in line, 1 being next, or 0 once it is no longer waiting.
+    """
+
+    run_id: str
+    flow_name: str
+    position: int
+
+
+@dataclass
+@PayloadRegistry.register
 class NodeResolvedEvent(ExecutionPayload):
     """A node finished running.
 

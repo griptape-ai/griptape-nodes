@@ -1058,9 +1058,9 @@ class TestRunsTakeTurns:
             return "nested ran"
 
         async def outer() -> Any:
-            return await flow_manager.run_when_machine_is_free(nested)
+            return await flow_manager.run_when_machine_is_free("flow", nested)
 
-        result = await asyncio.wait_for(flow_manager.run_when_machine_is_free(outer), timeout=1.0)
+        result = await asyncio.wait_for(flow_manager.run_when_machine_is_free("flow", outer), timeout=1.0)
 
         assert result == "nested ran"
 
@@ -1081,8 +1081,8 @@ class TestRunsTakeTurns:
             await later_run_may_end.wait()
             return None
 
-        await flow_manager.run_when_machine_is_free(first_run)
-        holding = asyncio.ensure_future(flow_manager.run_when_machine_is_free(later_run))
+        await flow_manager.run_when_machine_is_free("first", first_run)
+        holding = asyncio.ensure_future(flow_manager.run_when_machine_is_free("later", later_run))
         await asyncio.sleep(0.05)
 
         assert not leftover[0].done(), "a task left over from an ended run skipped the line"
@@ -1097,4 +1097,4 @@ async def _after(event: asyncio.Event, flow_manager: Any) -> Any:
     async def left_over() -> Any:
         return "left over ran"
 
-    return await flow_manager.run_when_machine_is_free(left_over)
+    return await flow_manager.run_when_machine_is_free("left over", left_over)
