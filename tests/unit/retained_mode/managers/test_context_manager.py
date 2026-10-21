@@ -20,24 +20,70 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroRequest,
     GetPathForMacroResultSuccess,
 )
-from tests.workflow_context import empty_workflow_registry
+
+
+def _metadata(name: str, workflow_id: str | None = None) -> WorkflowMetadata:
+    return WorkflowMetadata(
+        workflow_id=workflow_id,
+        name=name,
+        schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+        engine_version_created_with="test",
+        node_libraries_referenced=[],
+        creation_date=datetime.now(UTC),
+    )
 
 
 class TestPushWorkflow:
-    """Tests for ContextManager.push_workflow."""
+    """Tests for ContextManager.push_workflow. The context holds only a registered workflow's id."""
 
-    def test_push_workflow_with_name(self, engine: Engine) -> None:
-        """workflow_name is used directly as the registry key."""
+    def test_push_workflow_with_name_enters_the_registered_workflow(self, engine: Engine) -> None:
+        """A registered name enters that workflow; the context holds its id."""
         context_manager = engine.context_manager
-        result = context_manager.push_workflow(workflow_name="my_workflow")
+        workflow = engine.workflow_registry.register_unsaved("My Workflow")
 
-        assert result == "my_workflow"
-        assert context_manager.get_current_workflow_name() == "my_workflow"
+        result = context_manager.push_workflow(workflow_name=workflow.name)
+        try:
+            assert result == workflow.name
+            assert context_manager.get_current_workflow_id() == workflow.workflow_id
+            assert context_manager.get_current_workflow_name() == workflow.name
+        finally:
+            context_manager.pop_workflow()
 
-        context_manager.pop_workflow()
+    def test_pop_workflow_returns_the_name(self, engine: Engine) -> None:
+        workflow = engine.workflow_registry.register_unsaved("Popped")
+        engine.context_manager.push_workflow(workflow_id=workflow.workflow_id)
+
+        assert engine.context_manager.pop_workflow() == workflow.name
+        assert not engine.context_manager.has_current_workflow()
+
+    def test_push_workflow_sets_the_working_directory_on_the_entry(self, engine: Engine, tmp_path: Path) -> None:
+        context_manager = engine.context_manager
+        workflow = engine.workflow_registry.register_unsaved("Untitled")
+
+        context_manager.push_workflow(workflow_id=workflow.workflow_id, working_directory=str(tmp_path))
+        try:
+            assert workflow.working_directory == str(tmp_path)
+            assert context_manager.get_current_workflow_working_directory() == str(tmp_path)
+        finally:
+            context_manager.pop_workflow()
+
+    def test_push_workflow_with_an_unregistered_name_raises(self, engine: Engine) -> None:
+        """A name no workflow has is an error, never a context with nothing behind it."""
+        context_manager = engine.context_manager
+
+        with pytest.raises(context_manager.UnknownWorkflowError, match="no workflow has that name"):
+            context_manager.push_workflow(workflow_name="not_registered_anywhere")
+        assert not context_manager.has_current_workflow()
+
+    def test_push_workflow_with_an_unregistered_id_raises(self, engine: Engine) -> None:
+        context_manager = engine.context_manager
+
+        with pytest.raises(context_manager.UnknownWorkflowError, match="no workflow has that id"):
+            context_manager.push_workflow(workflow_id="0123456789abcdef")
+        assert not context_manager.has_current_workflow()
 
     def test_push_workflow_with_file_path_inside_workspace(self, engine: Engine) -> None:
-        """file_path inside workspace produces a workspace-relative registry key."""
+        """file_path inside workspace produces a workspace-relative registry name."""
         context_manager = engine.context_manager
         config_manager = engine.config_manager
 
@@ -47,17 +93,19 @@ class TestPushWorkflow:
             config_manager.workspace_path = workspace
             try:
                 workflow_file = workspace / "subdir" / "my_flow.py"
+                workflow_file.parent.mkdir()
+                workflow_file.write_text("# stub")
                 result = context_manager.push_workflow(file_path=str(workflow_file))
+                try:
+                    assert result == "subdir/my_flow"
+                    assert context_manager.get_current_workflow_name() == "subdir/my_flow"
+                finally:
+                    context_manager.pop_workflow()
             finally:
                 config_manager.workspace_path = original
 
-        assert result == "subdir/my_flow"
-        assert context_manager.get_current_workflow_name() == "subdir/my_flow"
-
-        context_manager.pop_workflow()
-
     def test_push_workflow_with_file_path_outside_workspace(self, engine: Engine) -> None:
-        """file_path outside workspace uses the absolute path as the registry key."""
+        """file_path outside workspace uses the absolute path as the registry name."""
         context_manager = engine.context_manager
         config_manager = engine.config_manager
 
@@ -67,22 +115,68 @@ class TestPushWorkflow:
             config_manager.workspace_path = workspace
             try:
                 workflow_file = Path(other_dir) / "my_flow.py"
+                workflow_file.write_text("# stub")
                 result = context_manager.push_workflow(file_path=str(workflow_file))
+                try:
+                    expected = (Path(other_dir) / "my_flow").as_posix()
+                    assert result == expected
+                    assert context_manager.get_current_workflow_name() == expected
+                finally:
+                    context_manager.pop_workflow()
             finally:
                 config_manager.workspace_path = original
 
-        expected = (Path(other_dir).resolve() / "my_flow").as_posix()
-        assert result == expected
-        assert context_manager.get_current_workflow_name() == expected
+    def test_push_workflow_by_file_registers_it_unlisted(self, engine: Engine) -> None:
+        """Opening a file the registry does not know registers it, without adding it to the workflow list."""
+        context_manager = engine.context_manager
+        config_manager = engine.config_manager
 
-        context_manager.pop_workflow()
+        with tempfile.TemporaryDirectory() as workspace_dir, tempfile.TemporaryDirectory() as other_dir:
+            original = config_manager.workspace_path
+            config_manager.workspace_path = Path(workspace_dir)
+            try:
+                workflow_file = Path(other_dir) / "my_flow.py"
+                workflow_file.write_text("# stub")
+                name = context_manager.push_workflow(file_path=str(workflow_file))
+                try:
+                    workflow = engine.workflow_registry.find_by_path(workflow_file)
+                    assert workflow is not None
+                    assert workflow.workflow_id == context_manager.get_current_workflow_id()
+                    assert workflow.listed is False
+                    assert name not in engine.workflow_registry.list_workflows()
+                finally:
+                    context_manager.pop_workflow()
+            finally:
+                config_manager.workspace_path = original
+
+    def test_push_workflow_by_file_enters_the_registered_entry(self, engine: Engine) -> None:
+        """A file the registry already knows is entered under its existing id, not registered again."""
+        context_manager = engine.context_manager
+        config_manager = engine.config_manager
+
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace = Path(workspace_dir)
+            original = config_manager.workspace_path
+            config_manager.workspace_path = workspace
+            workflow_file = workspace / "my_flow.py"
+            workflow_file.write_text("# stub")
+            registered = engine.workflow_registry.register_file("my_flow.py", _metadata("my_flow"))
+            try:
+                context_manager.push_workflow(file_path=str(workflow_file))
+                try:
+                    assert context_manager.get_current_workflow_id() == registered.workflow_id
+                    assert registered.listed is True
+                finally:
+                    context_manager.pop_workflow()
+            finally:
+                engine.workflow_registry.remove(registered.workflow_id)
+                config_manager.workspace_path = original
 
     def test_push_workflow_retains_file_path_independent_of_workspace(self, engine: Engine) -> None:
-        """The pushed file path is retained verbatim and does NOT move with the workspace.
+        """The workflow's file path does NOT move with the workspace.
 
-        Regression guard: the registry key is derived against whatever workspace is active at
-        push time, so switching projects re-registers workflows under a new key and the name
-        goes stale. The retained path is what lets `workflow_dir` keep answering afterwards.
+        The registry entry keeps the absolute path, so switching projects leaves `workflow_dir`
+        answering with the workflow's own folder.
         """
         context_manager = engine.context_manager
         config_manager = engine.config_manager
@@ -92,6 +186,7 @@ class TestPushWorkflow:
             config_manager.workspace_path = Path(workspace_dir)
             try:
                 workflow_file = Path(other_dir) / "my_flow.py"
+                workflow_file.write_text("# stub")
                 context_manager.push_workflow(file_path=str(workflow_file))
 
                 assert context_manager.get_current_workflow_file_path() == str(workflow_file)
@@ -103,30 +198,8 @@ class TestPushWorkflow:
                 config_manager.workspace_path = original
                 context_manager.pop_workflow()
 
-    def test_push_workflow_by_name_captures_path_while_key_is_valid(self, engine: Engine) -> None:
-        """Entering by key resolves the path immediately, not lazily at read time.
-
-        A key only resolves against the workspace active right now, so deferring the lookup
-        would leave nothing to answer with once the workspace changes. An unregistered name
-        legitimately has no path.
-        """
-        context_manager = engine.context_manager
-
-        context_manager.push_workflow(workflow_name="not_registered_anywhere")
-        try:
-            assert context_manager.get_current_workflow_file_path() is None
-        finally:
-            context_manager.pop_workflow()
-
-    def test_push_workflow_by_name_resolves_registered_path_and_keeps_it(self, engine: Engine) -> None:
-        """A registered workflow entered by key gets its complete path cached, and keeps it.
-
-        This is the branch the interactive open-workflow flow takes for every already-saved
-        workflow (`SetWorkflowContextRequest` -> `push_workflow(workflow_name=...)`). Resolving
-        at push time is the whole point: the key only resolves against the workspace that is
-        active right now, so the workspace switch below would otherwise leave nothing to answer
-        with.
-        """
+    def test_push_workflow_by_name_reads_the_path_from_the_entry_and_keeps_it(self, engine: Engine) -> None:
+        """A registered workflow entered by name answers with its entry's absolute path, across a workspace switch."""
         context_manager = engine.context_manager
         config_manager = engine.config_manager
 
@@ -134,35 +207,24 @@ class TestPushWorkflow:
             workspace = Path(workspace_dir)
             workflow_file = workspace / "subdir" / "my_flow.py"
             workflow_file.parent.mkdir()
-            # Workflow.from_disk verifies the file exists; a stub is enough here.
             workflow_file.write_text("# stub")
-            metadata = WorkflowMetadata(
-                name="my_flow",
-                schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
-                engine_version_created_with="test",
-                node_libraries_referenced=[],
-                creation_date=datetime.now(UTC),
-            )
             original = config_manager.workspace_path
             config_manager.workspace_path = workspace
+            # Registered workspace-RELATIVE, so the name genuinely depends on which workspace is active.
+            registered = engine.workflow_registry.register_file("subdir/my_flow.py", _metadata("my_flow"))
             try:
-                with empty_workflow_registry(engine):
-                    # Registered workspace-RELATIVE, so resolving the key genuinely depends on
-                    # which workspace is active.
-                    engine.workflow_registry.generate_new_workflow(
-                        registry_key="subdir/my_flow", metadata=metadata, file_path="subdir/my_flow.py"
-                    )
-                    context_manager.push_workflow(workflow_name="subdir/my_flow")
-                    try:
-                        expected = str(workflow_file.resolve())
-                        assert context_manager.get_current_workflow_file_path() == expected
+                context_manager.push_workflow(workflow_name="subdir/my_flow")
+                try:
+                    expected = str(config_manager.workspace_path / "subdir" / "my_flow.py")
+                    assert context_manager.get_current_workflow_file_path() == expected
 
-                        # Simulate a project switch: the key is now meaningless, the path is not.
-                        config_manager.workspace_path = Path(other_dir)
-                        assert context_manager.get_current_workflow_file_path() == expected
-                    finally:
-                        context_manager.pop_workflow()
+                    # Simulate a project switch: the name is now meaningless, the path is not.
+                    config_manager.workspace_path = Path(other_dir)
+                    assert context_manager.get_current_workflow_file_path() == expected
+                finally:
+                    context_manager.pop_workflow()
             finally:
+                engine.workflow_registry.remove(registered.workflow_id)
                 config_manager.workspace_path = original
 
     def test_get_current_workflow_file_path_requires_a_workflow(self, engine: Engine) -> None:
@@ -173,21 +235,21 @@ class TestPushWorkflow:
             context_manager.get_current_workflow_file_path()
 
     def test_push_workflow_raises_when_both_provided(self, engine: Engine) -> None:
-        """Raises ValueError when both workflow_name and file_path are given."""
+        """Raises ValueError when more than one way of naming the workflow is given."""
         context_manager = engine.context_manager
 
-        with pytest.raises(ValueError, match="not both"):
+        with pytest.raises(ValueError, match="exactly one"):
             context_manager.push_workflow(workflow_name="my_workflow", file_path="/some/path.py")
 
     def test_push_workflow_raises_when_neither_provided(self, engine: Engine) -> None:
-        """Raises ValueError when neither workflow_name nor file_path is given."""
+        """Raises ValueError when nothing names the workflow."""
         context_manager = engine.context_manager
 
-        with pytest.raises(ValueError, match="must be provided"):
+        with pytest.raises(ValueError, match="exactly one"):
             context_manager.push_workflow()
 
     def test_push_workflow_strips_extension(self, engine: Engine) -> None:
-        """Registry key derived from file_path has no file extension."""
+        """Registry name derived from file_path has no file extension."""
         context_manager = engine.context_manager
         config_manager = engine.config_manager
 
@@ -197,14 +259,14 @@ class TestPushWorkflow:
             config_manager.workspace_path = workspace
             try:
                 workflow_file = workspace / "my_workflow.py"
+                workflow_file.write_text("# stub")
                 result = context_manager.push_workflow(file_path=str(workflow_file))
+                context_manager.pop_workflow()
             finally:
                 config_manager.workspace_path = original
 
         assert result == "my_workflow"
         assert "." not in result
-
-        context_manager.pop_workflow()
 
 
 class TestWorkflowWorkingDirectory:
@@ -385,7 +447,9 @@ class TestWorkflowWorkingDirectory:
 
                 # What the save path does once the workflow gets a file.
                 saved_to = workspace / "elsewhere" / "my_flow.py"
-                context_manager.set_current_workflow_file_path(str(saved_to))
+                saved_to.parent.mkdir()
+                saved_to.write_text("# stub")
+                engine.workflow_registry.set_file_path(context_manager.get_current_workflow(), saved_to)
 
                 assert self._resolve_outputs(engine) == saved_to.parent / "outputs" / "img.png"
             finally:
@@ -490,6 +554,43 @@ class TestWorkflowWorkingDirectory:
             context_manager.get_current_workflow_working_directory()
 
 
+class TestSetWorkflowContextUnsavedNames:
+    """An unregistered "unsaved:<id>" name registers an unsaved workflow under that id."""
+
+    def test_an_unsaved_name_registers_a_workflow_with_its_id(self, engine: Engine) -> None:
+        workflow_id = "0123456789abcdef0123456789abcdef"
+        try:
+            result = engine.handle_request(SetWorkflowContextRequest(workflow_name=f"unsaved:{workflow_id}"))
+
+            assert isinstance(result, SetWorkflowContextSuccess)
+            assert result.workflow_id == workflow_id
+            assert result.workflow_name == f"unsaved:{workflow_id}"
+        finally:
+            engine.context_manager.pop_workflow()
+
+    def test_a_dashed_unsaved_name_is_the_same_workflow_as_its_hex_form(self, engine: Engine) -> None:
+        """Earlier engines minted dashed "unsaved:<uuid>" names; both spellings name one workflow."""
+        dashed_name = "unsaved:01234567-89ab-cdef-0123-456789abcdef"
+        try:
+            first = engine.handle_request(SetWorkflowContextRequest(workflow_name=dashed_name))
+            engine.context_manager.pop_workflow()
+            second = engine.handle_request(SetWorkflowContextRequest(workflow_name=dashed_name))
+
+            assert isinstance(first, SetWorkflowContextSuccess)
+            assert isinstance(second, SetWorkflowContextSuccess)
+            assert first.workflow_id == second.workflow_id == "0123456789abcdef0123456789abcdef"
+            assert second.workflow_name == "unsaved:0123456789abcdef0123456789abcdef"
+        finally:
+            engine.context_manager.pop_workflow()
+
+    def test_an_unsaved_name_without_a_uuid_is_refused(self, engine: Engine) -> None:
+        result = engine.handle_request(SetWorkflowContextRequest(workflow_name="unsaved:not-an-id"))
+
+        assert isinstance(result, SetWorkflowContextFailure)
+        assert "must be a workflow id" in str(result.result_details)
+        assert not engine.context_manager.has_current_workflow()
+
+
 class TestGeneratedWorkflowCode:
     """Tests that generated workflow code uses push_workflow(file_path=__file__)."""
 
@@ -538,7 +639,10 @@ class TestEnsureWorkflowAndFlowRequest:
         )
 
         assert isinstance(result, EnsureWorkflowAndFlowResultSuccess)
-        assert result.workflow_name == "my_workflow"
+        # An unregistered name names the new workflow: its display name, under a name of its own.
+        assert result.workflow_name.startswith(engine.workflow_registry.UNSAVED_KEY_PREFIX)
+        assert result.workflow_id == context_manager.get_current_workflow_id()
+        assert context_manager.get_current_workflow().metadata.name == "my_workflow"
         assert result.flow_name == "my_flow"
         assert result.created_workflow is True
         assert result.created_flow is True
@@ -568,7 +672,8 @@ class TestEnsureWorkflowAndFlowRequest:
         )
 
         assert isinstance(second, EnsureWorkflowAndFlowResultSuccess)
-        assert second.workflow_name == "scratch"
+        assert second.workflow_name == first.workflow_name
+        assert second.workflow_id == first.workflow_id
         assert second.flow_name == "canvas"
         assert second.created_workflow is False
         assert second.created_flow is False

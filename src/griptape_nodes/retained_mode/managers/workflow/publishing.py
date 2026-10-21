@@ -75,16 +75,16 @@ class WorkflowPublishing(EngineScoped):
             # Unsaved (registry-only) workflows cannot be published because publish emits a file
             # reference to the engine-registered workflow; the user must choose a save name first.
             workflow_file_name = request.workflow_name
-            try:
-                workflow = self.engine.workflow_registry.get_workflow_by_name(request.workflow_name)
+            workflow = self.engine.workflow_registry.find_by_name(request.workflow_name)
+            if workflow is not None:
                 if workflow.file_path is None:
                     msg = (
                         f"Cannot publish unsaved workflow '{request.workflow_name}'. "
                         "Save the workflow before publishing."
                     )
-                    raise ValueError(msg)
+                    raise ValueError(msg)  # noqa: TRY301
                 workflow_file_name = derive_registry_key(workflow.file_path)
-            except KeyError:
+            else:
                 details = (
                     f"While publishing, workflow '{request.workflow_name}' had not been saved or could not be found in the Workflow Registry. "
                     "Saving as a new and registered workflow before proceeding on publish attempt."
@@ -123,13 +123,12 @@ class WorkflowPublishing(EngineScoped):
                 load_workflow_metadata_request
             )
             if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
-                workflow_registry_key = derive_registry_key(workflow_file.name)
-                try:
-                    self.engine.workflow_registry.get_workflow_by_name(workflow_registry_key)
+                previously_registered = self.engine.workflow_registry.find_by_name(
+                    derive_registry_key(workflow_file.name)
+                )
+                if previously_registered is not None:
                     # This workflow was registered previously, but now it's been updated (potentially including the metadata), so let's re-register
-                    self.engine.workflow_registry.delete_workflow_by_name(workflow_registry_key)
-                except KeyError:
-                    pass
+                    self.engine.workflow_registry.remove(previously_registered.workflow_id)
 
                 register_workflow_result = self.engine.workflow_manager.on_register_workflow_request(
                     RegisterWorkflowRequest(

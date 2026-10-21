@@ -9,10 +9,9 @@ import anyio
 
 from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.node_library.workflow_registry import (
+    UnreadableWorkflowHeaderError,
     Workflow,
     WorkflowMetadata,
-    WorkflowMetadataError,
-    read_workflow_metadata,
 )
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
@@ -20,6 +19,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
+    CallableWorkflow,
     GetWorkflowInfoRequest,
     GetWorkflowInfoResultFailure,
     GetWorkflowInfoResultSuccess,
@@ -85,8 +85,8 @@ class WorkflowCatalog(EngineScoped):
         await self.engine.workflow_manager.wait_for_workflows_loaded()
 
         try:
-            workflow_names = [
-                key
+            callable_workflows = [
+                CallableWorkflow(workflow_id=wf["workflow_id"], workflow_name=key)
                 for key, wf in self.engine.workflow_registry.list_workflows().items()
                 if wf.get("workflow_shape") is not None
             ]
@@ -94,15 +94,15 @@ class WorkflowCatalog(EngineScoped):
             details = "Failed to list callable workflows."
             return ListCallableWorkflowsResultFailure(result_details=details)
         return ListCallableWorkflowsResultSuccess(
-            workflow_names=workflow_names,
-            result_details=f"Successfully retrieved {len(workflow_names)} callable workflows.",
+            workflow_names=[callable_workflow.workflow_name for callable_workflow in callable_workflows],
+            callable_workflows=callable_workflows,
+            result_details=f"Successfully retrieved {len(callable_workflows)} callable workflows.",
         )
 
     @handles(GetWorkflowInfoRequest)
     def on_get_workflow_info_request(self, request: GetWorkflowInfoRequest) -> ResultPayload:
-        try:
-            workflow = self.engine.workflow_registry.get_workflow_by_name(request.workflow_name)
-        except KeyError:
+        workflow = self.engine.workflow_registry.find_by_name(request.workflow_name)
+        if workflow is None:
             details = f"Attempted to get workflow info. Failed because workflow '{request.workflow_name}' was not found in the registry."
             return GetWorkflowInfoResultFailure(result_details=details)
 
@@ -115,6 +115,7 @@ class WorkflowCatalog(EngineScoped):
                 workflow_path="",
                 problems=[],
                 workflow_dependencies=[],
+                workflow_id=workflow.workflow_id,
                 result_details=f"Workflow '{request.workflow_name}' is unsaved; returning empty info stub.",
             )
 
@@ -127,13 +128,14 @@ class WorkflowCatalog(EngineScoped):
             )
             return GetWorkflowInfoResultFailure(result_details=details)
 
-        payload = self._build_workflow_info_payload(wf_info)
+        payload = self._build_workflow_info_payload(wf_info, workflow.workflow_id)
         return GetWorkflowInfoResultSuccess(
             status=payload.status,
             workflow_name=payload.workflow_name,
             workflow_path=payload.workflow_path,
             problems=payload.problems,
             workflow_dependencies=payload.workflow_dependencies,
+            workflow_id=payload.workflow_id,
             result_details=f"Successfully retrieved workflow info for '{workflow_file_path}'.",
         )
 
@@ -147,9 +149,8 @@ class WorkflowCatalog(EngineScoped):
 
         workflow_infos: dict[str, WorkflowInfoSummary] = {}
         for registry_key in registry_keys:
-            try:
-                workflow = self.engine.workflow_registry.get_workflow_by_name(registry_key)
-            except KeyError:
+            workflow = self.engine.workflow_registry.find_by_name(registry_key)
+            if workflow is None:
                 continue
             # Unsaved workflows are registry-only (no on-disk metadata to summarize).
             if workflow.file_path is None:
@@ -158,7 +159,7 @@ class WorkflowCatalog(EngineScoped):
             wf_info = self.engine.workflow_manager.find_workflow_info_for_attempted_load(workflow_file_path)
             if wf_info is None:
                 continue
-            workflow_infos[registry_key] = self._build_workflow_info_payload(wf_info)
+            workflow_infos[registry_key] = self._build_workflow_info_payload(wf_info, workflow.workflow_id)
 
         return ListAllWorkflowInfoResultSuccess(
             workflow_infos=workflow_infos,
@@ -167,16 +168,15 @@ class WorkflowCatalog(EngineScoped):
 
     @handles(GetWorkflowMetadataRequest)
     def on_get_workflow_metadata_request(self, request: GetWorkflowMetadataRequest) -> ResultPayload:
-        try:
-            workflow = self.engine.workflow_registry.get_workflow_by_name(request.workflow_name)
-        except KeyError:
-            file_metadata = self._read_open_workflow_file_metadata(request.workflow_name)
-            if isinstance(file_metadata, GetWorkflowMetadataResultFailure):
-                return file_metadata
-            return GetWorkflowMetadataResultSuccess(
-                workflow_metadata=file_metadata,
-                result_details="Successfully retrieved workflow metadata from the open workflow's file.",
+        # Every open workflow has an entry (a file opened from outside the workspace registers
+        # unlisted), so the registry answers for it too.
+        workflow = self.engine.workflow_registry.find_by_name(request.workflow_name)
+        if workflow is None:
+            return GetWorkflowMetadataResultFailure(
+                result_details=f"Failed to get metadata. Workflow '{request.workflow_name}' not found."
             )
+        if workflow.metadata_error is not None:
+            return GetWorkflowMetadataResultFailure(result_details=workflow.metadata_error)
 
         return GetWorkflowMetadataResultSuccess(
             workflow_metadata=workflow.metadata,
@@ -190,23 +190,22 @@ class WorkflowCatalog(EngineScoped):
         # Unsaved workflows have no file on disk; update the in-memory registry entry only.
         # This keeps display-name / description edits in sync with the registry so a refresh
         # re-hydrates the latest state without needing a save.
-        if self.engine.workflow_registry.has_workflow_with_name(request.workflow_name):
-            workflow = self.engine.workflow_registry.get_workflow_by_name(request.workflow_name)
-            if workflow.file_path is None:
-                try:
-                    merged = self._merge_metadata(workflow.metadata, request.workflow_metadata)
-                except ValueError as e:
-                    return SetWorkflowMetadataResultFailure(result_details=str(e))
-                merged.last_modified_date = datetime.now(tz=UTC)
-                workflow.metadata = merged
-                return SetWorkflowMetadataResultSuccess(
-                    result_details=ResultDetails(
-                        message=(
-                            f"Successfully updated in-memory metadata for unsaved workflow '{request.workflow_name}'."
-                        ),
-                        level=logging.INFO,
-                    )
+        workflow = self.engine.workflow_registry.find_by_name(request.workflow_name)
+        if workflow is not None and workflow.file_path is None:
+            try:
+                merged = self._merge_metadata(workflow, request.workflow_metadata)
+            except ValueError as e:
+                return SetWorkflowMetadataResultFailure(result_details=str(e))
+            merged.last_modified_date = datetime.now(tz=UTC)
+            workflow.metadata = merged
+            return SetWorkflowMetadataResultSuccess(
+                result_details=ResultDetails(
+                    message=(
+                        f"Successfully updated in-memory metadata for unsaved workflow '{request.workflow_name}'."
+                    ),
+                    level=logging.INFO,
                 )
+            )
 
         # Resolve workflow and file path for saved workflows
         resolution = self._get_workflow_and_path(request.workflow_name)
@@ -214,7 +213,7 @@ class WorkflowCatalog(EngineScoped):
             return SetWorkflowMetadataResultFailure(result_details=resolution.error or "Failed to resolve workflow.")
 
         try:
-            new_metadata = self._merge_metadata(resolution.workflow.metadata, request.workflow_metadata)
+            new_metadata = self._merge_metadata(resolution.workflow, request.workflow_metadata)
         except ValueError as e:
             return SetWorkflowMetadataResultFailure(result_details=str(e))
         # Refresh last_modified_date to reflect this change
@@ -234,31 +233,6 @@ class WorkflowCatalog(EngineScoped):
             )
         )
 
-    def _read_open_workflow_file_metadata(
-        self, workflow_name: str
-    ) -> WorkflowMetadata | GetWorkflowMetadataResultFailure:
-        """Read the metadata header of the open workflow's file, when the registry has no entry for it.
-
-        Running a workflow file pushes its context by file path, so a file the registry doesn't
-        know (one outside the workspace, run directly) is open under a key no registry lookup
-        finds. Its metadata is still in the file header.
-        """
-        not_found = GetWorkflowMetadataResultFailure(
-            result_details=f"Failed to get metadata. Workflow '{workflow_name}' not found."
-        )
-        context_manager = self.engine.context_manager
-        if not context_manager.has_current_workflow():
-            return not_found
-        if context_manager.get_current_workflow_name() != workflow_name:
-            return not_found
-        file_path = context_manager.get_current_workflow_file_path()
-        if file_path is None:
-            return not_found
-        try:
-            return read_workflow_metadata(Path(file_path))
-        except WorkflowMetadataError as err:
-            return GetWorkflowMetadataResultFailure(result_details=str(err))
-
     def _build_workflow_info_key(self, file_path: str) -> str:
         """Build the key used to look up a workflow's load record.
 
@@ -267,7 +241,9 @@ class WorkflowCatalog(EngineScoped):
         """
         return str(self.engine.config_manager.workspace_path.joinpath(file_path))
 
-    def _build_workflow_info_payload(self, wf_info: WorkflowManager.WorkflowInfo) -> WorkflowInfoSummary:
+    def _build_workflow_info_payload(
+        self, wf_info: WorkflowManager.WorkflowInfo, workflow_id: str
+    ) -> WorkflowInfoSummary:
         """Build a WorkflowInfoSummary from a WorkflowInfo, collating problems for display."""
         collated_problems = collate_problems_by_type(wf_info.problems)
         return WorkflowInfoSummary(
@@ -276,17 +252,18 @@ class WorkflowCatalog(EngineScoped):
             workflow_path=str(wf_info.workflow_path),
             problems=collated_problems,
             workflow_dependencies=wf_info.workflow_dependencies,
+            workflow_id=workflow_id,
         )
 
     def _get_workflow_and_path(self, workflow_name: str) -> WorkflowPathResolution:
         """Resolve workflow from registry and return absolute file path.
 
         Returns an error resolution for unsaved workflows since there is no file on disk
-        to read or update.
+        to read or update, and for files whose header could not be read, since there is no
+        real metadata to update.
         """
-        try:
-            workflow = self.engine.workflow_registry.get_workflow_by_name(workflow_name)
-        except KeyError:
+        workflow = self.engine.workflow_registry.find_by_name(workflow_name)
+        if workflow is None:
             return WorkflowPathResolution(
                 workflow=None, file_path=None, error=f"Failed to set metadata. Workflow '{workflow_name}' not found."
             )
@@ -296,6 +273,15 @@ class WorkflowCatalog(EngineScoped):
                 workflow=workflow,
                 file_path=None,
                 error=f"Failed to set metadata. Workflow '{workflow_name}' is unsaved (no file on disk).",
+            )
+
+        try:
+            workflow.metadata_for_header()
+        except UnreadableWorkflowHeaderError as err:
+            return WorkflowPathResolution(
+                workflow=workflow,
+                file_path=None,
+                error=f"Attempted to set metadata for workflow '{workflow_name}'. Failed because {err}",
             )
 
         complete_file_path = self.engine.workflow_registry.get_complete_file_path(workflow.file_path)
@@ -340,23 +326,32 @@ class WorkflowCatalog(EngineScoped):
             return write_result.error_details
         return None
 
-    def _merge_metadata(
-        self, existing: WorkflowMetadata, incoming: WorkflowMetadata | dict[str, Any]
-    ) -> WorkflowMetadata:
+    def _merge_metadata(self, workflow: Workflow, incoming: WorkflowMetadata | dict[str, Any]) -> WorkflowMetadata:
         """Coerce incoming metadata (dict or WorkflowMetadata) into a merged WorkflowMetadata.
 
         Dicts from the frontend may omit required fields; merge on top of existing
-        metadata so required fields are preserved. Raises ValueError on invalid input.
+        metadata so required fields are preserved. The result always carries the workflow's
+        own id: one left out is inherited, and a different one is refused, since a workflow's
+        id never changes. Raises ValueError on invalid input.
         """
+        incoming_workflow_id = incoming.get("workflow_id") if isinstance(incoming, dict) else incoming.workflow_id
+        if incoming_workflow_id is not None and incoming_workflow_id != workflow.workflow_id:
+            msg = (
+                f"Attempted to set metadata for workflow '{workflow.name}'. Failed because the metadata changes "
+                f"its workflow id from '{workflow.workflow_id}' to '{incoming_workflow_id}', and a workflow's id "
+                "never changes. Leave workflow_id out, or send the workflow's own id."
+            )
+            raise ValueError(msg)
         if not isinstance(incoming, dict):
-            return incoming
-        existing_metadata_dict = existing.model_dump()
+            return incoming.model_copy(update={"workflow_id": workflow.workflow_id})
+        existing_metadata_dict = workflow.metadata.model_dump()
         # Only overlay non-None values from the incoming dict to preserve required fields.
         # Allow explicit None for these optional fields.
         optional_none_allowed = ("description", "image", "branched_from", "workflow_shape")
         for key, value in incoming.items():
             if value is not None or key in optional_none_allowed:
                 existing_metadata_dict[key] = value
+        existing_metadata_dict["workflow_id"] = workflow.workflow_id
         try:
             return WorkflowMetadata.model_validate(existing_metadata_dict)
         except Exception as e:

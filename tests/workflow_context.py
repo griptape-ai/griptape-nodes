@@ -16,9 +16,12 @@ if TYPE_CHECKING:
 def push_unsaved_workflow(
     engine: Engine, display_name: str = "Untitled", working_directory: str | None = None
 ) -> Workflow:
-    """Register a new unsaved workflow and make it the current context."""
+    """Register a new unsaved workflow and make it the current context.
+
+    The context holds only a registered workflow's id, so a test cannot push a bare name.
+    """
     workflow = engine.workflow_registry.register_unsaved(display_name, working_directory)
-    engine.context_manager.push_workflow(workflow.name, working_directory=working_directory)
+    engine.context_manager.push_workflow(workflow_id=workflow.workflow_id)
     return workflow
 
 

@@ -417,6 +417,22 @@ class TestRenameFileRequest:
         assert isinstance(result, RenameFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
 
+    def test_rename_file_changing_only_letter_case(self, engine: Engine, temp_dir: Path) -> None:
+        """On a case-insensitive filesystem the destination is the source itself, not a conflict."""
+        os_manager = engine.os_manager
+        old_path = temp_dir / "Shot.txt"
+        new_path = temp_dir / "shot.txt"
+        old_path.write_text("Content")
+        if not new_path.exists():
+            pytest.skip("the filesystem is case-sensitive, so the new name is a different file")
+
+        request = RenameFileRequest(old_path=str(old_path), new_path=str(new_path), workspace_only=False)
+        result = os_manager.on_rename_file_request(request)
+
+        assert isinstance(result, RenameFileResultSuccess)
+        assert [path.name for path in temp_dir.iterdir()] == ["shot.txt"]
+        assert new_path.read_text() == "Content"
+
     def test_rename_file_destination_exists(self, engine: Engine, temp_dir: Path) -> None:
         """Test renaming when destination already exists."""
         os_manager = engine.os_manager

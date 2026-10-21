@@ -169,6 +169,7 @@ class WorkflowRunner(EngineScoped):
             if execution_result.execution_successful:
                 return RunWorkflowFromScratchResultSuccess(
                     status=execution_result.status,
+                    workflow_id=self._current_workflow_id(),
                     result_details=ResultDetails(*execution_result_details(execution_result, level=logging.DEBUG)),
                 )
 
@@ -202,6 +203,7 @@ class WorkflowRunner(EngineScoped):
         if execution_result.execution_successful:
             return RunWorkflowWithCurrentStateResultSuccess(
                 status=execution_result.status,
+                workflow_id=self._current_workflow_id(),
                 result_details=ResultDetails(*execution_result_details(execution_result, level=logging.DEBUG)),
             )
         return RunWorkflowWithCurrentStateResultFailure(
@@ -213,9 +215,8 @@ class WorkflowRunner(EngineScoped):
         await self.engine.workflow_manager.wait_for_workflows_loaded()
 
         # get workflow from registry
-        try:
-            workflow = self.engine.workflow_registry.get_workflow_by_name(request.workflow_name)
-        except KeyError:
+        workflow = self.engine.workflow_registry.find_by_name(request.workflow_name)
+        if workflow is None:
             details = f"Failed to get workflow '{request.workflow_name}' from registry."
             return RunWorkflowFromRegistryResultFailure(result_details=details)
 
@@ -251,7 +252,7 @@ class WorkflowRunner(EngineScoped):
                     return RunWorkflowFromRegistryResultFailure(result_details=details)
 
             # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
-            self.engine.context_manager.push_workflow(request.workflow_name)
+            self.engine.context_manager.push_workflow(workflow_id=workflow.workflow_id)
             # run file
             execution_result = await self.run_workflow(relative_file_path=relative_file_path)
 
@@ -274,7 +275,9 @@ class WorkflowRunner(EngineScoped):
             result_messages.append(ResultDetail(message=context_warning, level=logging.WARNING))
         result_messages.extend(execution_result_details(execution_result, level=logging.DEBUG))
         return RunWorkflowFromRegistryResultSuccess(
-            status=execution_result.status, result_details=ResultDetails(*result_messages)
+            status=execution_result.status,
+            workflow_id=workflow.workflow_id,
+            result_details=ResultDetails(*result_messages),
         )
 
     @handles(GetWorkflowRunCommandRequest)
@@ -307,9 +310,8 @@ class WorkflowRunner(EngineScoped):
         # Resolve relative_file_path and workflow_shape (or fail)
         workflow_shape: WorkflowShape | None = None
         if workflow_name is not None:
-            try:
-                workflow = self.engine.workflow_registry.get_workflow_by_name(workflow_name)
-            except KeyError:
+            workflow = self.engine.workflow_registry.find_by_name(workflow_name)
+            if workflow is None:
                 return GetWorkflowRunCommandResultFailure(
                     result_details=(
                         f"Attempted to get workflow run command. Failed with workflow_name='{workflow_name}' "
@@ -392,6 +394,13 @@ class WorkflowRunner(EngineScoped):
             engine_os=self.engine.os_manager.platform_name(),
             result_details=ResultDetails(message=f"Run command: {run_command}", level=logging.DEBUG),
         )
+
+    def _current_workflow_id(self) -> str | None:
+        """The id of the workflow a load left in context, or None if it left none."""
+        context_manager = self.engine.context_manager
+        if not context_manager.has_current_workflow():
+            return None
+        return context_manager.get_current_workflow_id()
 
     async def _ensure_workflow_context_established(self) -> None:
         """Ensure there's a current workflow and flow context after workflow execution."""

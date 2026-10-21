@@ -241,7 +241,7 @@ class WorkflowManager(EngineScoped):
         # Drop every saved workflow, library-provided ones included, before re-registering: their
         # names are derived workspace-relative, so after a workspace change (e.g. a project
         # switch) a name kept from before would be wrong. Ids come back from the files' headers or
-        # are derived again, so they do not change. Unsaved workflows stay.
+        # are derived again, so they do not change. Unsaved workflows and the open workflow stay.
         self._previous_paths_by_id = self.engine.workflow_registry.clear_saved_workflows()
 
         # Discover workflows from libraries, config, and workspace.
@@ -469,6 +469,7 @@ class WorkflowManager(EngineScoped):
             return RegisterWorkflowResultFailure(result_details=details)
         return RegisterWorkflowResultSuccess(
             workflow_name=workflow.name,
+            workflow_id=workflow.workflow_id,
             result_details=ResultDetails(
                 message=f"Successfully registered workflow: {workflow.name}",
                 level=logging.DEBUG,
@@ -517,14 +518,15 @@ class WorkflowManager(EngineScoped):
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
             return ImportWorkflowResultFailure(result_details=load_metadata_result.result_details)
 
-        # Check if workflow is already registered by file path (registry key).
-        # The registry key is derived from the file path, not metadata.name (the display name).
-        workflow_name = derive_registry_key(request.file_path)
-        if self.engine.workflow_registry.has_workflow_with_name(workflow_name):
-            # Workflow already exists - no need to re-register
+        # Check if the file is already registered.
+        existing = self.engine.workflow_registry.find_by_path(request.file_path)
+        if existing is not None:
+            # A file registered only because it was opened is listed once it is imported.
+            existing.listed = True
             return ImportWorkflowResultSuccess(
-                workflow_name=workflow_name,
-                result_details=f"Workflow '{workflow_name}' already exists - no need to re-import.",
+                workflow_name=existing.name,
+                workflow_id=existing.workflow_id,
+                result_details=f"Workflow '{existing.name}' already exists - no need to re-import.",
             )
 
         # Now register the workflow with the extracted metadata
@@ -541,6 +543,7 @@ class WorkflowManager(EngineScoped):
 
         return ImportWorkflowResultSuccess(
             workflow_name=register_result.workflow_name,
+            workflow_id=register_result.workflow_id,
             result_details=ResultDetails(
                 message=f"Successfully imported workflow: {register_result.workflow_name}", level=logging.INFO
             ),
@@ -1126,7 +1129,7 @@ class WorkflowManager(EngineScoped):
         else:
             file_path_to_register = str(workflow_file)
 
-        # Check if the file is already registered, under this path or another one to the same file.
+        # Check if the file is already registered (the open workflow survives a refresh).
         existing = self.engine.workflow_registry.find_by_path(file_path_to_register)
         if existing is not None:
             logger.debug("Skipping already registered workflow: %s", workflow_file)

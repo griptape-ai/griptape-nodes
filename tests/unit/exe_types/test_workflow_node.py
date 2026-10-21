@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,15 +16,16 @@ from griptape_nodes.exe_types.workflow_node import (
     WorkflowNodeDefinitionError,
     WorkflowNodeRoutingError,
     WorkflowParameterRoute,
-    _workspace_relative_workflow_path,
     build_workflow_node_class,
     build_workflow_node_surface,
+    ensure_workflow_registered,
     flatten_shape_section,
     pair_shape_nodes,
 )
-from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowShape
+from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowShape, _WorkflowRegistry
 from griptape_nodes.retained_mode.engine import current_engine
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, CreateFlowResultSuccess
+from tests.workflow_context import push_unsaved_workflow
 
 CONTROL_TYPE = "parametercontroltype"
 
@@ -62,7 +64,7 @@ def _build_live_subflow() -> str:
     Start Flow node, a Start Flow node exposing `text`, and an End Flow node exposing `result`, all
     renamed because their original names were already taken on the canvas.
     """
-    current_engine().context_manager.push_workflow(workflow_name="workflow_node_live_routes")
+    push_unsaved_workflow(current_engine(), "workflow_node_live_routes")
     flow_result = current_engine().handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name="Subflow", set_as_new_context=False)
     )
@@ -476,24 +478,39 @@ class TestEditorPreviewMetadata:
         assert node.get_parameter_by_name("text") is not None
 
 
-class TestWorkspaceRelativeWorkflowPath:
+class TestEnsureWorkflowRegisteredNamesFilesLikeTheScan:
+    """The registry names a workflow file the way the workspace scan does, so one file gets one name."""
+
     @pytest.fixture
     def workspace(self, tmp_path: Path) -> Path:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
         return workspace.resolve()
 
+    @staticmethod
+    def _registered_file_path(workspace: Path, workflow_file: Path) -> str | None:
+        workflow_file.parent.mkdir(parents=True, exist_ok=True)
+        if not workflow_file.exists():
+            workflow_file.write_text("")
+        config_manager = MagicMock()
+        config_manager.workspace_path = workspace
+        registry = _WorkflowRegistry(config_manager)
+        name = ensure_workflow_registered(registry, workflow_file, _metadata(None))
+        workflow = registry.find_by_name(name)
+        assert workflow is not None
+        return workflow.file_path
+
     def test_file_inside_the_workspace_is_workspace_relative(self, workspace: Path) -> None:
         """A file inside the workspace is named relative to it."""
-        result = _workspace_relative_workflow_path(workspace, workspace / "nested" / "flow.py")
+        result = self._registered_file_path(workspace, workspace / "nested" / "flow.py")
 
         assert result == str(Path("nested") / "flow.py")
 
     def test_file_outside_the_workspace_keeps_its_full_path(self, workspace: Path, tmp_path: Path) -> None:
         """A file outside the workspace keeps its full path."""
-        outside = (tmp_path / "library" / "flow.py").resolve()
+        outside = (tmp_path / "library").resolve() / "flow.py"
 
-        result = _workspace_relative_workflow_path(workspace, outside)
+        result = self._registered_file_path(workspace, outside)
 
         assert result == str(outside)
 
@@ -505,7 +522,7 @@ class TestWorkspaceRelativeWorkflowPath:
         (real_folder / "flow.py").write_text("")
         (workspace / "linked").symlink_to(real_folder, target_is_directory=True)
 
-        result = _workspace_relative_workflow_path(workspace, workspace / "linked" / "flow.py")
+        result = self._registered_file_path(workspace, workspace / "linked" / "flow.py")
 
         assert result == str(Path("linked") / "flow.py")
 
@@ -519,7 +536,7 @@ class TestWorkspaceRelativeWorkflowPath:
         outside_link = tmp_path / "outside_link"
         outside_link.symlink_to(workspace, target_is_directory=True)
 
-        result = _workspace_relative_workflow_path(workspace, outside_link / "nested" / "flow.py")
+        result = self._registered_file_path(workspace, outside_link / "nested" / "flow.py")
 
         assert result == str(Path("nested") / "flow.py")
 
@@ -535,6 +552,20 @@ class TestWorkspaceRelativeWorkflowPath:
         elsewhere.mkdir()
         (elsewhere / "lib").symlink_to(real / "ws" / "libs" / "mylib", target_is_directory=True)
 
-        result = _workspace_relative_workflow_path(linked_parent / "ws", elsewhere / "lib" / "wf.py")
+        result = self._registered_file_path(linked_parent / "ws", elsewhere / "lib" / "wf.py")
 
         assert result == str(Path("libs/mylib/wf.py"))
+
+    def test_a_registered_file_is_not_registered_again(self, workspace: Path) -> None:
+        """Registration is idempotent: the same file answers with the same entry."""
+        workflow_file = workspace / "flow.py"
+        workflow_file.write_text("")
+        config_manager = MagicMock()
+        config_manager.workspace_path = workspace
+        registry = _WorkflowRegistry(config_manager)
+
+        first = ensure_workflow_registered(registry, workflow_file, _metadata(None))
+        second = ensure_workflow_registered(registry, workspace / "." / "flow.py", _metadata(None))
+
+        assert first == second == "flow"
+        assert len(registry.list_workflows()) == 1

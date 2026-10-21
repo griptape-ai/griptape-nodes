@@ -65,7 +65,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowFileFromSerializedFlowResultSuccess,
 )
+from griptape_nodes.retained_mode.managers.workflow.saving import SaveWorkflowScenario
 from griptape_nodes.utils.version_utils import engine_version
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -212,7 +214,7 @@ def _fresh_flow(engine: Engine, workflow_name: str, tmp_path: Path) -> tuple[str
     """
     engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
     library_name = _register_fixture_library(engine, tmp_path)
-    engine.context_manager.push_workflow(workflow_name=workflow_name)
+    push_unsaved_workflow(engine, workflow_name)
     result = engine.handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name=_FLOW_NAME, set_as_new_context=False)
     )
@@ -261,6 +263,8 @@ def _save_flow_to_disk(engine: Engine, flow_name: str, tmp_path: Path, file_stem
         destination=destination,
         serialized_flow_commands=serialize_result.serialized_flow_commands,
         file_name=file_stem,
+        # Saving the open workflow writes its own id, so two saves of one graph agree on it.
+        workflow_id=engine.context_manager.get_current_workflow_id(),
         creation_date=_FrozenDateTime.now(),
         display_name=None,
         image_path=None,
@@ -270,6 +274,13 @@ def _save_flow_to_disk(engine: Engine, flow_name: str, tmp_path: Path, file_stem
         workflow_shape=None,
     )
     assert isinstance(save_result, SaveWorkflowFileFromSerializedFlowResultSuccess), save_result
+    # As SaveWorkflowRequest does: the open workflow's entry moves to the file it was saved to.
+    engine.workflow_manager.saver._record_saved_file(
+        written_path=save_result.file_path,
+        workflow_metadata=save_result.workflow_metadata,
+        current_workflow=engine.context_manager.get_current_workflow(),
+        scenario=SaveWorkflowScenario.FIRST_SAVE,
+    )
     return save_result.file_path
 
 

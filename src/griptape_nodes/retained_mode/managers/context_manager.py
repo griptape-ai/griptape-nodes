@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.files.path_utils import canonicalize_for_identity, derive_registry_key
+from griptape_nodes.files.path_utils import canonicalize_for_identity
+from griptape_nodes.node_library.workflow_registry import (
+    DuplicateWorkflowIdError,
+    WorkflowMetadata,
+    WorkflowMetadataError,
+    WorkflowRegistryError,
+    derive_workflow_id_for_path,
+    read_workflow_metadata,
+)
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.context_events import (
     EnsureWorkflowAndFlowRequest,
@@ -25,6 +32,7 @@ if TYPE_CHECKING:
 
     from griptape_nodes.exe_types.core_types import BaseNodeElement
     from griptape_nodes.exe_types.node_types import BaseNode
+    from griptape_nodes.node_library.workflow_registry import Workflow
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -54,28 +62,24 @@ class ContextManager(EngineScoped):
     class EmptyStackError(WorkflowContextError):
         """Empty stack error."""
 
-    class WorkflowContextState:
-        """Internal class that represents a Workflow's state which owns a stack of flow names."""
+    class UnknownWorkflowError(WorkflowContextError):
+        """No registered workflow has the name or id a context push asked for."""
 
-        _name: str
-        _file_path: str | None
-        _working_directory: str | None
+    class MirroredWorkflowError(WorkflowContextError):
+        """A peer engine's workflow could not be registered in this engine's registry."""
+
+    class WorkflowContextState:
+        """Internal class that represents a Workflow's state which owns a stack of flow names.
+
+        Holds only the workflow's id. Its name, file and folder live on its registry entry, so a
+        save, rename, or move updates them in one place and the context never goes stale.
+        """
+
+        workflow_id: str
         _flow_stack: list[ContextManager.FlowContextState]
 
-        def __init__(self, name: str, file_path: str | None = None, working_directory: str | None = None):
-            self._name = name
-            # The path this context was entered WITH, when it was entered by path. Retained
-            # because `_name` is a registry key derived against the workspace that was active
-            # at push time, so it goes stale the moment the workspace changes -- a project
-            # switch re-registers workflows under the new workspace and the lookup then misses.
-            # Callers that want the workflow's location (see ProjectManager's `workflow_dir`
-            # builtin) read this instead of round-tripping through the workflow registry.
-            self._file_path = file_path
-            # The folder this workflow belongs to while it has no file of its own: the folder the
-            # user was browsing when they created it. A DIRECTORY, unlike `_file_path`, which is
-            # a file whose PARENT is the directory. Always loses to `_file_path` -- once the
-            # workflow has been saved, the saved file's own location is the better answer.
-            self._working_directory = working_directory
+        def __init__(self, workflow_id: str):
+            self.workflow_id = workflow_id
             self._flow_stack = []
 
         def push_flow(self, flow: ControlFlow) -> ControlFlow:
@@ -87,7 +91,7 @@ class ContextManager(EngineScoped):
         def pop_flow(self) -> ControlFlow:
             """Pop the top flow from this workflow's flow stack."""
             if not self._flow_stack:
-                msg = f"Cannot pop Flow: no active Flows in Workflow '{self._name}'"
+                msg = f"Cannot pop Flow: no active Flows in Workflow '{self.workflow_id}'"
                 raise ContextManager.EmptyStackError(msg)
 
             flow_context = self._flow_stack.pop()
@@ -100,7 +104,7 @@ class ContextManager(EngineScoped):
         def get_current_flow(self) -> ControlFlow:
             """Get the current flow in this workflow."""
             if not self._flow_stack:
-                msg = f"No active Flow in Workflow '{self._name}'"
+                msg = f"No active Flow in Workflow '{self.workflow_id}'"
                 raise ContextManager.EmptyStackError(msg)
 
             flow_context = self._flow_stack[-1]
@@ -117,7 +121,7 @@ class ContextManager(EngineScoped):
             self._workflow_name = workflow_name
 
         def __enter__(self) -> None:
-            self._manager.push_workflow(self._workflow_name)
+            self._manager.push_workflow(workflow_name=self._workflow_name)
 
         def __exit__(
             self,
@@ -294,41 +298,69 @@ class ContextManager(EngineScoped):
                 )
                 return SetWorkflowContextFailure(result_details=msg)
 
-        # When no workflow_name is supplied, mint a fresh "unsaved:<uuid>" key here so the
-        # engine owns the namespace. Callers doing "create a new workflow" should omit the
-        # name and read the resolved key off the success result.
-        resolved_name = request.workflow_name or f"{self.engine.workflow_registry.UNSAVED_KEY_PREFIX}{uuid.uuid4()}"
+        workflow_or_error = self._resolve_workflow_to_set(request, working_directory)
+        if isinstance(workflow_or_error, str):
+            return SetWorkflowContextFailure(result_details=workflow_or_error)
+        workflow = workflow_or_error
 
-        # Auto-register an unsaved registry entry when the caller is activating an
-        # "unsaved:<uuid>" key. This makes every workflow (saved or not) a first-class
-        # registry entry, so list/metadata/etc. calls don't need special-casing for
-        # pre-save state. `ensure_unsaved` is idempotent.
-        if resolved_name.startswith(self.engine.workflow_registry.UNSAVED_KEY_PREFIX):
-            try:
-                self.engine.workflow_registry.ensure_unsaved(
-                    key=resolved_name, display_name=request.display_name or "Untitled"
-                )
-            except ValueError as err:
-                msg = (
-                    f"Attempted to auto-register unsaved workflow '{resolved_name}' "
-                    f"before setting it as the Current Context. Failed because of '{err}'."
-                )
-                return SetWorkflowContextFailure(result_details=msg)
+        self.push_workflow(workflow_id=workflow.workflow_id)
+        msg = f"Successfully set the Workflow '{workflow.name}' as the Current Context."
+        return SetWorkflowContextSuccess(
+            workflow_name=workflow.name, workflow_id=workflow.workflow_id, result_details=msg
+        )
 
-        self.push_workflow(resolved_name, working_directory=working_directory)
-        msg = f"Successfully set the Workflow '{resolved_name}' as the Current Context."
-        return SetWorkflowContextSuccess(workflow_name=resolved_name, result_details=msg)
+    def _resolve_workflow_to_set(
+        self, request: SetWorkflowContextRequest, working_directory: str | None
+    ) -> Workflow | str:
+        """Find or register the workflow a SetWorkflowContextRequest names, or say why it cannot.
+
+        No name registers a new unsaved workflow, so the engine owns the id namespace: callers
+        doing "create a new workflow" omit the name and read it off the success result. An
+        unregistered "unsaved:<id>" name registers an unsaved workflow with that id, so a
+        client that kept the name of a workflow it created gets the same workflow back. Any
+        other name must already be registered.
+        """
+        registry = self.engine.workflow_registry
+        display_name = request.display_name or "Untitled"
+        if request.workflow_name is None:
+            return registry.register_unsaved(display_name, working_directory)
+
+        workflow = registry.find_by_name(request.workflow_name)
+        if workflow is not None:
+            return workflow
+
+        if not request.workflow_name.startswith(registry.UNSAVED_KEY_PREFIX):
+            return (
+                f"Attempted to set the Workflow '{request.workflow_name}' as the Current Context. "
+                "Failed because no workflow has that name."
+            )
+        requested_id = registry.unsaved_name_workflow_id(request.workflow_name)
+        if requested_id is None:
+            return (
+                f"Attempted to set the unsaved Workflow '{request.workflow_name}' as the Current Context. "
+                "Failed because the part after 'unsaved:' must be a workflow id (a UUID)."
+            )
+        try:
+            return registry.register_unsaved(display_name, working_directory, workflow_id=requested_id)
+        except WorkflowRegistryError as err:
+            return (
+                f"Attempted to register unsaved workflow '{request.workflow_name}' "
+                f"before setting it as the Current Context. Failed because of '{err}'."
+            )
 
     @handles(GetWorkflowContextRequest)
     def on_get_workflow_context_request(self, request: GetWorkflowContextRequest) -> ResultPayload:  # noqa: ARG002
         workflow_name = None
+        workflow_id = None
         is_saved = None
         if self.has_current_workflow():
-            workflow_name = self.get_current_workflow_name()
-            if self.engine.workflow_registry.has_workflow_with_name(workflow_name):
-                is_saved = self.engine.workflow_registry.get_workflow_by_name(workflow_name).is_saved
+            workflow = self.get_current_workflow()
+            workflow_name = workflow.name
+            workflow_id = workflow.workflow_id
+            is_saved = workflow.is_saved
         return GetWorkflowContextSuccess(
             workflow_name=workflow_name,
+            workflow_id=workflow_id,
             is_saved=is_saved,
             result_details=f"Successfully retrieved workflow context: {workflow_name or 'None'}",
         )
@@ -338,7 +370,7 @@ class ContextManager(EngineScoped):
         """Cold-start bootstrap that guarantees a workflow + flow context exist.
 
         Delegates the workflow side to SetWorkflowContextRequest so the unsaved-registry-key
-        scheme ("unsaved:<uuid>") stays the single source of truth for scratch workflows;
+        scheme ("unsaved:<workflow id>") stays the single source of truth for scratch workflows;
         composes that with CreateFlowRequest so callers can go from a blank engine to
         CreateNode in a single round trip.
         """
@@ -351,14 +383,9 @@ class ContextManager(EngineScoped):
         created_workflow = False
         if self.has_current_workflow():
             workflow_name = self.get_current_workflow_name()
+            workflow_id = self.get_current_workflow_id()
         else:
-            set_workflow_result = self.engine.handle_request(
-                SetWorkflowContextRequest(
-                    workflow_name=request.workflow_name,
-                    display_name=request.display_name,
-                    working_directory=request.working_directory,
-                )
-            )
+            set_workflow_result = self.engine.handle_request(self._set_workflow_request_for_ensure(request))
             if not isinstance(set_workflow_result, SetWorkflowContextSuccess):
                 return EnsureWorkflowAndFlowResultFailure(
                     result_details=(
@@ -367,6 +394,7 @@ class ContextManager(EngineScoped):
                     )
                 )
             workflow_name = set_workflow_result.workflow_name
+            workflow_id = set_workflow_result.workflow_id
             created_workflow = True
 
         created_flow = False
@@ -395,6 +423,7 @@ class ContextManager(EngineScoped):
 
         return EnsureWorkflowAndFlowResultSuccess(
             workflow_name=workflow_name,
+            workflow_id=workflow_id,
             flow_name=flow_name,
             created_workflow=created_workflow,
             created_flow=created_flow,
@@ -402,6 +431,30 @@ class ContextManager(EngineScoped):
                 f"Workflow '{workflow_name}' and Flow '{flow_name}' are ready "
                 f"(created_workflow={created_workflow}, created_flow={created_flow})."
             ),
+        )
+
+    def _set_workflow_request_for_ensure(self, request: EnsureWorkflowAndFlowRequest) -> SetWorkflowContextRequest:
+        """The SetWorkflowContextRequest that creates or enters the workflow an Ensure names.
+
+        A name that is registered, or is an "unsaved:<id>" name, is entered as is. Any other
+        name is the name for a new workflow: Ensure creates one, so it becomes the new unsaved
+        workflow's display name (unless one was given), and the result reports the workflow's
+        own "unsaved:<id>" name.
+        """
+        workflow_name = request.workflow_name
+        if workflow_name is None:
+            return SetWorkflowContextRequest(
+                display_name=request.display_name, working_directory=request.working_directory
+            )
+        registry = self.engine.workflow_registry
+        if registry.find_by_name(workflow_name) is not None or workflow_name.startswith(registry.UNSAVED_KEY_PREFIX):
+            return SetWorkflowContextRequest(
+                workflow_name=workflow_name,
+                display_name=request.display_name,
+                working_directory=request.working_directory,
+            )
+        return SetWorkflowContextRequest(
+            display_name=request.display_name or workflow_name, working_directory=request.working_directory
         )
 
     def workflow(self, workflow_name: str) -> ContextManager.WorkflowContext:
@@ -474,7 +527,13 @@ class ContextManager(EngineScoped):
                 raise ValueError(msg) from e
         return self.ElementContext(self, element)
 
-    def mirror_workflow_context(self, name: str | None, file_path: str | None, working_directory: str | None) -> None:
+    def mirror_workflow_context(
+        self,
+        workflow_id: str | None,
+        name: str | None,
+        file_path: str | None,
+        working_directory: str | None,
+    ) -> None:
         """Adopt another engine's workflow context as this engine's own.
 
         A real stack entry rather than an override of the getters, because `has_current_workflow()`
@@ -482,30 +541,120 @@ class ContextManager(EngineScoped):
         -- and satisfying only the first raises IndexError in `has_current_flow`, `push_flow`,
         `pop_flow`, and the context setters.
 
+        The entry it points at is this engine's registry entry under the peer's workflow id,
+        registered unlisted when this engine does not know the workflow, and moved when the peer
+        has saved or moved it since. `name` is the peer's legacy name, used only for messages. The
+        entry an earlier mirror registered is dropped once another workflow is mirrored.
+
         Idempotent and never popped: this MIRRORS a peer's context rather than nesting under it, so
         one entry is replaced in place. There is no push/pop pair whose ordering could interleave
         while a worker runs nodes concurrently.
         """
-        if name is None:
+        previous_id = None
+        if self._workflow_stack:
+            previous_id = self._workflow_stack[-1].workflow_id
+
+        if workflow_id is None:
             # The peer has no workflow, so this engine must have none either. A mirror left from an
             # earlier execution would resolve paths against that workflow's folder while the peer
             # resolves them workspace-relative -- the divergence this mirror exists to prevent,
             # reached from the other direction. Only a mirror is ever on a worker's stack.
             self._workflow_stack.clear()
+            if previous_id is not None:
+                self._drop_mirror_entry(previous_id)
             return
 
-        state = self.WorkflowContextState(name=name, file_path=file_path, working_directory=working_directory)
+        mirrored_id = self._mirror_registry_entry(workflow_id, name, file_path, working_directory)
+        state = self.WorkflowContextState(mirrored_id)
         if not self._workflow_stack:
             self._workflow_stack.append(state)
-            return
+        elif self._workflow_stack[-1].workflow_id != mirrored_id:
+            # Replace rather than append: a mirror tracks one peer context, and stacking would leave
+            # the previous workflow's entry to be read by whatever runs next.
+            self._workflow_stack[-1] = state
 
-        current = self._workflow_stack[-1]
-        if current._name == name and current._file_path == file_path:
-            return
+        if previous_id is not None and previous_id != mirrored_id:
+            self._drop_mirror_entry(previous_id)
 
-        # Replace rather than append: a mirror tracks one peer context, and stacking would leave
-        # the previous workflow's entry to be read by whatever runs next.
-        self._workflow_stack[-1] = state
+    def _mirror_registry_entry(
+        self,
+        workflow_id: str,
+        name: str | None,
+        file_path: str | None,
+        working_directory: str | None,
+    ) -> str:
+        """Make this engine's registry describe the peer's workflow under the peer's id, and return that id.
+
+        The peer's id is the authority. An entry this engine holds for the same file under another
+        id is a stale view (its scan ran before the peer first saved, restamped or overwrote the
+        file), so it is dropped and the file goes to the peer's id.
+
+        Raises:
+            MirroredWorkflowError: The peer's file could not be registered here, for example because
+                it moved or was deleted while the node was being dispatched.
+        """
+        registry = self.engine.workflow_registry
+        workflow = registry.find_by_id(workflow_id)
+
+        if file_path is None:
+            if workflow is None:
+                workflow = registry.register_unsaved(
+                    name or "Untitled", working_directory, workflow_id=workflow_id, listed=False
+                )
+            workflow.working_directory = working_directory
+            return workflow_id
+
+        known = registry.find_by_path(file_path)
+        if known is not None and known.workflow_id == workflow_id:
+            return workflow_id
+        if known is not None:
+            logger.debug(
+                "Workflow '%s' was registered here as '%s'; the peer engine knows it as '%s'.",
+                known.name,
+                known.workflow_id,
+                workflow_id,
+            )
+            if self.is_workflow_in_context(known.workflow_id):
+                # The stale entry is the current mirror; the caller puts the peer's id in its place.
+                self._workflow_stack.clear()
+            registry.remove(known.workflow_id)
+
+        try:
+            if workflow is not None:
+                # The peer saved or moved the workflow since this engine last mirrored it.
+                registry.set_file_path(workflow, file_path)
+            else:
+                opened = read_metadata_for_open_file(Path(file_path))
+                registry.register_file(
+                    file_path,
+                    opened.metadata.model_copy(update={"workflow_id": workflow_id}),
+                    listed=False,
+                    metadata_error=opened.metadata_error,
+                )
+        except ValueError as err:
+            logger.debug("Could not mirror workflow '%s' from '%s': %s", workflow_id, file_path, err)
+            if Path(file_path).exists():
+                reason = "another workflow is already using that file"
+            else:
+                reason = "it was moved or deleted while the node was starting. Run it again"
+            msg = (
+                f"Attempted to run a node of workflow '{name or workflow_id}'. Failed because the workflow's "
+                f"file '{file_path}' could not be opened: {reason}."
+            )
+            raise self.MirroredWorkflowError(msg) from err
+        return workflow_id
+
+    def _drop_mirror_entry(self, workflow_id: str) -> None:
+        """Remove the entry an earlier mirror registered, now that another workflow is mirrored.
+
+        Only unlisted entries are the mirror's own; a listed one came from this engine's scan.
+        Without this a long-lived worker keeps one entry per peer workflow it ever ran a node for.
+        """
+        registry = self.engine.workflow_registry
+        workflow = registry.find_by_id(workflow_id)
+        if workflow is None or workflow.listed or self.is_workflow_in_context(workflow_id):
+            return
+        registry.remove(workflow_id)
 
     def has_current_workflow(self) -> bool:
         """Check if there is an active Workflow context."""
@@ -538,55 +687,67 @@ class ContextManager(EngineScoped):
         current_node = current_flow._node_stack[-1]
         return current_node.has_current_element()
 
+    def is_workflow_in_context(self, workflow_id: str) -> bool:
+        """Whether the workflow with this id is anywhere on the context stack."""
+        return any(state.workflow_id == workflow_id for state in self._workflow_stack)
+
+    def get_current_workflow_id(self) -> str:
+        """Get the id of the current Workflow context.
+
+        Raises:
+            NoActiveWorkflowError: If no Workflow context is active.
+        """
+        if not self.has_current_workflow():
+            msg = "No active Workflow context"
+            raise self.NoActiveWorkflowError(msg)
+
+        return self._workflow_stack[-1].workflow_id
+
+    def get_current_workflow(self) -> Workflow:
+        """Get the registry entry of the current Workflow context.
+
+        Raises:
+            NoActiveWorkflowError: If no Workflow context is active.
+        """
+        return self.engine.workflow_registry.get(self.get_current_workflow_id())
+
     def get_current_workflow_name(self) -> str:
         """Get the name of the current Workflow context.
 
         Returns:
-            The name of the current Workflow.
+            The legacy registry name of the current Workflow, read from its registry entry.
 
         Raises:
             NoActiveWorkflowError: If no Workflow context is active.
         """
-        if not self.has_current_workflow():
-            msg = "No active Workflow context"
-            raise self.NoActiveWorkflowError(msg)
-
-        current_workflow = self._workflow_stack[-1]
-        return current_workflow._name
+        return self.get_current_workflow().name
 
     def get_current_workflow_file_path(self) -> str | None:
-        """Get the file path the current Workflow context was entered with, if any.
+        """Get the absolute path of the current Workflow's file, if it has one.
 
-        Returns the path this context was entered with: either the one passed to
-        `push_workflow(file_path=...)`, or the one resolved from the registry at push time
-        when entered by name. Unlike `get_current_workflow_name()`, this does not depend on
-        the active workspace: the name is a registry key derived against the workspace at
-        push time, so switching projects re-registers workflows under a different key and
-        leaves the name stale. Prefer this when you need the workflow's LOCATION.
+        Read from the workflow's registry entry, which saves, renames and moves keep current.
 
         Returns:
-            The absolute file path, or None when entered by name for a workflow that was
-            unregistered or unsaved at push time.
+            The absolute file path, or None for an unsaved workflow.
 
         Raises:
             NoActiveWorkflowError: If no Workflow context is active.
         """
-        if not self.has_current_workflow():
-            msg = "No active Workflow context"
-            raise self.NoActiveWorkflowError(msg)
-
-        return self._workflow_stack[-1]._file_path
+        absolute_path = self.get_current_workflow().absolute_path
+        if absolute_path is None:
+            return None
+        return str(absolute_path)
 
     def get_current_workflow_working_directory(self) -> str | None:
-        """Get the folder the current Workflow context belongs to, if one was supplied.
+        """Get the folder the current Workflow belongs to, if one was supplied.
 
         This is the folder a workflow was created in before it had a file of its own -- the
         folder the caller was browsing at the time. It is a DIRECTORY, whereas
         `get_current_workflow_file_path` returns a FILE whose parent is the directory.
 
-        Only meaningful while the workflow is unsaved: `workflow_dir` prefers the retained
-        file path whenever there is one, so this stops mattering the moment the workflow is
-        saved. It is deliberately not cleared on save -- the file path simply wins.
+        Only meaningful while the workflow is unsaved: `workflow_dir` prefers the file path
+        whenever there is one, so this stops mattering the moment the workflow is saved. It is
+        deliberately not cleared on save -- the file path simply wins.
 
         Returns:
             The absolute directory path, or None when no folder was supplied.
@@ -594,17 +755,13 @@ class ContextManager(EngineScoped):
         Raises:
             NoActiveWorkflowError: If no Workflow context is active.
         """
-        if not self.has_current_workflow():
-            msg = "No active Workflow context"
-            raise self.NoActiveWorkflowError(msg)
+        return self.get_current_workflow().working_directory
 
-        return self._workflow_stack[-1]._working_directory
+    def move_current_workflow_onto(self, workflow_id: str) -> None:
+        """Make the registry entry `workflow_id` the current Workflow, keeping the open flows.
 
-    def set_current_workflow_name(self, new_name: str) -> None:
-        """Update the name of the current Workflow context.
-
-        Args:
-            new_name: The new name to assign to the current Workflow.
+        For the one case where an open workflow becomes a different registry entry: saving an
+        open library workflow writes a copy, and the editor keeps working in the copy.
 
         Raises:
             NoActiveWorkflowError: If no Workflow context is active.
@@ -613,29 +770,7 @@ class ContextManager(EngineScoped):
             msg = "No active Workflow context"
             raise self.NoActiveWorkflowError(msg)
 
-        self._workflow_stack[-1]._name = new_name
-
-    def set_current_workflow_file_path(self, new_file_path: str | None) -> None:
-        """Update the file path retained on the current Workflow context.
-
-        Anything that relocates the current workflow's file on disk (Move, Rename) must call
-        this alongside `set_current_workflow_name`. The retained path is the authoritative
-        answer for the workflow's location -- `get_current_workflow_file_path` is preferred
-        over a registry lookup precisely because it survives a workspace switch -- so leaving
-        it at the pre-move value keeps `workflow_dir` pointing at the old directory even
-        though the registry is correct.
-
-        Args:
-            new_file_path: The workflow's new path, or None when it no longer has one.
-
-        Raises:
-            NoActiveWorkflowError: If no Workflow context is active.
-        """
-        if not self.has_current_workflow():
-            msg = "No active Workflow context"
-            raise self.NoActiveWorkflowError(msg)
-
-        self._workflow_stack[-1]._file_path = new_file_path
+        self._workflow_stack[-1].workflow_id = workflow_id
 
     def get_current_flow(self) -> ControlFlow:
         """Get the current Flow object.
@@ -700,72 +835,94 @@ class ContextManager(EngineScoped):
         workflow_name: str | None = None,
         *,
         file_path: str | None = None,
+        workflow_id: str | None = None,
         working_directory: str | None = None,
     ) -> str:
         """Push a new Workflow context onto the stack.
 
-        The workflow's file path is captured here, while the registry key is still valid, and
-        retained on the context (see `get_current_workflow_file_path`). `resolved_name` is a key
-        derived against the CURRENT workspace, so it goes stale as soon as the workspace changes:
-        switching projects re-registers every workflow under the new workspace, after which a
-        lookup by the old key misses even though nothing about the file changed.
+        The context holds only the workflow's id; its name, file and folder are read from its
+        registry entry. Exactly one of the arguments names the workflow.
 
         Args:
-            workflow_name: The name of the Workflow to enter. Use this when the registry key is already known.
-            file_path: Path to the workflow file. The registry key will be derived from this path,
-                using a workspace-relative path if possible. Mutually exclusive with workflow_name.
+            workflow_name: The legacy registry name of a registered Workflow.
+            file_path: Path to a workflow file. Saved workflow files push themselves this way
+                (`push_workflow(file_path=__file__)`). A file the registry does not know is
+                registered unlisted, so it does not appear in the workflow list.
+            workflow_id: The id of a registered Workflow.
             working_directory: Folder the Workflow belongs to while it has no file of its own,
-                for a workflow that has never been saved. A DIRECTORY, not a file path. Never
-                affects the registry key, and never overrides `file_path`: a workflow that has
-                a file answers with that file's own directory. Expected to be absolute --
-                `on_set_workflow_context_request` normalizes before it reaches here.
+                set on its registry entry. A DIRECTORY, not a file path. Never overrides the
+                workflow's file: a saved workflow answers with that file's own directory.
+                It stays on the entry after `pop_workflow()`.
 
         Returns:
             The name of the Workflow that was entered.
 
         Raises:
-            ValueError: If neither or both of workflow_name and file_path are provided.
+            ValueError: If not exactly one of the arguments is provided.
+            UnknownWorkflowError: If no registered workflow has that name or id.
         """
-        if workflow_name is not None and file_path is not None:
-            msg = "Provide either workflow_name or file_path, not both."
-            raise ValueError(msg)
-        if workflow_name is not None:
-            resolved_name = workflow_name
-            # Entered by key, so resolve the path NOW rather than at read time: the key is
-            # only guaranteed to resolve against the workspace that is active right now.
-            # Best-effort -- an unregistered or unsaved workflow simply has no path, which
-            # callers already handle.
-            if file_path is None:
-                try:
-                    workflow = self.engine.workflow_registry.get_workflow_by_name(resolved_name)
-                except KeyError:
-                    file_path = None
-                else:
-                    if workflow.file_path is not None:
-                        file_path = self.engine.workflow_registry.get_complete_file_path(workflow.file_path)
-        elif file_path is not None:
-            resolved = canonicalize_for_identity(file_path)
-            workspace_path = canonicalize_for_identity(self.engine.config_manager.workspace_path)
-            if resolved.is_relative_to(workspace_path):
-                path_for_key = str(resolved.relative_to(workspace_path))
-            else:
-                path_for_key = str(resolved)
-            resolved_name = derive_registry_key(path_for_key)
-        else:
-            msg = "Either workflow_name or file_path must be provided."
+        provided = [argument for argument in (workflow_name, file_path, workflow_id) if argument is not None]
+        if len(provided) != 1:
+            msg = "Provide exactly one of workflow_name, file_path or workflow_id."
             raise ValueError(msg)
 
-        workflow_context_state = self.WorkflowContextState(
-            resolved_name, file_path=file_path, working_directory=working_directory
-        )
-        self._workflow_stack.append(workflow_context_state)
-        return resolved_name
+        registry = self.engine.workflow_registry
+        if workflow_name is not None:
+            workflow = registry.find_by_name(workflow_name)
+            if workflow is None:
+                msg = f"Attempted to enter Workflow '{workflow_name}'. Failed because no workflow has that name."
+                raise self.UnknownWorkflowError(msg)
+        elif workflow_id is not None:
+            workflow = registry.find_by_id(workflow_id)
+            if workflow is None:
+                msg = f"Attempted to enter Workflow '{workflow_id}'. Failed because no workflow has that id."
+                raise self.UnknownWorkflowError(msg)
+        else:
+            workflow = self._find_or_register_open_file(str(file_path))
+
+        if working_directory is not None:
+            workflow.working_directory = working_directory
+        self._workflow_stack.append(self.WorkflowContextState(workflow.workflow_id))
+        return workflow.name
+
+    def _find_or_register_open_file(self, file_path: str) -> Workflow:
+        """The registry entry for a workflow file being opened, registered unlisted when there is none.
+
+        Unlisted, so running a file from outside the workspace does not add it to the workflow
+        list. A file whose header cannot be read still opens (tests and scripts push their own
+        `__file__`), under a placeholder name and the id derived from its path, and its entry
+        records why the header could not be read.
+        """
+        registry = self.engine.workflow_registry
+        workflow = registry.find_by_path(file_path)
+        if workflow is not None:
+            return workflow
+        opened = read_metadata_for_open_file(Path(file_path))
+        metadata = opened.metadata
+        try:
+            return registry.register_file(file_path, metadata, listed=False, metadata_error=opened.metadata_error)
+        except DuplicateWorkflowIdError as err:
+            # A copy of a registered workflow, opened before any scan settled which file keeps the
+            # id. Opening never writes, so it takes the id derived from its path for now.
+            logger.warning(
+                "Workflow file '%s' has the same workflow id as '%s'. Opening it under an id of its own.",
+                file_path,
+                err.existing.name,
+            )
+            derived_id = derive_workflow_id_for_path(file_path, base=self.engine.config_manager.workspace_path)
+            return registry.register_file(
+                file_path,
+                metadata.model_copy(update={"workflow_id": derived_id}),
+                listed=False,
+                metadata_error=opened.metadata_error,
+            )
 
     def pop_workflow(self) -> str:
         """Pop the top Workflow from the stack.
 
         Returns:
-            The name of the Workflow that was popped.
+            The name of the Workflow that was popped. `get_current_workflow_id` gives its id
+            beforehand.
 
         Raises:
             EmptyStackError: If there are no active Workflows.
@@ -774,8 +931,9 @@ class ContextManager(EngineScoped):
             msg = "Cannot pop Workflow: no active Workflows"
             raise self.EmptyStackError(msg)
 
-        workflow_context = self._workflow_stack.pop()
-        return workflow_context._name
+        name = self.get_current_workflow_name()
+        self._workflow_stack.pop()
+        return name
 
     def push_flow(self, flow: ControlFlow) -> ControlFlow:
         """Push a new Flow context onto the stack for the current Workflow.
@@ -902,3 +1060,29 @@ class ContextManager(EngineScoped):
 
         current_node = current_flow._node_stack[-1]
         return current_node.pop_element()
+
+
+class OpenedFileMetadata(NamedTuple):
+    """The metadata a workflow file opens with, and why its header could not be read, if it could not."""
+
+    metadata: WorkflowMetadata
+    metadata_error: str | None
+
+
+def read_metadata_for_open_file(file_path: Path) -> OpenedFileMetadata:
+    """The header of a workflow file being opened, or placeholder metadata when it cannot be read.
+
+    A file opens whether or not its header reads, so a header problem never blocks opening it.
+    The problem is returned with the placeholder, for the registry entry to report.
+    """
+    try:
+        return OpenedFileMetadata(metadata=read_workflow_metadata(file_path), metadata_error=None)
+    except WorkflowMetadataError as err:
+        logger.debug("Opening '%s' without its metadata header: %s", file_path, err)
+        placeholder = WorkflowMetadata(
+            name=file_path.stem,
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with="",
+            node_libraries_referenced=[],
+        )
+        return OpenedFileMetadata(metadata=placeholder, metadata_error=str(err))

@@ -174,6 +174,7 @@ class WorkflowCodeGenerator(EngineScoped):
         file_name: str,
         creation_date: datetime,
         *,
+        workflow_id: str,
         display_name: str | None = None,
         image_path: str | None = None,
         description: str | None = None,
@@ -204,6 +205,7 @@ class WorkflowCodeGenerator(EngineScoped):
         all_libs = self.engine.library_manager.dependencies.resolve_transitive_library_deps(direct_libs)
 
         return WorkflowMetadata(
+            workflow_id=workflow_id,
             name=metadata_name,
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
             engine_version_created_with=engine_version,
@@ -339,6 +341,9 @@ class WorkflowCodeGenerator(EngineScoped):
 
         Returns:
             The workflow content with updated metadata header, or None if replacement failed
+
+        Raises:
+            ValueError: `new_metadata` carries no workflow id. Every file written gets one.
         """
         import re
 
@@ -400,6 +405,17 @@ class WorkflowCodeGenerator(EngineScoped):
                 self.walk_object_tree(attr_value, process_class_fn, visited)
 
     def _generate_workflow_metadata_header(self, workflow_metadata: WorkflowMetadata) -> str | None:
+        """Render the metadata header block.
+
+        Raises:
+            ValueError: `workflow_metadata` carries no workflow id. Every file written gets one.
+        """
+        if workflow_metadata.workflow_id is None:
+            msg = (
+                f"Attempted to write the metadata header for workflow '{workflow_metadata.name}'. "
+                "Failed because it has no workflow id."
+            )
+            raise ValueError(msg)
         try:
             toml_doc = tomlkit.document()
             toml_doc.add("dependencies", tomlkit.item([]))

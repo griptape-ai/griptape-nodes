@@ -468,6 +468,7 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
         instance_provider: Cloud provider name (None if not applicable)
         deployment_type: Type of deployment (None if not applicable)
         current_workflow: Name of active workflow (None if none)
+        current_workflow_id: Permanent id of active workflow (None if none)
         workflow_file_path: Path to workflow file (None if none)
         has_active_flow: Whether there's an active flow running
         engine_name: Human-readable engine name
@@ -512,6 +513,8 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
     # always fills this in, so the "" default means the heartbeat came from an engine too old
     # to report it -- a client should show nothing rather than guess.
     engine_os: str = ""
+    # Permanent id of the active workflow (None if none). Defaulted for backward compatibility.
+    current_workflow_id: str | None = None
 
 
 @dataclass

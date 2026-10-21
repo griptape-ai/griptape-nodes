@@ -17,7 +17,7 @@ from uuid import uuid4
 import pytest
 
 from griptape_nodes.exe_types.node_types import NodeDependencies
-from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, new_workflow_id
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, SerializedFlowCommands
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
@@ -90,6 +90,7 @@ def _node_command(  # noqa: PLR0913
 
 def _minimal_metadata(name: str = "codegen_test") -> WorkflowMetadata:
     return WorkflowMetadata(
+        workflow_id=new_workflow_id(),
         name=name,
         schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
         engine_version_created_with="0.0.0",

@@ -708,50 +708,6 @@ class _WorkflowRegistry:
         """Get the names of all workflows that are branches of the specified workflow."""
         return [workflow.name for workflow in self._by_id.values() if workflow.metadata.branched_from == workflow_name]
 
-    # Adapters for engine callers still on the name-keyed API. The next PR moves those callers to
-    # the methods above and removes these.
-
-    def generate_new_workflow(self, registry_key: str, metadata: WorkflowMetadata, file_path: str) -> Workflow:
-        """Adapter: register the workflow file at `file_path`, refusing a `registry_key` already registered.
-
-        Raises:
-            KeyError: A workflow is already registered under `registry_key`.
-            ValueError: The file is not on disk, or another entry holds its path or its id.
-        """
-        if self.find_by_name(registry_key) is not None:
-            msg = f"Workflow with registry key '{registry_key}' already registered."
-            raise KeyError(msg)
-        return self.register_file(file_path, metadata)
-
-    def ensure_unsaved(self, key: str, display_name: str) -> Workflow:
-        """Adapter: register the unsaved workflow named `key` unless it is registered.
-
-        Raises:
-            ValueError: `key` is not "unsaved:" followed by a workflow id.
-        """
-        existing = self.find_by_name(key)
-        if existing is not None:
-            return existing
-        workflow_id = self.unsaved_name_workflow_id(key)
-        if workflow_id is None:
-            msg = (
-                f"Unsaved registry key '{key}' must be '{self.UNSAVED_KEY_PREFIX}' followed by a workflow id (a UUID)."
-            )
-            raise ValueError(msg)
-        return self.register_unsaved(display_name, workflow_id=workflow_id)
-
-    def delete_workflow_by_name(self, name: str) -> Workflow:
-        """Adapter: remove the workflow with this legacy name and return it.
-
-        Raises:
-            KeyError: No workflow has that name.
-        """
-        workflow = self.find_by_name(name)
-        if workflow is None:
-            msg = f"Failed to delete Workflow. Workflow with name '{name}' has not been registered."
-            raise KeyError(msg)
-        return self.remove(workflow.workflow_id)
-
     def _is_in_directory(self, workflow: Workflow, directory: Path) -> bool:
         """Whether the workflow's file is inside `directory`. An unsaved workflow is in none."""
         if workflow.file_path is None:

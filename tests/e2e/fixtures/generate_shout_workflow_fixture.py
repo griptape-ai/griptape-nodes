@@ -102,7 +102,9 @@ def _materialize_library(target_dir: Path) -> Path:
 
 def _generate() -> None:
     """Build the Start -> Shout -> End graph and write it out as a saved workflow."""
-    current_engine().context_manager.push_workflow(workflow_name=WORKFLOW_NAME)
+    engine = current_engine()
+    workflow = engine.workflow_registry.register_unsaved(WORKFLOW_NAME, None)
+    engine.context_manager.push_workflow(workflow_id=workflow.workflow_id)
 
     flow_result = current_engine().handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name="ControlFlow_1", set_as_new_context=False)
@@ -131,6 +133,7 @@ def _generate() -> None:
     serialized = _expect(serialize_result, SerializeFlowToCommandsResultSuccess, "serialize the workflow's flow")
 
     metadata = WorkflowMetadata(
+        workflow_id=workflow.workflow_id,
         name=WORKFLOW_NAME,
         schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
         engine_version_created_with="0.0.0",

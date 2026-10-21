@@ -35,6 +35,7 @@ from griptape_nodes.retained_mode.events.library_events import (
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, CreateNodeResultSuccess
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -57,7 +58,7 @@ def _generate_subflow_workflow_source(engine: Engine, library_json: Path) -> str
     register_result = engine.handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
     assert isinstance(register_result, RegisterLibraryFromFileResultSuccess), register_result
 
-    engine.context_manager.push_workflow(workflow_name="subflow_e2e_workflow")
+    workflow = push_unsaved_workflow(engine, "subflow_e2e_workflow")
 
     flow_result = engine.handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name="ControlFlow_1", set_as_new_context=False)
@@ -102,6 +103,7 @@ def _generate_subflow_workflow_source(engine: Engine, library_json: Path) -> str
     assert isinstance(serialize_result, SerializeFlowToCommandsResultSuccess), serialize_result
 
     metadata = WorkflowMetadata(
+        workflow_id=workflow.workflow_id,
         name="subflow_e2e_workflow",
         schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
         engine_version_created_with="0.0.0",

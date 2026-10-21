@@ -39,6 +39,7 @@ from griptape_nodes.retained_mode.events.node_events import (
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -122,13 +123,14 @@ def _generate_nested_workflow_source(engine: Engine, library_json: Path) -> str:
     assert isinstance(register_result, RegisterLibraryFromFileResultSuccess), register_result
     library_name = register_result.library_name
 
-    engine.context_manager.push_workflow(workflow_name="nested_group_e2e_workflow")
+    workflow = push_unsaved_workflow(engine, "nested_group_e2e_workflow")
     flow_name = _build_nested_graph(engine, library_name)
 
     serialize_result = engine.handle_request(SerializeFlowToCommandsRequest(flow_name=flow_name))
     assert isinstance(serialize_result, SerializeFlowToCommandsResultSuccess), serialize_result
 
     metadata = WorkflowMetadata(
+        workflow_id=workflow.workflow_id,
         name="nested_group_e2e_workflow",
         schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
         engine_version_created_with="0.0.0",

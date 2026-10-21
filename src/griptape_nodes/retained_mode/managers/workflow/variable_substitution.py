@@ -27,8 +27,9 @@ logger = logging.getLogger("griptape_nodes")
 class VariableSubstitution(EngineScoped):
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
-        # Missing keys enable substitution. This cannot live in WorkflowMetadata because
-        # build_workflow() must set it during both editor loads and direct script execution.
+        # Keyed by workflow id, so a save, rename or move keeps the flag. Missing ids enable
+        # substitution. This cannot live in WorkflowMetadata because build_workflow() must set
+        # it during both editor loads and direct script execution.
         self._enabled: dict[str, bool] = {}
         event_manager.register_request_handlers(self)
 
@@ -36,26 +37,18 @@ class VariableSubstitution(EngineScoped):
         """Clear all per-workflow substitution settings."""
         self._enabled.clear()
 
-    def drop(self, workflow_key: str) -> None:
+    def drop(self, workflow_id: str) -> None:
         """Remove the substitution flag when a workflow is permanently deleted."""
-        self._enabled.pop(workflow_key, None)
+        self._enabled.pop(workflow_id, None)
 
-    def rekey(self, old_key: str, new_key: str) -> None:
-        """Transfer the substitution flag when a workflow registry key changes.
+    def copy(self, source_workflow_id: str, destination_workflow_id: str) -> None:
+        """Give the destination workflow the substitution flag of the source, which keeps its own.
 
-        Only moves the entry when a flag was explicitly set; workflows that defaulted
-        to True (no dict entry) stay that way under the new key without polluting the dict.
+        Only copies a flag that was explicitly set; a workflow that defaulted to True (no dict
+        entry) leaves the destination defaulting too.
         """
-        if old_key in self._enabled:
-            self._enabled[new_key] = self._enabled.pop(old_key)
-
-    def copy(self, source_key: str, destination_key: str) -> None:
-        """Give `destination_key` the substitution flag of `source_key`, which keeps its own.
-
-        Like `rekey`, only copies a flag that was explicitly set.
-        """
-        if source_key in self._enabled:
-            self._enabled[destination_key] = self._enabled[source_key]
+        if source_workflow_id in self._enabled:
+            self._enabled[destination_workflow_id] = self._enabled[source_workflow_id]
 
     def is_enabled(self) -> bool:
         """Return whether variable substitution is enabled for the current workflow.
@@ -67,9 +60,9 @@ class VariableSubstitution(EngineScoped):
         context_manager = self.engine.context_manager
         if not context_manager.has_current_workflow():
             return True
-        workflow_name = context_manager.get_current_workflow_name()
+        workflow_id = context_manager.get_current_workflow_id()
         # Return the stored value, or True if this workflow has never set the flag.
-        return self._enabled.get(workflow_name, True)
+        return self._enabled.get(workflow_id, True)
 
     @handles(GetVariableSubstitutionEnabledRequest)
     def on_get_variable_substitution_enabled_request(
@@ -94,7 +87,7 @@ class VariableSubstitution(EngineScoped):
     ) -> ResultPayload:
         """Enable or disable variable substitution for the current workflow.
 
-        Stores the flag in memory keyed by the current workflow name. When the
+        Stores the flag in memory keyed by the current workflow's id. When the
         workflow is saved, the code generator bakes a SetVariableSubstitutionEnabledRequest
         call into build_workflow() so the flag is restored on every subsequent load,
         including direct script execution.
@@ -105,7 +98,7 @@ class VariableSubstitution(EngineScoped):
                 result_details="Attempted to set variable substitution enabled. Failed because no workflow is active."
             )
         workflow_name = context_manager.get_current_workflow_name()
-        self._enabled[workflow_name] = request.enabled
+        self._enabled[context_manager.get_current_workflow_id()] = request.enabled
         details = (
             f"Variable substitution {'enabled' if request.enabled else 'disabled'} for workflow '{workflow_name}'."
         )
