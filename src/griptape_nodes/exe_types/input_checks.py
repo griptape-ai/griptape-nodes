@@ -571,7 +571,9 @@ def image_errors(  # noqa: PLR0913
         ValueError: If only one of `widest` and `tallest` is given, which would check nothing.
     """
     _require_both_aspect_ratio_bounds(widest, tallest)
-    info = local_image_info(image)
+    # Reduce the input to one string once, and hand that to both readers.
+    location = coerce_media_url_or_data_uri(image, kind="image")
+    info = local_image_info(location)
     errors: list[NodeError | None] = []
     if allowed_mime_types:
         mime_type = None
@@ -581,7 +583,10 @@ def image_errors(  # noqa: PLR0913
     if maximum_bytes is not None:
         errors.append(
             check_size(
-                local_size_bytes(image, kind="image"), maximum_bytes=maximum_bytes, subject=subject, docs_url=docs_url
+                local_size_bytes(location, kind="image"),
+                maximum_bytes=maximum_bytes,
+                subject=subject,
+                docs_url=docs_url,
             )
         )
     if min_side is not None or max_side is not None or min_megapixels is not None or max_megapixels is not None:

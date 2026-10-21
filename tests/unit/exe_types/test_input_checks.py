@@ -93,6 +93,12 @@ class TestLocalSizeBytes:
     def test_measures_a_data_uri_exactly(self, length: int) -> None:
         assert local_size_bytes(_data_uri(b"x" * length), kind="image") == length
 
+    @pytest.mark.parametrize("length", [1, 2, 3, 100, 1001])
+    def test_leaves_line_breaks_out_of_a_data_uri_size(self, length: int) -> None:
+        payload = base64.b64encode(b"x" * length).decode()
+        wrapped = "\n".join(payload[i : i + 76] for i in range(0, len(payload), 76)) + "\n"
+        assert local_size_bytes(f"data:image/png;base64,{wrapped}", kind="image") == length
+
     def test_ignores_line_breaks_in_a_data_uri(self) -> None:
         wrapped = f"data:image/png;base64,{base64.encodebytes(b'x' * 1000).decode()}"
         assert local_size_bytes(wrapped, kind="image") == 1000
@@ -624,6 +630,19 @@ class TestImageErrors:
 
     def test_skips_a_remote_image(self) -> None:
         assert image_errors("https://example.com/image.gif", subject=SUBJECT, **self.LIMITS) == []
+
+    def test_reduces_an_in_memory_image_to_a_string_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[Any] = []
+        coerce = input_checks.coerce_media_url_or_data_uri
+
+        def counting(value: Any, *, kind: Any) -> str | None:
+            calls.append(value)
+            return coerce(value, kind=kind)
+
+        monkeypatch.setattr(input_checks, "coerce_media_url_or_data_uri", counting)
+        artifact = ImageArtifact(_png_bytes(400, 300), format="png", width=400, height=300)
+        assert image_errors(artifact, subject=SUBJECT, maximum_bytes=10, min_side=500) != []
+        assert sum(1 for value in calls if value is artifact) == 1
 
 
 class TestVideoErrors:
