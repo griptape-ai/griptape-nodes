@@ -62,7 +62,6 @@ from griptape_nodes.retained_mode.events.library_events import (
     DescribeNodeTypeRequest,
     GetEngineSourceInfoRequest,
     GetLibrarySourceInfoRequest,
-    GetNodeCatalogRequest,
     ListCategoriesInLibraryRequest,
     ListNodeTypesInLibraryRequest,
     ListRegisteredLibrariesRequest,
@@ -110,7 +109,6 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "EnsureWorkflowAndFlowRequest": EnsureWorkflowAndFlowRequest,
     # Libraries
     "ListRegisteredLibrariesRequest": ListRegisteredLibrariesRequest,
-    "GetNodeCatalogRequest": GetNodeCatalogRequest,
     "ListNodeTypesInLibraryRequest": ListNodeTypesInLibraryRequest,
     "ListCategoriesInLibraryRequest": ListCategoriesInLibraryRequest,
     "RegisterSandboxNodeFromSourceRequest": RegisterSandboxNodeFromSourceRequest,

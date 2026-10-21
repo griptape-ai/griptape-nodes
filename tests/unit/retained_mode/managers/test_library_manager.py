@@ -27,7 +27,6 @@ from griptape_nodes.node_library.library_declarations import (
     ModelUsageNodeProperty,
 )
 from griptape_nodes.node_library.library_registry import (
-    CategoryDefinition,
     Dependencies,
     Library,
     LibraryMetadata,
@@ -51,20 +50,17 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetAllInfoForAllLibrariesResultFailure,
     GetAllInfoForAllLibrariesResultSuccess,
     GetAllInfoForLibraryRequest,
-    GetNodeCatalogRequest,
-    GetNodeCatalogResultFailure,
-    GetNodeCatalogResultSuccess,
     InstallLibraryDependenciesRequest,
     InstallLibraryDependenciesResultFailure,
     InstallLibraryDependenciesResultSuccess,
+    ListNodeTypesInLibraryRequest,
+    ListNodeTypesInLibraryResultFailure,
+    ListNodeTypesInLibraryResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
     LoadLibrariesRequest,
     LoadLibrariesResultSuccess,
     LoadLibraryMetadataFromFileResultSuccess,
-    NodeCatalogCategory,
-    NodeCatalogLibrary,
-    NodeCatalogNode,
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
@@ -2729,251 +2725,97 @@ class TestDescribeNodeTypeRequest:
         assert "simulated I/O failure" in str(result.result_details)
 
 
-class _CatalogImageNode(BaseNode):
-    """Node type registered eagerly into the GetNodeCatalog test libraries."""
+class _ListedImageNode(BaseNode):
+    """Node type registered eagerly into the ListNodeTypesInLibrary metadata test library."""
 
 
-class _CatalogTextNode(BaseNode):
-    """Node type registered eagerly into the GetNodeCatalog test libraries."""
+class _ListedLegacyNode(BaseNode):
+    """Node type the ListNodeTypesInLibrary metadata tests mark deprecated."""
 
 
-class _CatalogLegacyNode(BaseNode):
-    """Node type the GetNodeCatalog tests mark deprecated."""
+class TestListNodeTypesInLibraryMetadata:
+    """Exercise ListNodeTypesInLibraryRequest.include_metadata."""
 
-
-class _CatalogUndeclaredCategoryNode(BaseNode):
-    """Node type whose category the library does not declare."""
-
-
-class TestGetNodeCatalogRequest:
-    """Exercise LibraryCatalog.on_get_node_catalog_request."""
-
-    _IMAGE_LIBRARY = "catalog-image-library"
-    _TEXT_LIBRARY = "catalog-text-library"
+    _LIBRARY = "listed-metadata-library"
+    _IMAGE_METADATA = NodeMetadata(category="image", description="Loads an image", display_name="Load Image")
+    _LEGACY_METADATA = NodeMetadata(
+        category="image",
+        description="Old image loader",
+        display_name="Legacy Image",
+        deprecation=NodeDeprecationMetadata(deprecation_message="Use Load Image", removal_version="2.0.0"),
+    )
 
     @pytest.fixture(autouse=True)
-    def _clean_registry(self, engine: Engine) -> Generator[None, None, None]:
+    def _clean_registry(self) -> Generator[None, None, None]:
         """LibraryRegistry holds class-level state that survives the singleton reset fixture."""
         LibraryRegistry._clear()
-        engine.library_manager._libraries_loading_complete.set()
         yield
         LibraryRegistry._clear()
 
-    @staticmethod
-    def _category(title: str) -> CategoryDefinition:
-        return CategoryDefinition(title=title, description=f"{title} nodes", color="#000", icon="Folder")
-
-    def _register_libraries(self) -> None:
-        image_schema = LibrarySchema(
-            name=self._IMAGE_LIBRARY,
+    def _register_library(self) -> None:
+        schema = LibrarySchema(
+            name=self._LIBRARY,
             library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
             metadata=LibraryMetadata(
                 author="test", description="image", library_version="1.0.0", engine_version="1.0.0", tags=[]
             ),
-            # "text" is declared first and "empty" holds no nodes, to pin declared order and pruning.
-            categories=[
-                {"text": self._category("Text")},
-                {"image": self._category("Image"), "empty": self._category("Empty")},
-            ],
+            categories=[],
             nodes=[],
         )
-        image_library = LibraryRegistry.generate_new_library(library_data=image_schema)
-        image_library.register_new_node_type(
-            _CatalogImageNode,
-            NodeMetadata(category="image", description="Loads an image", display_name="Load Image"),
-        )
-        image_library.register_new_node_type(
-            _CatalogLegacyNode,
-            NodeMetadata(
-                category="image",
-                description="Old image loader",
-                display_name="Legacy Image",
-                icon="Image",
-                color="#fff",
-                tags=["old"],
-                deprecation=NodeDeprecationMetadata(deprecation_message="Use Load Image", removal_version="2.0.0"),
-            ),
-        )
-        image_library.register_new_node_type(
-            _CatalogTextNode,
-            NodeMetadata(category="text", description="Writes text", display_name="Text"),
-        )
-        image_library.register_new_node_type(
-            _CatalogUndeclaredCategoryNode,
-            NodeMetadata(category="misc", description="Uncategorized", display_name="Misc"),
+        library = LibraryRegistry.generate_new_library(library_data=schema)
+        library.register_new_node_type(_ListedImageNode, self._IMAGE_METADATA)
+        library.register_new_node_type(_ListedLegacyNode, self._LEGACY_METADATA)
+
+    def test_returns_metadata_keyed_by_node_type_when_asked(self, engine: Engine) -> None:
+        self._register_library()
+
+        result = engine.library_manager.catalog.on_list_node_types_in_library_request(
+            ListNodeTypesInLibraryRequest(library=self._LIBRARY, include_metadata=True)
         )
 
-        text_schema = LibrarySchema(
-            name=self._TEXT_LIBRARY,
-            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
-            metadata=LibraryMetadata(
-                author="test", description="text", library_version="1.0.0", engine_version="1.0.0", tags=[]
-            ),
-            categories=[{"text": self._category("Text")}],
-            nodes=[],
-        )
-        text_library = LibraryRegistry.generate_new_library(library_data=text_schema)
-        text_library.register_new_node_type(
-            _CatalogTextNode,
-            NodeMetadata(category="text", description="Writes more text", display_name="Text Two"),
-        )
-
-    @pytest.mark.asyncio
-    async def test_groups_nodes_by_library_and_category(self, engine: Engine) -> None:
-        self._register_libraries()
-
-        result = await engine.library_manager.catalog.on_get_node_catalog_request(GetNodeCatalogRequest())
-
-        assert isinstance(result, GetNodeCatalogResultSuccess), result.result_details
-        assert result.libraries == [
-            NodeCatalogLibrary(
-                name=self._IMAGE_LIBRARY,
-                categories=[
-                    NodeCatalogCategory(
-                        name="text",
-                        nodes=[
-                            NodeCatalogNode(
-                                type="_CatalogTextNode",
-                                display_name="Text",
-                                description="Writes text",
-                                deprecated=False,
-                            )
-                        ],
-                    ),
-                    NodeCatalogCategory(
-                        name="image",
-                        nodes=[
-                            NodeCatalogNode(
-                                type="_CatalogImageNode",
-                                display_name="Load Image",
-                                description="Loads an image",
-                                deprecated=False,
-                            ),
-                            NodeCatalogNode(
-                                type="_CatalogLegacyNode",
-                                display_name="Legacy Image",
-                                description="Old image loader",
-                                deprecated=True,
-                            ),
-                        ],
-                    ),
-                    NodeCatalogCategory(
-                        name="misc",
-                        nodes=[
-                            NodeCatalogNode(
-                                type="_CatalogUndeclaredCategoryNode",
-                                display_name="Misc",
-                                description="Uncategorized",
-                                deprecated=False,
-                            )
-                        ],
-                    ),
-                ],
-            ),
-            NodeCatalogLibrary(
-                name=self._TEXT_LIBRARY,
-                categories=[
-                    NodeCatalogCategory(
-                        name="text",
-                        nodes=[
-                            NodeCatalogNode(
-                                type="_CatalogTextNode",
-                                display_name="Text Two",
-                                description="Writes more text",
-                                deprecated=False,
-                            )
-                        ],
-                    )
-                ],
-            ),
-        ]
-
-    @pytest.mark.asyncio
-    async def test_marks_deprecated_nodes(self, engine: Engine) -> None:
-        self._register_libraries()
-
-        result = await engine.library_manager.catalog.on_get_node_catalog_request(
-            GetNodeCatalogRequest(libraries=[self._IMAGE_LIBRARY])
-        )
-
-        assert isinstance(result, GetNodeCatalogResultSuccess), result.result_details
-        deprecated_by_type = {
-            node.type: node.deprecated for category in result.libraries[0].categories for node in category.nodes
-        }
-        assert deprecated_by_type == {
-            "_CatalogTextNode": False,
-            "_CatalogImageNode": False,
-            "_CatalogLegacyNode": True,
-            "_CatalogUndeclaredCategoryNode": False,
+        assert isinstance(result, ListNodeTypesInLibraryResultSuccess), result.result_details
+        assert result.node_types == ["_ListedImageNode", "_ListedLegacyNode"]
+        assert result.node_metadata == {
+            "_ListedImageNode": self._IMAGE_METADATA,
+            "_ListedLegacyNode": self._LEGACY_METADATA,
         }
 
-    @pytest.mark.asyncio
-    async def test_filters_to_requested_libraries_in_request_order(self, engine: Engine) -> None:
-        self._register_libraries()
+    def test_leaves_metadata_out_by_default(self, engine: Engine) -> None:
+        self._register_library()
 
-        result = await engine.library_manager.catalog.on_get_node_catalog_request(
-            GetNodeCatalogRequest(libraries=[self._TEXT_LIBRARY, self._IMAGE_LIBRARY, self._TEXT_LIBRARY])
+        result = engine.library_manager.catalog.on_list_node_types_in_library_request(
+            ListNodeTypesInLibraryRequest(library=self._LIBRARY)
         )
 
-        assert isinstance(result, GetNodeCatalogResultSuccess), result.result_details
-        assert [library.name for library in result.libraries] == [self._TEXT_LIBRARY, self._IMAGE_LIBRARY]
+        assert isinstance(result, ListNodeTypesInLibraryResultSuccess), result.result_details
+        assert result.node_types == ["_ListedImageNode", "_ListedLegacyNode"]
+        assert result.node_metadata is None
 
-    @pytest.mark.asyncio
-    async def test_empty_library_list_returns_empty_catalog(self, engine: Engine) -> None:
-        self._register_libraries()
-
-        result = await engine.library_manager.catalog.on_get_node_catalog_request(GetNodeCatalogRequest(libraries=[]))
-
-        assert isinstance(result, GetNodeCatalogResultSuccess), result.result_details
-        assert result.libraries == []
-
-    @pytest.mark.asyncio
-    async def test_unknown_library_fails_naming_it(self, engine: Engine) -> None:
-        self._register_libraries()
-
-        result = await engine.library_manager.catalog.on_get_node_catalog_request(
-            GetNodeCatalogRequest(libraries=[self._IMAGE_LIBRARY, "No Such Library", "Another Missing"])
+    def test_unknown_library_fails(self, engine: Engine) -> None:
+        result = engine.library_manager.catalog.on_list_node_types_in_library_request(
+            ListNodeTypesInLibraryRequest(library="No Such Library", include_metadata=True)
         )
 
-        assert isinstance(result, GetNodeCatalogResultFailure)
-        assert str(result.result_details) == (
-            "Attempted to get the node catalog. Failed because no Library is registered under: "
-            "'No Such Library', 'Another Missing'."
-        )
+        assert isinstance(result, ListNodeTypesInLibraryResultFailure)
 
-    @pytest.mark.asyncio
-    async def test_does_not_resolve_or_construct_node_classes(self, engine: Engine) -> None:
-        self._register_libraries()
+    def test_metadata_does_not_resolve_or_construct_node_classes(self, engine: Engine) -> None:
+        self._register_library()
 
         with (
             patch.object(NodeTypeEntry, "resolve") as resolve,
             patch.object(Library, "get_node_class") as get_node_class,
             patch.object(Library, "create_node") as create_node,
-            patch.object(_CatalogImageNode, "__init__") as image_node_init,
+            patch.object(_ListedImageNode, "__init__") as image_node_init,
         ):
-            result = await engine.library_manager.catalog.on_get_node_catalog_request(GetNodeCatalogRequest())
+            result = engine.library_manager.catalog.on_list_node_types_in_library_request(
+                ListNodeTypesInLibraryRequest(library=self._LIBRARY, include_metadata=True)
+            )
 
-        assert isinstance(result, GetNodeCatalogResultSuccess), result.result_details
+        assert isinstance(result, ListNodeTypesInLibraryResultSuccess), result.result_details
         resolve.assert_not_called()
         get_node_class.assert_not_called()
         create_node.assert_not_called()
         image_node_init.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_waits_for_libraries_to_finish_loading(self, engine: Engine) -> None:
-        library_manager = engine.library_manager
-        library_manager._libraries_loading_complete.clear()
-
-        task = asyncio.create_task(library_manager.catalog.on_get_node_catalog_request(GetNodeCatalogRequest()))
-        await asyncio.sleep(0)
-        assert not task.done()
-
-        self._register_libraries()
-        library_manager._libraries_loading_complete.set()
-        result = await task
-
-        assert isinstance(result, GetNodeCatalogResultSuccess), result.result_details
-        assert [library.name for library in result.libraries] == [self._IMAGE_LIBRARY, self._TEXT_LIBRARY]
 
 
 class _LifecycleProbe(BaseNode):

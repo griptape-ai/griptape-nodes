@@ -73,18 +73,20 @@ Do this once per session and remember the paths; they don't change mid-run.
 ### Survey the registered libraries via MCP
 
 ```
-A. griptape_nodes_GetNodeCatalogRequest()
-   → every registered library (e.g. "Griptape Nodes Library", "Sandbox Library"),
-     its categories, and each node type's `type`, `display_name`, `description`, and
-     `deprecated` flag, in one call. `type` is the exact string to pass to
-     `CreateNodeRequest.node_type` and `DescribeNodeTypeRequest.node_type`. Skip node
-     types marked `deprecated: true` when another node does the job. Pass
-     `libraries=["<name>", ...]` to fetch only some libraries. If a library you expect
-     is missing, no `DescribeNodeType` call against its node types will resolve.
+A. griptape_nodes_ListRegisteredLibrariesRequest()
+   → list of library names currently loaded (e.g. "Griptape Nodes Library",
+     "Sandbox Library"). If a library you expect is missing, no `DescribeNodeType`
+     call against its node types will resolve.
 
-B. (alternative) griptape_nodes_ListRegisteredLibrariesRequest(), then
-   griptape_nodes_ListNodeTypesInLibraryRequest(library="<name>") per library
-   → names only, no descriptions or categories.
+B. griptape_nodes_EventRequestBatch with one
+   ListNodeTypesInLibraryRequest(library="<name>", include_metadata=true) per library
+   → every library's node types in one round trip. `node_types` holds the exact strings
+     to pass to `CreateNodeRequest.node_type` and `DescribeNodeTypeRequest.node_type`;
+     `node_metadata` maps each to its `category`, `display_name`, `description`, and
+     `deprecation`. Skip node types with a `deprecation` when another node does the job.
+
+C. (optional) griptape_nodes_ListCategoriesInLibraryRequest(library="<name>")
+   → category titles and descriptions, in the order the library declares them.
 ```
 
 Do this once per session, then reuse the catalog. Skip the survey only when you
@@ -263,9 +265,11 @@ against stale state.
 
 - **Survey the workspace before picking node types.** Read the JSON config at
     `~/.config/griptape_nodes/griptape_nodes_config.json` to learn where the sandbox
-    directory and registered library JSONs live, then run `GetNodeCatalogRequest`
-    before reaching for `DescribeNodeType`. The catalog tells you which node types
-    actually exist in this engine and which library owns each one, which is the input both `DescribeNodeTypeRequest.library` and
+    directory and registered library JSONs live, then run
+    `ListRegisteredLibrariesRequest` and `ListNodeTypesInLibraryRequest` (with
+    `include_metadata`) for the libraries you care about before reaching for
+    `DescribeNodeType`. The catalog tells you which node types actually exist in this
+    engine and which library owns each one, which is the input both `DescribeNodeTypeRequest.library` and
     `CreateNodeRequest.specific_library_name` expect when the same name lives in more
     than one library.
 - **Discover before wiring.** Always call `DescribeNodeType` for each node type you
@@ -379,7 +383,7 @@ EVERYTHING (nodes, flows, connections, workflow). There is no softer reset today
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Bootstrap a workflow + flow from cold                                               | `EnsureWorkflowAndFlowRequest`                                                                                                                            |
 | Fan N requests out in one round trip                                                | `EventRequestBatch` (synthetic; pre-name nodes that later slots reference)                                                                                |
-| Discover libraries / node types                                                     | `GetNodeCatalogRequest` (one call), or `ListRegisteredLibrariesRequest`, `ListNodeTypesInLibraryRequest`, `ListCategoriesInLibraryRequest`                |
+| Discover libraries / node types                                                     | `ListRegisteredLibrariesRequest`, `ListNodeTypesInLibraryRequest` (`include_metadata` for descriptions), `ListCategoriesInLibraryRequest`                 |
 | Inspect a node type's parameters                                                    | `DescribeNodeTypeRequest`                                                                                                                                 |
 | Create a node                                                                       | `CreateNodeRequest`                                                                                                                                       |
 | Wire a single edge                                                                  | `CreateConnectionRequest`                                                                                                                                 |
