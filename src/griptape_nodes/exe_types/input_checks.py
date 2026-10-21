@@ -1063,7 +1063,7 @@ def _codec_error(  # noqa: PLR0913
     shown = _codec_name(codec)
     # Last guard: a refusal that would list the input's own codec, under any spelling not matched
     # above, would contradict itself, so the codec is let through instead.
-    if any(_codec_name(name).lower() == shown.lower() for name in allowed):
+    if any(_squash(_codec_name(name)) == _squash(shown) for name in allowed):
         return None
     codecs = _join_or(list(dict.fromkeys(_codec_name(name) for name in allowed)))
     return _error(f"{subject} is encoded as {shown}. Re-encode it as {codecs}.", docs_url)
@@ -1789,27 +1789,37 @@ _FORMAT_NAMES = {
 _CODEC_ALIASES = {
     "avc": "h264",
     "h264": "h264",
-    "h.264": "h264",
     "x264": "h264",
+    "mpeg4avc": "h264",
+    "mpeg4part10": "h264",
     "hevc": "hevc",
     "h265": "hevc",
-    "h.265": "hevc",
     "x265": "hevc",
-    "aac-lc": "aac",
-    "he-aac": "aac",
-    "he-aacv2": "aac",
-    "mpeg-4 avc": "h264",
-    "mpeg-4 aac": "aac",
-    "mpeg-4": "mpeg4",
-    "mpeg-2": "mpeg2video",
+    "aaclc": "aac",
+    "heaac": "aac",
+    "heaacv2": "aac",
+    "mpeg4aac": "aac",
+    "mpeg4": "mpeg4",
+    "mpeg4part2": "mpeg4",
+    "mpeg2": "mpeg2video",
     "mp2": "mp2",
+    "ac3": "ac3",
+    "dolbydigital": "ac3",
+    "eac3": "eac3",
+    "dolbydigitalplus": "eac3",
+    "mjpeg": "mjpeg",
+    "motionjpeg": "mjpeg",
 }
 
-# Codec names a provider writes for PCM without a bit depth or byte order; they accept any PCM codec.
-_GENERIC_PCM_NAMES = frozenset({"pcm", "lpcm", "linear pcm", "wav", "wave", "uncompressed"})
+# Words a provider writes for PCM without naming a bit depth or byte order; any of them accepts any PCM.
+_GENERIC_PCM_WORDS = frozenset({"pcm", "lpcm", "linearpcm", "wav", "wave", "uncompressed"})
+
+# What `_codecs_named` records for a generic PCM word.
+_PCM = "pcm"
 
 # What separates the words of a codec name a provider writes, such as "AAC LC" or "H.264/AVC".
 _CODEC_WORD_SPLIT = re.compile(r"[\s/,()]+")
+_NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]")
 
 # ffprobe's codec names that aren't the name an artist knows a codec by.
 _CODEC_NAMES = {
@@ -1825,6 +1835,8 @@ _CODEC_NAMES = {
     "dnxhd": "DNxHD",
     "mp3": "MP3",
     "aac": "AAC",
+    "ac3": "AC-3",
+    "eac3": "E-AC-3",
     "flac": "FLAC",
     "opus": "Opus",
     "vorbis": "Vorbis",
@@ -1844,22 +1856,38 @@ _CODEC_NAMES = {
 def _codec_matches(codec: str, written: str) -> bool:
     """Whether a codec name a provider wrote accepts the input's codec, from ffprobe.
 
-    It matches when the whole name, or any word in it, names the codec, so "AAC LC", "MPEG-4 AAC",
-    "H.264/AVC" and "Apple ProRes" all accept the codec they name. A generic "PCM" or "WAV" accepts
-    any PCM codec, whatever its bit depth or byte order.
+    Names are compared without case or punctuation, and a long name accepts every codec it mentions,
+    so "AAC LC", "H.264 (MPEG-4 AVC)", "Dolby Digital (AC-3)" and "Apple ProRes" accept the codec they
+    name. "MPEG-4" alone means MPEG-4 Part 2, but next to H.264 or HEVC it only qualifies that codec,
+    so it accepts nothing on its own there. Any PCM word ("PCM", "16-bit PCM", "WAV") accepts any PCM
+    codec, whatever its bit depth or byte order.
     """
     canonical = _canonical_codec(codec)
-    folded = written.strip().lower()
-    if canonical.startswith("pcm_") and folded in _GENERIC_PCM_NAMES:
+    named = _codecs_named(written)
+    if canonical.startswith("pcm_") and _PCM in named:
         return True
+    return canonical in named
+
+
+def _codecs_named(written: str) -> set[str]:
+    """The codecs a name a provider wrote mentions, by their ffprobe names; `_PCM` for any PCM word."""
     whole = _canonical_codec(written)
-    if whole == canonical:
-        return True
-    # The words of a name are tried only when the whole name isn't one known codec, so "MPEG-4 AVC"
-    # (H.264) doesn't accept MPEG-4 Part 2 through its word "MPEG-4".
     if _is_known_codec(whole):
-        return False
-    return any(_canonical_codec(word) == canonical for word in _CODEC_WORD_SPLIT.split(folded) if word)
+        return {whole}
+    named = set()
+    for word in _CODEC_WORD_SPLIT.split(written.lower()):
+        if not word:
+            continue
+        if _squash(word) in _GENERIC_PCM_WORDS:
+            named.add(_PCM)
+            continue
+        candidate = _canonical_codec(word)
+        if _is_known_codec(candidate):
+            named.add(candidate)
+    # "MPEG-4" beside H.264 or HEVC names its family, as in "H.264 (MPEG-4 AVC)", not MPEG-4 Part 2.
+    if named & {"h264", "hevc"}:
+        named.discard("mpeg4")
+    return named
 
 
 def _is_known_codec(canonical: str) -> bool:
@@ -1869,14 +1897,19 @@ def _is_known_codec(canonical: str) -> bool:
 
 def _canonical_codec(name: str) -> str:
     """A codec's ffprobe name, however it's written: "H.264", "AVC" and "h264" all give "h264"."""
-    folded = name.strip().lower()
-    known = _CODEC_ALIASES.get(folded)
+    squashed = _squash(name)
+    known = _CODEC_ALIASES.get(squashed)
     if known is not None:
         return known
     for ffprobe_name, shown in _CODEC_NAMES.items():
-        if shown.lower() == folded:
+        if _squash(shown) == squashed or _squash(ffprobe_name) == squashed:
             return ffprobe_name
-    return folded
+    return name.strip().lower()
+
+
+def _squash(name: str) -> str:
+    """A name without case, spaces or punctuation, so "AC-3", "ac3" and "AC 3" compare equal."""
+    return _NON_ALPHANUMERIC.sub("", name.lower())
 
 
 def _codec_name(codec: str) -> str:
