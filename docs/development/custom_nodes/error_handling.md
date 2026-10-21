@@ -344,10 +344,7 @@ reads what it needs locally and builds the `NodeError` for you:
 
 Each takes only the limits you pass and returns a list of errors, empty when the input is within
 them. The single checks they use (`check_size`, `check_dimensions`, `check_duration` and the rest)
-are there too for a limit that isn't about one file. For a limit on several clips together, such as
-"up to 15 seconds of reference video in total", probe each clip once with `local_video_probe` or
-`local_audio_probe`, pass the probe to `video_errors` or `audio_errors` as `probe=`, and pass the
-clips' `shortest_seconds` to `check_total_duration`.
+are there too for a limit that isn't about one file.
 
 Formats are read from the file, not its name: a MOV renamed to `.mp4` is still refused as a MOV,
 and an MP3 renamed to `.wav` as an MP3. HEIC and HEIF photos are read like any other image, and a
