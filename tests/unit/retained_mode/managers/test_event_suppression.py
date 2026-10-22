@@ -43,7 +43,11 @@ from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeResultFailure,
     CreateNodeResultSuccess,
 )
-from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueResultSuccess
+from griptape_nodes.retained_mode.events.parameter_events import (
+    AlterElementEvent,
+    RemoveElementEvent,
+    SetParameterValueResultSuccess,
+)
 from griptape_nodes.retained_mode.managers.event_manager import EventManager, EventSuppressionContext
 
 
@@ -316,13 +320,16 @@ class TestSuppressionSetReachability:
             "Put them in LOOP_EVENTS_TO_SUPPRESS."
         )
 
-    def test_loop_events_to_suppress_holds_only_request_results(self) -> None:
-        payloads = sorted(
-            event_type.__name__ for event_type in LOOP_EVENTS_TO_SUPPRESS if not issubclass(event_type, ResultPayload)
+    def test_loop_events_to_suppress_holds_bookkeeping_only(self) -> None:
+        """Request results and the element events of packaged copies; never a run's live execution traffic."""
+        unexpected = sorted(
+            event_type.__name__
+            for event_type in LOOP_EVENTS_TO_SUPPRESS
+            if not issubclass(event_type, ResultPayload) and event_type not in {AlterElementEvent, RemoveElementEvent}
         )
-        assert payloads == [], (
-            f"LOOP_EVENTS_TO_SUPPRESS is for request results, but these are not: {payloads}. "
-            "Put them in EXECUTION_EVENTS_TO_SUPPRESS."
+        assert unexpected == [], (
+            f"LOOP_EVENTS_TO_SUPPRESS is the set the sequential path also uses, so it must not hide the execution "
+            f"events the editor highlights from: {unexpected}. Put them in EXECUTION_EVENTS_TO_SUPPRESS."
         )
 
     def test_a_loop_suppressed_type_is_matched_in_its_real_shape(self) -> None:
