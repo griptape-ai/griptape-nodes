@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 # The version of the requests engines on different machines exchange. While it is 0.x, any
 # difference is refused, since both machines also have to run the same engine version.
-DISTRIBUTED_EXECUTION_SCHEMA_VERSION = "0.4.0"
+DISTRIBUTED_EXECUTION_SCHEMA_VERSION = "0.1.0"
 
 
 class MachineNotFoundError(Exception):
