@@ -236,7 +236,7 @@ On your workstation, list each library that should run elsewhere in `distributed
 }
 ```
 
-Your workstation looks the machine up by its engine ID in the engine registry, on the admin server or Griptape Cloud that `GT_CLOUD_BASE_URL` points to, so you never type its address. An engine keeps its ID when it restarts. The ID changes only if the machine's data directory is deleted, unless `GTN_ENGINE_ID` sets it. If the GPU machine moves to a new address, restart Griptape Nodes on your workstation so it looks the machine up again. Libraries you don't list run on your workstation. A change to this setting takes effect from the next session.
+Your workstation looks the machine up by its engine ID in the engine registry, on the admin server or Griptape Cloud that `GT_CLOUD_BASE_URL` points to, so you never type its address. An engine keeps its ID when it restarts. The ID changes only if the machine's data directory is deleted, unless `GTN_ENGINE_ID` sets it. If the GPU machine moves to a new address, restart Griptape Nodes on your workstation so it looks the machine up again. Libraries you don't list run on your workstation. A change to this setting takes effect the next time that library's worker starts.
 
 A few things to know:
 

@@ -2642,7 +2642,7 @@ class TestStartingAWorkerOnAnotherMachine:
     ) -> None:
         links = _machine(worker_manager)
         with patch.object(worker_manager, "_orchestrator_static_server_base_url", new=AsyncMock(return_value=None)):
-            await worker_manager._register_with_machine(_MACHINE, _ENGINE, _SESSION)
+            await worker_manager._register_with_machine(_MACHINE, _ENGINE, _SESSION, _LIBRARY)
         links.not_found = "gpu-01 did not answer within 60 seconds."
 
         await _start_on_machine(worker_manager)
@@ -2812,6 +2812,20 @@ class TestARemoteWorkerRegisters:
             await worker_manager.evict_worker(_ENGINE)
 
         assert links.forgotten == [_ENGINE]
+
+    @pytest.mark.asyncio
+    async def test_an_evicted_worker_is_stopped_on_its_machine(self, worker_manager: WorkerManager) -> None:
+        """A hung worker cannot shut itself down, so only its machine can free what it holds."""
+        links = _machine(worker_manager)
+        worker_manager._workers[_ENGINE] = WorkerRegistration(
+            request_topic=_WORKER_REQUEST_TOPIC, worker_key=_LIBRARY, machine=_MACHINE
+        )
+
+        await worker_manager.evict_worker(_ENGINE)
+        await asyncio.gather(*worker_manager._stop_requests)
+
+        (stop,) = links.sent_of(worker_events.StopWorkerRequest)
+        assert cast("worker_events.StopWorkerRequest", stop).worker_engine_id == _ENGINE
 
     @pytest.mark.asyncio
     async def test_a_local_worker_leaving_forgets_nothing_on_the_links(self, worker_manager: WorkerManager) -> None:
@@ -3075,6 +3089,21 @@ class TestServingAnotherMachinesSession:
         spawn.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_a_start_for_a_library_the_session_never_named_asks_it_to_register_again(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        """Its version was never checked, so starting it would run whatever this machine has."""
+        _machine(worker_manager)
+        _register_session(worker_manager)
+
+        with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as spawn:
+            result = await worker_manager.handle_start_worker_request(_start_for_artist(library_name="Unnamed"))  # type: ignore[arg-type]
+
+        assert isinstance(result, worker_events.StartWorkerResultFailure)
+        assert result.session_unknown
+        spawn.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_a_start_for_a_refused_library_fails_with_the_refusal(self, worker_manager: WorkerManager) -> None:
         _machine(worker_manager)
         _register_session(worker_manager, library_versions={_LIBRARY: "2.0.0"})
@@ -3142,6 +3171,71 @@ class TestServingAnotherMachinesSession:
         terminate.assert_awaited_once_with(f"{_ARTIST_SESSION}/{_LIBRARY}", proc)
         (report,) = links.sent_of(worker_events.WorkerExitedRequest)
         assert cast("worker_events.WorkerExitedRequest", report).reason == "stopped"
+
+    @pytest.mark.asyncio
+    async def test_a_stop_sent_while_the_start_is_still_under_way_stops_the_worker_it_makes(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        """The artist withdrew the start, so the worker it makes must not be left running."""
+        _machine(worker_manager)
+        _register_session(worker_manager)
+        worker_key = f"{_ARTIST_SESSION}/{_LIBRARY}"
+        worker_manager._managed_worker_processes[worker_key] = _managed_proc_mock()
+        replacing = asyncio.Event()
+        proc = _worker_proc_mock(0, asyncio.Event())
+
+        async def slow_terminate(*_args: object) -> None:
+            await replacing.wait()
+
+        async def record_spawn(_args: list[str], key: str, **_kwargs: object) -> None:
+            worker_manager._managed_worker_processes[key] = proc
+
+        with (
+            patch.object(worker_manager, "_terminate_via_spawn_loop", side_effect=slow_terminate) as terminate,
+            patch.object(worker_manager, "spawn_worker", side_effect=record_spawn),
+        ):
+            start = asyncio.ensure_future(worker_manager.handle_start_worker_request(_start_for_artist()))  # type: ignore[arg-type]
+            await asyncio.sleep(0)
+            stop = asyncio.ensure_future(
+                worker_manager.handle_stop_worker_request(
+                    worker_events.StopWorkerRequest(
+                        worker_engine_id="w1", engine_id=_ARTIST_ENGINE, session_id=_ARTIST_SESSION
+                    )
+                )
+            )
+            await asyncio.sleep(0)
+            assert not stop.done()
+            replacing.set()
+            await asyncio.gather(start, stop)
+
+        assert terminate.await_args_list[-1].args == (worker_key, proc)
+        watchers = list(worker_manager._exit_watchers)
+        for watcher in watchers:
+            watcher.cancel()
+        await asyncio.gather(*watchers, return_exceptions=True)
+
+    @pytest.mark.asyncio
+    async def test_a_second_start_for_a_worker_still_starting_is_refused(self, worker_manager: WorkerManager) -> None:
+        _machine(worker_manager)
+        _register_session(worker_manager)
+        worker_manager._managed_worker_processes[f"{_ARTIST_SESSION}/{_LIBRARY}"] = _managed_proc_mock()
+        replacing = asyncio.Event()
+
+        async def slow_terminate(*_args: object) -> None:
+            await replacing.wait()
+
+        with (
+            patch.object(worker_manager, "_terminate_via_spawn_loop", side_effect=slow_terminate),
+            patch.object(worker_manager, "spawn_worker", new=AsyncMock()),
+        ):
+            first = asyncio.ensure_future(worker_manager.handle_start_worker_request(_start_for_artist()))  # type: ignore[arg-type]
+            await asyncio.sleep(0)
+            second = await worker_manager.handle_start_worker_request(_start_for_artist(worker_engine_id="w2"))  # type: ignore[arg-type]
+            replacing.set()
+            await first
+
+        assert isinstance(second, worker_events.StartWorkerResultFailure)
+        assert "already starting" in str(second.result_details)
 
     @pytest.mark.asyncio
     async def test_a_stop_from_another_session_is_refused(self, worker_manager: WorkerManager) -> None:

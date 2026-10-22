@@ -452,7 +452,8 @@ class DistributedExecutionSettings(BaseModel):
             'for example {"Griptape Nodes Diffusers Library": "3f2c8e1a-5b7d-4c9e-a0f1-2b3c4d5e6f70"}. '
             "That machine must serve websocket_direct on an address this one can reach, and publish it in "
             "transports.websocket_direct.advertise_url, so this engine can find it in the engine registry. "
-            "Libraries not listed run on this machine."
+            "Libraries not listed run on this machine. Set it in a config file: library names are "
+            "case-sensitive and an environment variable's name is lowercased."
         ),
     )
 

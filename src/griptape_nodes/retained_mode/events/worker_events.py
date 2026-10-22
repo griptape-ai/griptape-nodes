@@ -172,7 +172,8 @@ class StartWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
     Args:
         session_unknown: The request came from an artist's session on another machine that has not
-            registered with this one, as after this machine restarts. It may register and ask again.
+            registered with this one, as after this machine restarts, or that registered without
+            naming the library, as after its settings changed. It may register and ask again.
     """
 
     session_unknown: bool = False
