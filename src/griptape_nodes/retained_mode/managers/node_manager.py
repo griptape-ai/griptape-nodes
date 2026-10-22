@@ -250,6 +250,7 @@ from griptape_nodes.retained_mode.managers.context_manager import ContextManager
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
+from griptape_nodes.retained_mode.runtime.nodes import WorkflowNodes
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands, encode_commands
 from griptape_nodes.serialization.legacy_pickle import (
     LegacyPickleError,
@@ -354,18 +355,14 @@ class _NodeInstantiationDeniedError(Exception):
 
 
 class NodeManager(EngineScoped):
-    _name_to_parent_flow_name: dict[str, str]
+    """Creates, moves, and runs the open workflow's nodes.
+
+    The node bookkeeping (each node's parent flow, the nodes running on a worker) belongs to the open
+    workflow and lives on its runtime. Lookups find nothing when no workflow is open.
+    """
 
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
-        self._name_to_parent_flow_name = {}
-
-        # Orchestrator-side: node_name → (target_request_id, worker_engine_id, worker_request_topic)
-        # for ExecuteNodeRequests currently routed to a worker. Populated in
-        # _execute_node_via_worker, cleared in its finally. Used by
-        # cancel_worker_execution to dispatch a CancelExecuteNodeRequest to the
-        # correct worker.
-        self._orch_worker_requests: dict[str, tuple[str, str, str]] = {}
 
         # Worker-side: request_id → (asyncio.Task, BaseNode) for the aprocess
         # task currently handling an ExecuteNodeRequest. Populated in
@@ -411,15 +408,21 @@ class NodeManager(EngineScoped):
         node.name = new_name
         flow.add_node(node)
         # Replace the old node name and its parent.
-        parent = self._name_to_parent_flow_name[old_name]
-        self._name_to_parent_flow_name[new_name] = parent
-        del self._name_to_parent_flow_name[old_name]
+        self.engine.open_workflows.sole_workflow().nodes.rename_node(old_name, new_name)
 
     def handle_flow_rename(self, old_name: str, new_name: str) -> None:
         # Find all instances where a node had the old parent and update it to the new one.
-        for node_name, parent_flow_name in self._name_to_parent_flow_name.items():
-            if parent_flow_name == old_name:
-                self._name_to_parent_flow_name[node_name] = new_name
+        self.engine.open_workflows.sole_workflow().nodes.rename_flow(old_name, new_name)
+
+    def _nodes_or_empty(self) -> WorkflowNodes:
+        """The open workflow's node bookkeeping for a lookup, which finds none when no workflow is open.
+
+        Only lookups read through here. Recording a node needs a workflow to hold it.
+        """
+        workflow = self.engine.open_workflows.sole_workflow_or_none()
+        if workflow is None:
+            return WorkflowNodes()
+        return workflow.nodes
 
     def _cleanup_node_on_failed_deserialization(self, node_name: str) -> None:
         """Clean up a node that failed during deserialization.
@@ -797,7 +800,7 @@ class NodeManager(EngineScoped):
 
         # Record keeping.
         obj_mgr.add_object_by_name(node.name, node)
-        self._name_to_parent_flow_name[node.name] = parent_flow_name
+        self.engine.open_workflows.sole_workflow().nodes.name_to_parent_flow_name[node.name] = parent_flow_name
 
         # We don't want to start in a resolving state, bump it back to unresolved.
         state = request.resolution
@@ -1367,7 +1370,7 @@ class NodeManager(EngineScoped):
         releasable_handle_keys = self._cached_objects_owned_by(node)
 
         with self.engine.context_manager.node(node=node):
-            parent_flow_name = self._name_to_parent_flow_name[node_name]
+            parent_flow_name = self._nodes_or_empty().name_to_parent_flow_name[node_name]
             try:
                 parent_flow = self.engine.flow_manager.get_flow_by_name(parent_flow_name)
             except KeyError as err:
@@ -1448,7 +1451,7 @@ class NodeManager(EngineScoped):
 
         # Now remove the record keeping
         self.engine.object_manager.del_obj_by_name(node_name)
-        del self._name_to_parent_flow_name[node_name]
+        del self.engine.open_workflows.sole_workflow().nodes.name_to_parent_flow_name[node_name]
 
         # If we were part of the Current Context, pop it.
         if request.node_name is None:
@@ -1502,10 +1505,11 @@ class NodeManager(EngineScoped):
 
         source_flow_name = request.source_flow_name
         if source_flow_name is None:
-            if node_name not in self._name_to_parent_flow_name:
+            name_to_parent_flow_name = self._nodes_or_empty().name_to_parent_flow_name
+            if node_name not in name_to_parent_flow_name:
                 details = f"Attempted to move Node '{node_name}'. Failed because Node has no parent flow."
                 return MoveNodeToNewFlowResultFailure(result_details=details)
-            source_flow_name = self._name_to_parent_flow_name[node_name]
+            source_flow_name = name_to_parent_flow_name[node_name]
 
         try:
             source_flow = self.engine.flow_manager.get_flow_by_name(source_flow_name)
@@ -1525,7 +1529,7 @@ class NodeManager(EngineScoped):
 
         source_flow.remove_node(node_name)
         target_flow.add_node(node)
-        self._name_to_parent_flow_name[node_name] = request.target_flow_name
+        self.engine.open_workflows.sole_workflow().nodes.name_to_parent_flow_name[node_name] = request.target_flow_name
 
         details = f"Successfully moved Node '{node_name}' from Flow '{source_flow_name}' to Flow '{request.target_flow_name}'."
         return MoveNodeToNewFlowResultSuccess(
@@ -1692,7 +1696,7 @@ class NodeManager(EngineScoped):
                 result = ListConnectionsForNodeResultFailure(result_details=details)
                 return result
 
-        parent_flow_name = self._name_to_parent_flow_name[node_name]
+        parent_flow_name = self._nodes_or_empty().name_to_parent_flow_name[node_name]
         try:
             self.engine.flow_manager.get_flow_by_name(parent_flow_name)
         except KeyError as err:
@@ -1772,7 +1776,7 @@ class NodeManager(EngineScoped):
             details = f"Attempted to get connections for parameter '{parameter_name}' on node '{node_name}', but no such parameter was found."
             return GetConnectionsForParameterResultFailure(result_details=details)
 
-        parent_flow_name = self._name_to_parent_flow_name[node_name]
+        parent_flow_name = self._nodes_or_empty().name_to_parent_flow_name[node_name]
         try:
             self.engine.flow_manager.get_flow_by_name(parent_flow_name)
         except KeyError as err:
@@ -3191,10 +3195,7 @@ class NodeManager(EngineScoped):
         return node
 
     def get_node_parent_flow_by_name(self, node_name: str) -> str:
-        if node_name not in self._name_to_parent_flow_name:
-            msg = f"Node '{node_name}' could not be found."
-            raise KeyError(msg)
-        return self._name_to_parent_flow_name[node_name]
+        return self._nodes_or_empty().parent_flow_name(node_name)
 
     @handles(ResolveNodeRequest)
     async def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
@@ -3213,7 +3214,7 @@ class NodeManager(EngineScoped):
             return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
         # try to get the flow parent of this node
         try:
-            flow_name = self._name_to_parent_flow_name[node_name]
+            flow_name = self._nodes_or_empty().name_to_parent_flow_name[node_name]
         except KeyError as e:
             details = f'Failed to fetch parent flow for "{node_name}": {e}'
 
@@ -3541,7 +3542,9 @@ class NodeManager(EngineScoped):
         if not request.request_id:
             request.request_id = str(uuid4())
         target_request_id = request.request_id
-        self._orch_worker_requests[request.node_name] = (
+        # The same dict is cleared below even if the workflow closes while the node runs.
+        orch_worker_requests = self.engine.open_workflows.sole_workflow().nodes.orch_worker_requests
+        orch_worker_requests[request.node_name] = (
             target_request_id,
             worker_engine_id,
             worker_request_topic,
@@ -3567,7 +3570,7 @@ class NodeManager(EngineScoped):
         finally:
             # Drop the tracking entry regardless of success, failure, or cancellation
             # so a subsequent execute on the same node doesn't see a stale record.
-            self._orch_worker_requests.pop(request.node_name, None)
+            orch_worker_requests.pop(request.node_name, None)
         result_type_name = execute_raw.get("result_type", "")
         result_data = execute_raw.get("result", {})
         # Route through cattrs structure (not ``**result_data`` spread)
@@ -3592,7 +3595,7 @@ class NodeManager(EngineScoped):
         orchestrator's own route_to_worker await, which unblocks here as soon
         as the cancel event has been put on the wire.
         """
-        entry = self._orch_worker_requests.get(node_name)
+        entry = self._nodes_or_empty().orch_worker_requests.get(node_name)
         if entry is None:
             return
         target_request_id, worker_engine_id, worker_request_topic = entry
@@ -5967,10 +5970,11 @@ class NodeManager(EngineScoped):
         connections = all_info_result.connections
 
         # FAILURE CHECK: Get parent flow name
-        if node_name not in self._name_to_parent_flow_name:
+        name_to_parent_flow_name = self._nodes_or_empty().name_to_parent_flow_name
+        if node_name not in name_to_parent_flow_name:
             details = f"Attempted to reset Node '{node_name}'. Failed to find parent flow name."
             return ResetNodeToDefaultsResultFailure(result_details=details)
-        parent_flow_name = self._name_to_parent_flow_name[node_name]
+        parent_flow_name = name_to_parent_flow_name[node_name]
 
         # Preserve parent group membership
         parent_group_name = node.parent_group.name if node.parent_group else None

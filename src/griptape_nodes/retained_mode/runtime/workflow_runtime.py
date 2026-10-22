@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from griptape_nodes.retained_mode.runtime.nodes import WorkflowNodes
 from griptape_nodes.retained_mode.runtime.objects import WorkflowObjects
 from griptape_nodes.retained_mode.runtime.variables import WorkflowVariables
 
@@ -9,8 +10,8 @@ from griptape_nodes.retained_mode.runtime.variables import WorkflowVariables
 class WorkflowRuntime:
     """The state of one open workflow, made when it opens and dropped when it closes.
 
-    Holds the workflow's objects (its flows and nodes by name) and its flow and global variables,
-    one typed attribute per concern.
+    Holds the workflow's objects (its flows and nodes by name), its node bookkeeping, and its flow
+    and global variables, one typed attribute per concern.
     """
 
     def __init__(self, workflow_id: str) -> None:
@@ -21,4 +22,5 @@ class WorkflowRuntime:
         """
         self.workflow_id = workflow_id
         self.objects = WorkflowObjects()
+        self.nodes = WorkflowNodes()
         self.variables = WorkflowVariables()
