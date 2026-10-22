@@ -2431,10 +2431,10 @@ class _FakeEngineLinks:
         self.link_lost: Callable[[str], Awaitable[None]] | None = None
         # What a worker run for another engine is given to reach it, by that engine.
         self.worker_environments: dict[str, dict[str, str]] = {}
-        self.worker_environment_asks: list[tuple[str, str | None]] = []
+        self.worker_environment_asks: list[str] = []
 
-    def hosted_worker_environment(self, engine_id: str, *, relay_credential: str | None) -> dict[str, str]:
-        self.worker_environment_asks.append((engine_id, relay_credential))
+    def hosted_worker_environment(self, engine_id: str) -> dict[str, str]:
+        self.worker_environment_asks.append(engine_id)
         if self.not_found is not None:
             raise MachineNotFoundError(self.not_found)
         return self.worker_environments.get(engine_id, {})
@@ -2552,8 +2552,8 @@ class TestStartingAWorkerOnAnotherMachine:
         assert registration[1].engine_version == engine_version
         assert registration[1].library_versions == {_LIBRARY: "1.0.0"}
         assert registration[1].license_token == _LICENSE
-        # The fixture's secrets answer every name with _LICENSE, the relay credential included.
-        assert registration[1].relay_credential == _LICENSE
+        # The fixture's secrets answer every name with _LICENSE, the API key included.
+        assert registration[1].api_key == _LICENSE
         assert start[0] == _MACHINE
         assert isinstance(start[1], worker_events.StartWorkerRequest)
         assert (start[1].session_id, start[1].engine_id) == (_SESSION, _ENGINE)
@@ -2936,6 +2936,7 @@ def _register_session(worker_manager: WorkerManager, **overrides: object) -> obj
         "engine_version": engine_version,
         "library_versions": {_LIBRARY: "1.0.0"},
         "license_token": _LICENSE,
+        "api_key": "artist-api-key",
         "static_server_base_url": "http://workstation:8124",
     }
     fields.update(overrides)
@@ -3023,16 +3024,35 @@ class TestServingAnotherMachinesSession:
         assert spawned["library_name"] == _LIBRARY
         assert spawned["environ_overrides"] == {
             "GRIPTAPE_NODES_LICENSE": _LICENSE,
+            "GT_CLOUD_API_KEY": "artist-api-key",
             ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV: "http://workstation:8124",
         }
+
+    @pytest.mark.asyncio
+    async def test_a_credential_the_artist_has_none_of_hides_this_machines_from_the_worker(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        _machine(worker_manager)
+        _register_session(worker_manager, license_token=None, api_key=None)
+        spawned: dict[str, object] = {}
+
+        async def record_spawn(_args: list[str], _worker_key: str, **kwargs: object) -> None:
+            spawned.update(kwargs)
+
+        with patch.object(worker_manager, "spawn_worker", side_effect=record_spawn):
+            await worker_manager.handle_start_worker_request(_start_for_artist())  # type: ignore[arg-type]
+
+        environ = cast("dict[str, str]", spawned["environ_overrides"])
+        assert environ["GRIPTAPE_NODES_LICENSE"] == ""
+        assert environ["GT_CLOUD_API_KEY"] == ""
 
     @pytest.mark.asyncio
     async def test_the_worker_reaches_the_artist_the_way_the_artist_reached_this_machine(
         self, worker_manager: WorkerManager
     ) -> None:
-        """The transport decides how; the worker gets what it says, with the artist's relay credential."""
+        """The transport decides how; the worker gets what it says."""
         links = _machine(worker_manager)
-        _register_session(worker_manager, relay_credential="artist-relay-credential")
+        _register_session(worker_manager)
         links.worker_environments[_ARTIST_ENGINE] = {"REACH_THE_ARTIST": "over the relay"}
         spawned: dict[str, object] = {}
 
@@ -3042,7 +3062,7 @@ class TestServingAnotherMachinesSession:
         with patch.object(worker_manager, "spawn_worker", side_effect=record_spawn):
             await worker_manager.handle_start_worker_request(_start_for_artist())  # type: ignore[arg-type]
 
-        assert links.worker_environment_asks == [(_ARTIST_ENGINE, "artist-relay-credential")]
+        assert links.worker_environment_asks == [_ARTIST_ENGINE]
         environ = cast("dict[str, str]", spawned["environ_overrides"])
         assert environ["REACH_THE_ARTIST"] == "over the relay"
 

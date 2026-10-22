@@ -195,13 +195,11 @@ class RegisterSessionRequest(RequestPayload):
         schema_version: The version of the distributed execution contract the artist's engine speaks.
         engine_version: The artist's engine version.
         library_versions: The version of each library the artist's engine will send to that machine.
-        license_token: The artist's Griptape Nodes license, which workers started for the session
-            run under, or None when it has none.
+        license_token: The artist's Griptape Nodes license, or None when it has none.
         static_server_base_url: Where the artist's engine serves the shared workspace, so the asset
             URLs its workers mint are ones the artist's editor can open.
-        relay_credential: The artist's Griptape Cloud relay credential, or None when it has none. A
-            worker started for the session over the relay connects with it, so its traffic reaches
-            the artist's engine under the artist's identity.
+        api_key: The artist's Griptape Cloud API key, or None when it has none. Workers started
+            for the session run on the artist's license and API key, never the machine's own.
     """
 
     engine_id: str
@@ -211,7 +209,7 @@ class RegisterSessionRequest(RequestPayload):
     library_versions: dict[str, str]
     license_token: str | None = None
     static_server_base_url: str | None = None
-    relay_credential: str | None = None
+    api_key: str | None = None
     broadcast_result: bool = field(default=False, kw_only=True)
 
 

@@ -42,11 +42,11 @@ class EngineLinks(Protocol):
         """
         ...
 
-    def hosted_worker_environment(self, engine_id: str, *, relay_credential: str | None) -> dict[str, str]:
+    def hosted_worker_environment(self, engine_id: str) -> dict[str, str]:
         """The environment a worker this machine runs for `engine_id` needs to reach that engine.
 
         A worker reaches the engine whose session it joins the way that engine reached this machine:
-        over this machine's own server, or over the Griptape Cloud relay with `relay_credential`.
+        over this machine's own server, or over the Griptape Cloud relay with the artist's credentials.
         """
         ...
 

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 import anyio
 
-from griptape_nodes.drivers.cloud_credentials import LICENSE_SECRET_NAME, resolve_relay_credential
+from griptape_nodes.drivers.cloud_credentials import API_KEY_SECRET_NAME, LICENSE_SECRET_NAME
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events import converters, worker_events
@@ -79,7 +79,7 @@ class _SessionRegistration:
     engine_id: str
     license_token: str | None
     static_server_base_url: str | None
-    relay_credential: str | None
+    api_key: str | None
     refused_libraries: dict[str, str]
     # The libraries the session declared, each checked against this machine's when it registered.
     declared_libraries: frozenset[str]
@@ -1318,7 +1318,7 @@ class WorkerManager(EngineScoped):
             library_versions=library_versions,
             license_token=self.engine.secrets_manager.get_secret(LICENSE_SECRET_NAME, should_error_on_not_found=False),
             static_server_base_url=await self._orchestrator_static_server_base_url(),
-            relay_credential=resolve_relay_credential(self.engine.secrets_manager),
+            api_key=self.engine.secrets_manager.get_secret(API_KEY_SECRET_NAME, should_error_on_not_found=False),
         )
         result = await self.engine.request(machine, request, timeout_s=_MACHINE_REQUEST_TIMEOUT_S)
         # Catches a registry record or address that leads to the wrong machine. It cannot catch one
@@ -1422,7 +1422,7 @@ class WorkerManager(EngineScoped):
             engine_id=request.engine_id,
             license_token=request.license_token,
             static_server_base_url=request.static_server_base_url,
-            relay_credential=request.relay_credential,
+            api_key=request.api_key,
             refused_libraries=refused,
             declared_libraries=frozenset(request.library_versions),
         )
@@ -1454,18 +1454,18 @@ class WorkerManager(EngineScoped):
             return worker_events.StartWorkerResultFailure(result_details=resolved.reason)
         # Read before anything awaits, since a lost link can forget the session meanwhile.
         session = self._sessions[session_id]
-        environ_overrides: dict[str, str] = {}
-        # The worker runs under the artist's license rather than this machine's.
-        if session.license_token is not None:
-            environ_overrides[LICENSE_SECRET_NAME] = session.license_token
+        # The worker runs on the artist's credentials, never this machine's: one the artist has none
+        # of is set empty, which hides this machine's from the worker.
+        environ_overrides = {
+            LICENSE_SECRET_NAME: session.license_token or "",
+            API_KEY_SECRET_NAME: session.api_key or "",
+        }
         # Its asset URLs are opened by the artist's editor, which reaches the artist's engine's server.
         if session.static_server_base_url is not None:
             environ_overrides[ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV] = session.static_server_base_url
         # It reaches the artist's engine the way that engine reached this machine.
         try:
-            environ_overrides.update(
-                self.engine.hosted_worker_environment(engine_id, relay_credential=session.relay_credential)
-            )
+            environ_overrides.update(self.engine.hosted_worker_environment(engine_id))
         except MachineNotFoundError as e:
             return worker_events.StartWorkerResultFailure(result_details=str(e))
         # Recorded before anything awaits, so a stop or another start sent meanwhile sees this one.
