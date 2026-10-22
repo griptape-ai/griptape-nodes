@@ -103,23 +103,6 @@ Every transport carries the same requests: the ones the editor sends to create n
 
 [Retained Mode Scripting](../development/retained_mode.md) describes the same operations from Python inside the editor.
 
-### Naming a saved workflow
-
-Requests that act on a saved workflow name it inside `request` by its `workflow_id`, the id each entry of the `ListAllWorkflowsRequest` result reports. Give the id or the older name field, not both; a request that gives both must name the same workflow. The name fields are deprecated, and are removed once every engine the editor supports reports workflow ids.
-
-| Request                                                                                                                             | Id field                             | Deprecated name field                    |
-| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ---------------------------------------- |
-| `RenameWorkflowRequest`, `MoveWorkflowRequest`, `BranchWorkflowRequest`, `MergeWorkflowBranchRequest`, `ResetWorkflowBranchRequest` | `workflow_id`                        | `workflow_name`                          |
-| `GetWorkflowMetadataRequest`, `SetWorkflowMetadataRequest`, `GetWorkflowInfoRequest`                                                | `workflow_id`                        | `workflow_name`                          |
-| `RunWorkflowFromRegistryRequest`, `GetWorkflowRunCommandRequest`                                                                    | `workflow_id`                        | `workflow_name`                          |
-| `GetPublishOptionsRequest`, `PublishWorkflowRequest`, `SaveSubflowToWorkflowRequest`                                                | `workflow_id`                        | `workflow_name`                          |
-| `SetWorkflowContextRequest`, `EnsureWorkflowAndFlowRequest`                                                                         | `workflow_id`                        | `workflow_name`                          |
-| `DeleteWorkflowRequest`                                                                                                             | `workflow_id`                        | `name`                                   |
-| `CompareWorkflowsRequest`                                                                                                           | `workflow_id`, `compare_workflow_id` | `workflow_name`, `compare_workflow_name` |
-| `CreateWorkflowFromTemplateRequest`                                                                                                 | `template_workflow_id`               | `template_name`                          |
-
-`ImportWorkflowAsReferencedSubFlowRequest` accepts `workflow_id` too, and keeps `workflow_name`: saved workflow files reference their subflows by name.
-
 ### Getting results back
 
 Results are delivered on the `response_topic` you named, to every connection that has subscribed to it. On `websocket_direct` and `local_socket`, subscribe by sending:
