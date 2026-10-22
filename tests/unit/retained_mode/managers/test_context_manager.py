@@ -3,6 +3,7 @@
 import ast
 import logging
 import tempfile
+from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroRequest,
     GetPathForMacroResultSuccess,
 )
+from griptape_nodes.retained_mode.managers.context_manager import ContextManager
 
 
 def _metadata(name: str, workflow_id: str | None = None) -> WorkflowMetadata:
@@ -589,6 +591,45 @@ class TestSetWorkflowContextUnsavedNames:
         assert isinstance(result, SetWorkflowContextFailure)
         assert "must be a workflow id" in str(result.result_details)
         assert not engine.context_manager.has_current_workflow()
+
+
+class TestMirrorWorkflowContext:
+    PEER_ID = "00000000000000000000000000000abc"
+    LOCAL_ID = "00000000000000000000000000000def"
+
+    @pytest.fixture(autouse=True)
+    def _clean_context(self, engine: Engine) -> Generator[None, None, None]:
+        yield
+        engine.context_manager.mirror_workflow_context(None, None, None, None)
+
+    def test_a_stale_entry_that_is_the_current_mirror_is_replaced_by_the_peers_id(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        workflow_file = tmp_path / "shared.py"
+        workflow_file.write_text("print('body')\n", encoding="utf-8")
+        engine.workflow_registry.register_file(workflow_file, _metadata("shared", self.LOCAL_ID), listed=False)
+        engine.context_manager.push_workflow(workflow_id=self.LOCAL_ID)
+
+        engine.context_manager.mirror_workflow_context(self.PEER_ID, "shared", str(workflow_file), None)
+
+        assert engine.context_manager.get_current_workflow_id() == self.PEER_ID
+        assert engine.workflow_registry.find_by_id(self.LOCAL_ID) is None
+        assert engine.workflow_registry.find_by_path(workflow_file) is engine.workflow_registry.get(self.PEER_ID)
+
+    def test_a_file_another_workflow_is_using_fails_with_that_reason(self, engine: Engine, tmp_path: Path) -> None:
+        holder_file = tmp_path / "taken.py"
+        holder_file.write_text("print('body')\n", encoding="utf-8")
+        peer_file = tmp_path / "taken.txt"
+        peer_file.write_text("print('body')\n", encoding="utf-8")
+        engine.workflow_registry.register_file(holder_file, _metadata("taken", self.LOCAL_ID), listed=False)
+
+        try:
+            with pytest.raises(ContextManager.MirroredWorkflowError) as exc_info:
+                engine.context_manager.mirror_workflow_context(self.PEER_ID, "taken", str(peer_file), None)
+        finally:
+            engine.workflow_registry.remove(self.LOCAL_ID)
+
+        assert "another workflow is already using that file" in str(exc_info.value)
 
 
 class TestGeneratedWorkflowCode:

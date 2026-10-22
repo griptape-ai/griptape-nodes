@@ -50,6 +50,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     BranchWorkflowRequest,
     BranchWorkflowResultSuccess,
     CreateWorkflowFromTemplateRequest,
+    CreateWorkflowFromTemplateResultFailure,
     CreateWorkflowFromTemplateResultSuccess,
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultSuccess,
@@ -63,6 +64,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RenameWorkflowResultFailure,
     RenameWorkflowResultSuccess,
     ResetWorkflowBranchRequest,
+    ResetWorkflowBranchResultFailure,
     ResetWorkflowBranchResultSuccess,
     RunWorkflowFromRegistryRequest,
     RunWorkflowFromRegistryResultSuccess,
@@ -75,6 +77,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SetWorkflowMetadataResultFailure,
     SetWorkflowMetadataResultSuccess,
 )
+from griptape_nodes.retained_mode.managers.context_manager import read_metadata_for_open_file
 from griptape_nodes.retained_mode.managers.library.common import LibraryFitness, LibraryInfo, LibraryLifecycleState
 
 if TYPE_CHECKING:
@@ -500,6 +503,42 @@ class TestWritePathsStampAnId:
         assert isinstance(result, SaveSubflowToWorkflowResultSuccess), result.result_details
         assert result.workflow_metadata.workflow_id == workflow_id
         assert _header_id(saved.file_path) == workflow_id
+
+
+class TestUnreadableHeaderRefusesBranchRequests:
+    @pytest.mark.parametrize(
+        ("request_type", "failure_type", "name_field"),
+        [
+            (CreateWorkflowFromTemplateRequest, CreateWorkflowFromTemplateResultFailure, "template_name"),
+            (MergeWorkflowBranchRequest, MergeWorkflowBranchResultFailure, "workflow_name"),
+            (ResetWorkflowBranchRequest, ResetWorkflowBranchResultFailure, "workflow_name"),
+        ],
+    )
+    def test_each_fails_without_touching_files(
+        self,
+        project_engine: Engine,
+        workspace: Path,
+        request_type: type,
+        failure_type: type,
+        name_field: str,
+    ) -> None:
+        workflow_file = workspace / "damaged.py"
+        workflow_file.write_text("print('no header')\n", encoding="utf-8")
+        opened = read_metadata_for_open_file(workflow_file)
+        assert opened.metadata_error is not None
+        workflow = project_engine.workflow_registry.register_file(
+            workflow_file, opened.metadata, metadata_error=opened.metadata_error
+        )
+        content = workflow_file.read_text(encoding="utf-8")
+        files_before = sorted(workspace.rglob("*"))
+
+        result = project_engine.handle_request(request_type(**{name_field: workflow.name}))
+
+        assert isinstance(result, failure_type)
+        assert "could not be read" in str(result.result_details)
+        assert workflow_file.read_text(encoding="utf-8") == content
+        assert sorted(workspace.rglob("*")) == files_before
+        assert project_engine.workflow_registry.get(workflow.workflow_id) is workflow
 
 
 class TestSaveWorkflowFileFromSerializedFlowStampsAnId:
