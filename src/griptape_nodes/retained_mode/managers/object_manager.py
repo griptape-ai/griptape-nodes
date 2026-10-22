@@ -129,9 +129,18 @@ class ObjectManager(EngineScoped):
 
         workflow = self.engine.open_workflows.sole_workflow_or_none()
         if workflow is None:
-            # Nothing open here, but the workers may still hold objects. Nothing retries this
-            # request, so a worker that was never told keeps them for the life of the process.
-            await self.engine.worker_manager.broadcast_local_object_teardown()
+            try:
+                context_manager = self.engine.context_manager
+                if context_manager.has_current_workflow():
+                    # With none open, only a worker's mirror of the orchestrator's workflow is on the
+                    # stack, e.g. a worker reloading its libraries. Clear it and release what this
+                    # process holds, as closing a workflow does.
+                    context_manager.mirror_workflow_context(None, None, None, None)
+                    self.engine.resource_manager.drop_all_local_objects()
+            finally:
+                # The workers may still hold objects. Nothing retries this request, so a worker that
+                # was never told keeps them for the life of the process.
+                await self.engine.worker_manager.broadcast_local_object_teardown()
         else:
             try:
                 await self.engine.close_workflow_state(workflow)

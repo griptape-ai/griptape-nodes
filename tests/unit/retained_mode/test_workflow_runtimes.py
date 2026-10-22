@@ -308,6 +308,23 @@ class TestCloseWorkflowState:
         close.assert_not_awaited()
         broadcast.assert_awaited_once()
 
+    def test_clear_all_object_state_on_a_worker_clears_its_mirror_and_releases_what_it_holds(
+        self, engine: Engine
+    ) -> None:
+        """A worker reloading its libraries clears all state with only a mirror on its stack."""
+        engine.context_manager.mirror_workflow_context("00000000000000000000000000000abc", "peer", None, None)
+        key = engine.resource_manager.put_local_object(object(), owner="Lib A", source="Builder", key="held")
+
+        with patch.object(engine.worker_manager, "broadcast_local_object_teardown", AsyncMock()) as broadcast:
+            result = engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+
+        assert result.succeeded()
+        assert not engine.context_manager.has_current_workflow()
+        assert engine.workflow_registry.find_by_id("00000000000000000000000000000abc") is None
+        assert engine.resource_manager.get_local_object(key, owner="Lib A") is None
+        assert engine.open_workflows.sole_workflow_or_none() is None
+        broadcast.assert_awaited_once()
+
     def test_deleting_the_open_workflow_closes_it_through_it(self, engine: Engine) -> None:
         workflow = push_unsaved_workflow(engine)
         runtime = engine.open_workflows.sole_workflow()
