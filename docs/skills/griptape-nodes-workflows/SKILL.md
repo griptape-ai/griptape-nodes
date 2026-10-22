@@ -236,10 +236,10 @@ usually kept out of the build batch so its long timeout does not gate the rest:
 
 ```
 1. EnsureWorkflowAndFlowRequest                        (1 call)
-2. EventRequestBatch([                                  (1 call, runs sequentially)
-     DescribeNodeTypeRequest("TextInput"),
-     DescribeNodeTypeRequest("Agent"),
-     DescribeNodeTypeRequest("DisplayText"),
+2. EventRequestBatch([                                  (1 call, compact specs, cached)
+     DescribeNodeTypeRequest("TextInput", compact=True),
+     DescribeNodeTypeRequest("Agent", compact=True),
+     DescribeNodeTypeRequest("DisplayText", compact=True),
    ])
 3. EventRequestBatch([                                  (1 call, runs sequentially)
      CreateNodeRequest(node_type="TextInput",   node_name="TextInput_1"),
@@ -460,7 +460,7 @@ Total: 13 MCP calls from empty engine to rendered output.
 ### Same pipeline, batched (4 round trips)
 
 1. `EnsureWorkflowAndFlowRequest()`
-1. `EventRequestBatch([DescribeNodeTypeRequest × 3])`
+1. `EventRequestBatch([DescribeNodeTypeRequest(compact=True) × 3])`
 1. `EventRequestBatch([CreateNodeRequest × 3 (with explicit node_name), SetParameterValueRequest, CreateConnectionRequest × 2, AutoLayoutFlowRequest])`
 1. `StartFlowRequest()` then `GetParameterValueRequest("DisplayText_1", "text")`
 

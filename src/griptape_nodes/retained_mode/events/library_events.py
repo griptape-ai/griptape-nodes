@@ -284,6 +284,38 @@ class ParameterDescription:
 
 
 @dataclass
+class NodeTypeParameterSpec:
+    """Compact schema of one parameter on a node type, as a compact DescribeNodeTypeRequest returns it.
+
+    Args:
+        name: Parameter name, used when wiring connections and setting values
+        type: Canonical parameter type
+        input_types: Accepted input types when used as an input
+        output_type: Type produced when used as an output
+        modes: Modes the parameter supports, any of "input", "property", "output"
+        default: Default value for the parameter (may be None)
+        options: The choices a dropdown offers, or None when the parameter is not a dropdown.
+            Choices a node builds from the machine it runs on (such as downloaded models) are the
+            ones offered when the node type was described.
+        multi_input: Whether the parameter is a list that takes one incoming connection per item
+        deprecated: Whether the parameter is kept only so older workflows still load. Its tooltip
+            names the replacement; new connections and values belong on that one instead.
+        note: The parameter's tooltip, cut to about 200 characters (None if it has no text tooltip)
+    """
+
+    name: str
+    type: str
+    input_types: list[str]
+    output_type: str
+    modes: list[str]
+    default: DisplayValue
+    options: list[DisplayValue] | None
+    multi_input: bool
+    deprecated: bool
+    note: str | None
+
+
+@dataclass
 @PayloadRegistry.register
 class DescribeNodeTypeRequest(RequestPayload):
     """Describe a node type's metadata and parameter schema without adding a node to a flow.
@@ -295,16 +327,27 @@ class DescribeNodeTypeRequest(RequestPayload):
     Note: the engine instantiates a throwaway node to read its parameters. Node types whose
     __init__ performs network or disk I/O will incur that cost here as well.
 
+    To plan a workflow, send one compact request per node type in an EventRequestBatch. Compact
+    results leave out tooltips and ui_options, reduce each parameter to what wiring and setting
+    values needs, and are cached until a library is loaded, reloaded or unloaded, or a node type is
+    registered again, so describing a whole library is fast after the first time.
+
     Args:
         node_type: Name of the node type to describe
         library: Name of the library providing the node type. If omitted and exactly one
             library registers this node type, that library is used; otherwise the request fails.
+        compact: Return `parameter_specs` (types, modes, default, dropdown options, whether the
+            parameter takes several connections, whether it is deprecated, and a short note)
+            instead of full `parameters`. Leave False for full tooltips and ui_options, or to
+            re-read a node type whose dropdown choices depend on the machine (such as downloaded
+            models) after they changed.
 
     Results: DescribeNodeTypeResultSuccess | DescribeNodeTypeResultFailure
     """
 
     node_type: str
     library: str | None = None
+    compact: bool = False
 
 
 @dataclass
@@ -321,13 +364,17 @@ class DescribeNodeTypeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
             node's `__init__` performed I/O that failed). When that happens, the node-level
             `metadata` is still valid and `result_details` carries a WARNING-level entry naming
             the cause, so callers can distinguish a probe failure from a node that legitimately
-            declares no parameters.
+            declares no parameters. Also empty when the request was compact.
+        parameter_specs: Compact parameter schemas in declaration order when the request was
+            compact, otherwise None. Empty, with the same WARNING, when the parameters could not
+            be read.
     """
 
     library: str
     node_type: str
     metadata: NodeMetadata
     parameters: list[ParameterDescription] = field(default_factory=list)
+    parameter_specs: list[NodeTypeParameterSpec] | None = None
 
 
 @dataclass
