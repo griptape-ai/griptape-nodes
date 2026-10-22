@@ -1454,9 +1454,6 @@ class WorkerManager(EngineScoped):
             return worker_events.StartWorkerResultFailure(result_details=resolved.reason)
         # Read before anything awaits, since a lost link can forget the session meanwhile.
         session = self._sessions[session_id]
-        # Recorded before anything awaits, so a stop or another start sent meanwhile sees this one.
-        hosted = _HostedWorker(worker_key=worker_key, engine_id=engine_id, session_id=session_id)
-        self._hosted_workers[worker_engine_id] = hosted
         environ_overrides: dict[str, str] = {}
         # The worker runs under the artist's license rather than this machine's.
         if session.license_token is not None:
@@ -1465,9 +1462,15 @@ class WorkerManager(EngineScoped):
         if session.static_server_base_url is not None:
             environ_overrides[ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV] = session.static_server_base_url
         # It reaches the artist's engine the way that engine reached this machine.
-        environ_overrides.update(
-            self.engine.hosted_worker_environment(engine_id, relay_credential=session.relay_credential)
-        )
+        try:
+            environ_overrides.update(
+                self.engine.hosted_worker_environment(engine_id, relay_credential=session.relay_credential)
+            )
+        except MachineNotFoundError as e:
+            return worker_events.StartWorkerResultFailure(result_details=str(e))
+        # Recorded before anything awaits, so a stop or another start sent meanwhile sees this one.
+        hosted = _HostedWorker(worker_key=worker_key, engine_id=engine_id, session_id=session_id)
+        self._hosted_workers[worker_engine_id] = hosted
         try:
             # The artist's engine asks only once it has no worker for the library, so a running one is a
             # worker it already stopped using, such as after a library reset, and would never register.

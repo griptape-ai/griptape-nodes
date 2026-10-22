@@ -2435,6 +2435,8 @@ class _FakeEngineLinks:
 
     def hosted_worker_environment(self, engine_id: str, *, relay_credential: str | None) -> dict[str, str]:
         self.worker_environment_asks.append((engine_id, relay_credential))
+        if self.not_found is not None:
+            raise MachineNotFoundError(self.not_found)
         return self.worker_environments.get(engine_id, {})
 
     async def request(self, engine_id: str, request: RequestPayload, *, timeout_s: float | None) -> ResultPayload:
@@ -3043,6 +3045,22 @@ class TestServingAnotherMachinesSession:
         assert links.worker_environment_asks == [(_ARTIST_ENGINE, "artist-relay-credential")]
         environ = cast("dict[str, str]", spawned["environ_overrides"])
         assert environ["REACH_THE_ARTIST"] == "over the relay"
+
+    @pytest.mark.asyncio
+    async def test_a_start_the_worker_could_not_reach_the_artist_from_fails_and_blocks_nothing(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        links = _machine(worker_manager)
+        _register_session(worker_manager)
+        links.not_found = "it sent no Griptape Cloud credential for the worker to connect with."
+
+        with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as spawn:
+            result = await worker_manager.handle_start_worker_request(_start_for_artist())  # type: ignore[arg-type]
+
+        assert isinstance(result, worker_events.StartWorkerResultFailure)
+        assert "credential" in str(result.result_details)
+        assert worker_manager._hosted_workers == {}
+        spawn.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_a_start_for_an_unregistered_session_fails(self, worker_manager: WorkerManager) -> None:
