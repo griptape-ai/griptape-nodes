@@ -159,6 +159,14 @@ class WorkflowFileOperations(EngineScoped):
 
         The workflow stays open and keeps its id; only its file and name change.
         """
+        # Saving a library workflow writes a copy, so a rename would give the library's id to that
+        # copy and then delete the library's file.
+        if source.metadata.is_griptape_provided:
+            details = (
+                f"Attempted to rename workflow '{request.workflow_name}'. Failed because a library provides it, "
+                "and a library's files are never changed. Create a workflow from it, then rename that."
+            )
+            return RenameWorkflowResultFailure(result_details=details)
         previous_absolute_path = source.absolute_path
         previous_file_path = source.file_path
 

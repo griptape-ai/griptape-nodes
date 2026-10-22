@@ -60,6 +60,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     MoveWorkflowResultFailure,
     MoveWorkflowResultSuccess,
     RenameWorkflowRequest,
+    RenameWorkflowResultFailure,
     RenameWorkflowResultSuccess,
     ResetWorkflowBranchRequest,
     ResetWorkflowBranchResultSuccess,
@@ -440,6 +441,23 @@ class TestWritePathsStampAnId:
         assert project_engine.context_manager.get_current_workflow_id() == workflow_id
         assert project_engine.context_manager.get_current_workflow_name() == "after"
         assert project_engine.context_manager.get_current_flow().name == flow_name
+
+    def test_rename_of_an_open_library_workflow_is_refused(self, project_engine: Engine) -> None:
+        library_id = _open_new_workflow(project_engine, "library_workflow")
+        library_saved = _save(project_engine)
+        project_engine.workflow_registry.get(library_id).metadata.is_griptape_provided = True
+
+        renamed = _run(
+            project_engine, RenameWorkflowRequest(workflow_name=library_saved.workflow_name, requested_name="mine")
+        )
+
+        assert isinstance(renamed, RenameWorkflowResultFailure)
+        assert "a library provides it" in str(renamed.result_details)
+        assert Path(library_saved.file_path).is_file()
+        assert _header_id(library_saved.file_path) == library_id
+        assert project_engine.workflow_registry.get(library_id).absolute_path == Path(library_saved.file_path)
+        assert project_engine.workflow_registry.find_by_name("mine") is None
+        assert project_engine.context_manager.get_current_workflow_id() == library_id
 
     def test_renaming_only_the_letter_case_keeps_the_file(self, project_engine: Engine, workspace: Path) -> None:
         """On a case-insensitive filesystem the new name is the same file, which must not be deleted."""
