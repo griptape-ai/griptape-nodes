@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, cast
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
-from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.engine import EngineScoped, engine_scope
 from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.base_events import (
@@ -61,6 +60,11 @@ EP = TypeVar("EP", bound=ExecutionPayload, default=ExecutionPayload)
 _active_request_type: ContextVar[type[RequestPayload] | None] = ContextVar(
     "_event_manager_active_request_type", default=None
 )
+
+# The node the current logical chain is rebuilding from the values it was sent, if any. Per chain rather
+# than process-wide, unlike the node-execution refcount: another node's aprocess can run in this
+# process at the same time, and its requests are not part of the rebuild.
+_hydrating_node_name: ContextVar[str | None] = ContextVar("_event_manager_hydrating_node_name", default=None)
 
 # (request_type, callback) pairs for the post-dispatch hooks running above this point
 # in the current logical chain. A hook task is created with this marker set, and every
@@ -889,6 +893,24 @@ class EventManager(EngineScoped):
         with self._node_execution_lock:
             return self._node_execution_depth > 0
 
+    @contextmanager
+    def hydration_scope(self, node_name: str) -> Iterator[None]:
+        """Mark the current chain as rebuilding `node_name` from the values it was sent.
+
+        Hydration replays each value through `set_parameter_value`, so a node's value hooks run as if a
+        user had edited it. On a worker the node is a copy, and the worker-side RemoteHandler reads this
+        to keep those hooks from repeating their edits on the orchestrator's node.
+        """
+        token = _hydrating_node_name.set(node_name)
+        try:
+            yield
+        finally:
+            _hydrating_node_name.reset(token)
+
+    def hydrating_node_name(self) -> str | None:
+        """The node the current chain is rebuilding, or None outside a hydration scope."""
+        return _hydrating_node_name.get()
+
     def get_manager_for_request_type(self, request_type: type[RP]) -> Callable | None:
         """Return the currently-registered handler callback for a request type, or None."""
         return self._request_type_to_manager.get(request_type)
@@ -1219,10 +1241,11 @@ class EventManager(EngineScoped):
 
     def _invoke_handler_from_sync(self, callback: Callable, request: RequestPayload) -> ResultPayload:
         """Call a request handler from sync code, bridging async handlers onto a loop."""
-        # Worker-side RemoteHandler callbacks are async but safe to invoke from a
-        # running loop: forward_to_orchestrator dispatches onto the WS loop via
-        # run_coroutine_threadsafe, which runs on a different thread than the caller's
-        # loop, so no primitives are shared and the #4469 deadlock shape does not apply.
+        # Worker-side RemoteHandler callbacks are async but safe to invoke from any
+        # running loop except the WS loop itself: forward_to_orchestrator dispatches onto
+        # the WS loop via run_coroutine_threadsafe, which then runs on a different thread
+        # than the caller's loop, so no primitives are shared and the #4469 deadlock shape
+        # does not apply. A caller on the WS loop would block the loop it waits on.
         # Hop the callback onto the WS loop here and block the caller's thread on the
         # concurrent.futures.Future so RemoteHandler itself stays a plain async callable.
         #
@@ -1232,12 +1255,20 @@ class EventManager(EngineScoped):
         from griptape_nodes.app.worker_routing import RemoteHandler
 
         if isinstance(callback, RemoteHandler):
-            if _running_loop() is None:
+            running_loop = _running_loop()
+            if running_loop is None:
                 return asyncio.run(callback(request))
             if self._websocket_event_loop is None:
                 msg = (
                     f"Cannot forward '{type(request).__name__}' from a running event loop: "
                     "the websocket event loop is not configured. This indicates a bootstrap order bug."
+                )
+                raise RuntimeError(msg)
+            if running_loop is self._websocket_event_loop:
+                msg = (
+                    f"Cannot handle '{type(request).__name__}' synchronously on the websocket event loop: "
+                    "its handler is dispatched onto that same loop, so blocking on it here would never return. "
+                    "Use ahandle_request from code running on this loop."
                 )
                 raise RuntimeError(msg)
             future = asyncio.run_coroutine_threadsafe(callback(request), self._websocket_event_loop)
@@ -1434,13 +1465,8 @@ class EventManager(EngineScoped):
             )
 
     def _flush_tracked_parameter_changes(self) -> None:
-        obj_manager = self.engine.object_manager
-        # Get all flows and their nodes
-        nodes = obj_manager.get_filtered_subset(type=BaseNode)
-        for node in nodes.values():
-            # Only flush if there are actually tracked parameters
-            if node._tracked_parameters:
-                node.emit_parameter_changes()
+        for node in self.engine.object_manager.take_nodes_with_queued_changes():
+            node.emit_parameter_changes()
 
 
 class EventSuppressionContext:

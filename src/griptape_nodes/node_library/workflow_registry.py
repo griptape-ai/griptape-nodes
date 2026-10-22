@@ -393,13 +393,16 @@ class _WorkflowRegistry:
         """Remove all non-library workflows from the registry.
 
         Library-provided workflows (is_griptape_provided=True) are preserved.
-        Called before re-registering workflows so that a workspace change takes effect cleanly.
         """
         keys_to_remove = [
             key for key, workflow in self._workflows.items() if not workflow.metadata.is_griptape_provided
         ]
         for key in keys_to_remove:
             del self._workflows[key]
+
+    def clear_all_workflows(self) -> None:
+        """Remove every workflow from the registry, library-provided ones included."""
+        self._workflows.clear()
 
     def rekey_workflow(self, old_key: str, new_key: str) -> None:
         """Re-key a workflow in the registry from old_key to new_key."""

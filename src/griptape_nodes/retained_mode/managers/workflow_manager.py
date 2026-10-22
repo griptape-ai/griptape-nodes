@@ -233,13 +233,12 @@ class WorkflowManager(EngineScoped):
         return self._referenced_workflow_stack[-1]
 
     async def refresh_workflow_registry(self, workflows_to_register: list[str] | None = None) -> None:
-        # All of the libraries have loaded, and any workflows they came with have been registered.
-        # Clear any previously registered user/workspace workflows before re-registering, so that
-        # a workspace change (e.g. project switch) takes effect cleanly. Library-provided workflows
-        # (is_griptape_provided=True) registered above this call are preserved.
-        self.engine.workflow_registry.clear_user_workflows()
+        # Clear everything, library-provided workflows included, before re-registering. Workflows
+        # under the workspace are keyed workspace-relative, so after a workspace change (e.g. a
+        # project switch) an entry kept from before would resolve against the wrong directory.
+        self.engine.workflow_registry.clear_all_workflows()
 
-        # Discover workflows from both config and workspace.
+        # Discover workflows from libraries, config, and workspace.
         self._workflows_loading_complete.clear()
 
         try:
@@ -247,6 +246,12 @@ class WorkflowManager(EngineScoped):
             config_mgr = self.engine.config_manager
 
             if workflows_to_register is None:
+                # Library-declared workflows go first so they claim their registry keys before
+                # the workspace scan, then the workflows behind library workflow nodes.
+                library_workflow_files = await self.engine.library_manager.collect_library_workflow_files()
+                await self._process_workflows_for_registration(library_workflow_files)
+                self.engine.library_manager.register_library_workflow_node_workflows()
+
                 workflows_to_register = []
 
                 # Add from config
@@ -949,7 +954,7 @@ class WorkflowManager(EngineScoped):
         # Build the set of registered-library roots (excluding sandbox) so their bundled
         # workflow files are skipped during the workspace scan. Library-declared workflows
         # (listed in griptape_nodes_library.json) are registered separately via
-        # LibraryManager._collect_library_workflow_files before this scan runs. Sandbox
+        # LibraryManager.collect_library_workflow_files before this scan runs. Sandbox
         # libraries are intentionally left scannable so in-development workflows appear.
         library_exclusion_roots: list[Path] = []
         for library_info in self.engine.library_manager._library_file_path_to_info.values():

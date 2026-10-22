@@ -12,6 +12,26 @@ the engine's request API from working without edits. Migration steps live in
 
 <!-- Entries go in changelog.d/, one file each. See changelog.d/README.md. -->
 
+## [0.104.2] - 2026-10-20
+
+### Fixed
+
+- The agent chat on Windows no longer fails on every message with "`LocalWorkspaceBackend` only
+  supports POSIX platforms" when the workspace has an `.agents/skills` folder. If a platform
+  cannot load skills, the chat now answers without them instead of failing.
+
+## [0.104.1] - 2026-10-13
+
+### Fixed
+
+- Unlocking a node that was locked before it ever ran now lets the next downstream run execute it.
+  A run passing through a locked node marks it resolved without running it, and that state used
+  to outlive the unlock, so the node was skipped until it was run directly.
+  [#5766](https://github.com/griptape-ai/griptape-nodes-engine/issues/5766)
+- The editor no longer shows a "GetConfigValue Failed" popup for `library.sandbox_enabled` at
+  launch or on refresh. `GetConfigValueRequest` now succeeds with an empty value for a setting
+  that is unset by default, and fails only for a key that names no setting.
+
 ## [0.104.0] - 2026-10-12
 
 ### Added
@@ -503,7 +523,9 @@ the engine's request API from working without edits. Migration steps live in
   than a copy of it, and a value that refers to itself no longer fails the node with a
   `RecursionError`. Inline `{VAR}` substitution returns a value it did not rewrite unchanged.
 
-[Unreleased]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.104.0...HEAD
+[Unreleased]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.104.2...HEAD
+[0.104.2]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.104.1...v0.104.2
+[0.104.1]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.104.0...v0.104.1
 [0.104.0]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.103.0...v0.104.0
 [0.103.0]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.102.0...v0.103.0
 [0.102.0]: https://github.com/griptape-ai/griptape-nodes-engine/compare/v0.101.0...v0.102.0

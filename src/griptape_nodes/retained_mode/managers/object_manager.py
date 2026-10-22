@@ -36,10 +36,13 @@ logger = logging.getLogger("griptape_nodes")
 
 class ObjectManager(EngineScoped):
     _name_to_objects: dict[str, object]
+    # Registered nodes with queued UI changes, keyed by id() because a node hashes by its mutable name.
+    _nodes_with_queued_changes: dict[int, BaseNode]
 
     def __init__(self, _event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         self._name_to_objects = {}
+        self._nodes_with_queued_changes = {}
         _event_manager.register_request_handlers(self)
 
     @handles(RenameObjectRequest)
@@ -253,6 +256,8 @@ class ObjectManager(EngineScoped):
             msg = f"Attempted to add an object with name '{name}' but an object with that name already exists. The Object Manager is sacrosanct in this regard."
             raise ValueError(msg)
         self._name_to_objects[name] = obj
+        if isinstance(obj, BaseNode):
+            obj.set_change_listener(self._note_queued_changes)
 
     def get_object_by_name(self, name: str) -> object:
         return self._name_to_objects[name]
@@ -283,4 +288,27 @@ class ObjectManager(EngineScoped):
                 if isinstance(child, Parameter) and isinstance(obj, BaseNode):
                     self.engine.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
                     return
+        if isinstance(obj, BaseNode):
+            obj.set_change_listener(None)
+            self._nodes_with_queued_changes.pop(id(obj), None)
         del self._name_to_objects[name]
+
+    def take_nodes_with_queued_changes(self) -> list[BaseNode]:
+        """Return the registered nodes with queued UI changes, in queue order, and forget them.
+
+        Drained one atomic ``popitem`` at a time: a node can queue a change from another thread
+        mid-drain, and copying then clearing would drop it while its element stays queued. The
+        empty check is the pop itself, because another thread may be draining too.
+        """
+        nodes = []
+        while True:
+            try:
+                _, node = self._nodes_with_queued_changes.popitem()
+            except KeyError:
+                break
+            nodes.append(node)
+        nodes.reverse()
+        return nodes
+
+    def _note_queued_changes(self, node: BaseNode) -> None:
+        self._nodes_with_queued_changes[id(node)] = node

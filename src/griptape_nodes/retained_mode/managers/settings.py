@@ -110,6 +110,37 @@ def _warn_once(report_key: tuple[str, str], message: str, *, level: int = loggin
     logger.log(level, message)
 
 
+REFRESH_PREVIEWS_MAX_FILES_KEY = "refresh_previews_max_files"
+DEFAULT_REFRESH_PREVIEWS_MAX_FILES = 1000
+
+
+def coerce_refresh_previews_max_files(value: Any) -> int:
+    """The refresh_previews_max_files value to use: a whole number of at least 1, else the default.
+
+    Used by the Settings validator and by the preview watcher, which reads the merged config, where
+    raw values are kept. Warns once per bad value instead of failing, so a typo can't reset the
+    rest of the config or stop previews loading.
+    """
+    if _is_whole_number_of_at_least_one(value):
+        return value
+
+    _warn_once(
+        (REFRESH_PREVIEWS_MAX_FILES_KEY, repr(value)),
+        f"Ignoring {REFRESH_PREVIEWS_MAX_FILES_KEY} = {value!r}: expected a whole number of at least 1. "
+        f"Watching up to {DEFAULT_REFRESH_PREVIEWS_MAX_FILES} files for preview refreshes.",
+    )
+    return DEFAULT_REFRESH_PREVIEWS_MAX_FILES
+
+
+def _is_whole_number_of_at_least_one(value: Any) -> bool:
+    # bool is a subclass of int, and True would otherwise pass as 1.
+    if isinstance(value, bool):
+        return False
+    if not isinstance(value, int):
+        return False
+    return value >= 1
+
+
 class Category(BaseModel):
     """A category with name and optional description."""
 
@@ -711,6 +742,29 @@ class Settings(BaseModel):
         "Griptape Cloud support was removed in the Pydantic AI migration.",
     )
 
+    @field_validator("refresh_previews_max_files", mode="before")
+    @classmethod
+    def validate_refresh_previews_max_files(cls, v: Any, info: ValidationInfo) -> int:
+        """Fall back to the default for anything but a whole number of at least 1, with a warning.
+
+        A `GTN_CONFIG_REFRESH_PREVIEWS_MAX_FILES` variable is validated under `FROM_ENV_CONTEXT`.
+        Its string is converted to a number and raises when it can't be, so the env loader reports
+        the variable as having an invalid value.
+        """
+        from_env = bool(info.context and info.context.get(FROM_ENV_CONTEXT))
+        if not from_env:
+            return coerce_refresh_previews_max_files(v)
+
+        try:
+            number = int(v)
+        except (TypeError, ValueError) as e:
+            msg = f"{REFRESH_PREVIEWS_MAX_FILES_KEY} must be a whole number of at least 1, got {v!r}"
+            raise ValueError(msg) from e
+        if number < 1:
+            msg = f"{REFRESH_PREVIEWS_MAX_FILES_KEY} must be a whole number of at least 1, got {v!r}"
+            raise ValueError(msg)
+        return number
+
     @field_validator("thread_storage_backend", mode="before")
     @classmethod
     def validate_thread_storage_backend(cls, v: Any) -> str:
@@ -728,6 +782,23 @@ class Settings(BaseModel):
         category=FILE_SYSTEM,
         default=True,
         description="Enable file watching for synced workflows directory",
+    )
+    refresh_previews_on_file_change: bool = Field(
+        category=FILE_SYSTEM,
+        default=True,
+        description=(
+            "Update image, video, and audio previews of files on your computer as soon as the file is saved, "
+            "including edits made in other apps"
+        ),
+    )
+    refresh_previews_max_files: int = Field(
+        category=FILE_SYSTEM,
+        default=DEFAULT_REFRESH_PREVIEWS_MAX_FILES,
+        description=(
+            "Most files watched at once for refresh_previews_on_file_change. Previews of the files shown least "
+            "recently stop refreshing first. Watching 1000 files uses well under 1% of one CPU core. Lower it on "
+            "a slow machine or network drive, or raise it for workflows that show more files than this"
+        ),
     )
     mcp_servers: list[MCPServerConfig] = Field(
         category=MCP_SERVERS,

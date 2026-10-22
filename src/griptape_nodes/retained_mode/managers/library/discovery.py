@@ -787,7 +787,7 @@ class LibraryDiscovery(EngineScoped):
             # the block below recreates it with the new lifecycle.
             del self.engine.library_manager._library_file_path_to_info[file_path_str]
 
-        metadata_result = self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
+        metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
             LoadLibraryMetadataFromFileRequest(file_path=file_path_str)
         )
 

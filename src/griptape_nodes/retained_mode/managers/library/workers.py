@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -7,10 +8,12 @@ from griptape_nodes.node_library.library_declarations import (
     SuggestedWorkerMode,
     WorkerMode,
 )
+from griptape_nodes.retained_mode.beta_features import ISOLATED_EXECUTION_IN_WORKER, is_beta_enabled
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.app_events import (
     AppSessionStartedEvent,
     LibraryLoadedNotification,
+    ReportGeneralPurposeWorkerReadyRequest,
     ReportLibraryLoadedRequest,
     ReportLibraryLoadedResultFailure,
     ReportLibraryLoadedResultSuccess,
@@ -20,6 +23,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     DependencyInstallationFailedProblem,
     IncompatibleRequirementsProblem,
 )
+from griptape_nodes.retained_mode.managers.library.common import LibraryLifecycleState
 from griptape_nodes.retained_mode.managers.settings import (
     LIBRARIES_TO_REGISTER_KEY,
     LibraryRegistration,
@@ -54,18 +58,30 @@ class LibraryWorkers(EngineScoped):
     # How a worker reaches the orchestrator to report a load. Registered by whatever owns the
     # transport, because this manager has no way to send a request to another process. Stays None
     # on the orchestrator and on a single-process engine, where there is nobody to report to.
-    _library_load_reporter: Callable[[ReportLibraryLoadedRequest], Awaitable[None]] | None = None
+    _library_load_reporter: (
+        Callable[[ReportLibraryLoadedRequest | ReportGeneralPurposeWorkerReadyRequest], Awaitable[None]] | None
+    ) = None
 
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)
+        # Counts the libraries registered and unloaded in this process. The general-purpose worker loads
+        # every library once, when it starts, so the count it started at says whether it still has the
+        # libraries this process has.
+        self._library_set_generation = 0
+        self._general_purpose_worker_generation: int | None = None
+        self._general_purpose_restart: asyncio.Task | None = None
 
-    def register_library_load_reporter(self, reporter: Callable[[ReportLibraryLoadedRequest], Awaitable[None]]) -> None:
+    def register_library_load_reporter(
+        self,
+        reporter: Callable[[ReportLibraryLoadedRequest | ReportGeneralPurposeWorkerReadyRequest], Awaitable[None]],
+    ) -> None:
         """Register how this worker reports a library load to the orchestrator.
 
         Registered by whatever owns the transport between the two processes, since this manager can
         build the report but has no way to send it. Absent on the orchestrator and on a
-        single-process engine, where there is nobody to report to.
+        single-process engine, where there is nobody to report to. A general-purpose worker sends
+        its one ready report through it too.
         """
         self._library_load_reporter = reporter
 
@@ -79,6 +95,16 @@ class LibraryWorkers(EngineScoped):
             )
             return
         await self._library_load_reporter(request)
+
+    async def report_general_purpose_worker_ready(self) -> None:
+        """Tell the orchestrator this general-purpose worker has loaded its libraries."""
+        if self._library_load_reporter is None:
+            logger.error(
+                "No load reporter is registered, so the orchestrator will not learn that this "
+                "general-purpose worker is ready and will wait out its startup grace before giving up on it."
+            )
+            return
+        await self._library_load_reporter(ReportGeneralPurposeWorkerReadyRequest())
 
     @handles(ReportLibraryLoadedRequest)
     async def on_report_library_loaded_request(self, request: ReportLibraryLoadedRequest) -> ResultPayload:
@@ -266,7 +292,9 @@ class LibraryWorkers(EngineScoped):
     async def start_worker_for_library(self, library_name: str) -> None:
         """Start the worker for one library, if it executes in one, leaving every other library alone.
 
-        Without an active session nothing starts here: `on_session_started` starts it with the rest.
+        Called as the library finishes registering, so its worker need not wait for every other
+        library to load. Without an active session nothing starts here: `on_session_started` starts
+        it with the rest.
         """
         if self.engine.library_manager.is_worker or not self.engine.get_session_id():
             return
@@ -279,7 +307,7 @@ class LibraryWorkers(EngineScoped):
         subsequent) so that worker creation is always tied to an active session.
 
         Args:
-            only_library_name: Consider only this library, for a caller that stopped one worker.
+            only_library_name: Consider only this library, for a caller starting one library's worker.
         """
         for library_info in self.engine.library_manager._library_file_path_to_info.values():
             if only_library_name is not None and library_info.library_name != only_library_name:
@@ -293,6 +321,15 @@ class LibraryWorkers(EngineScoped):
                 and library_info.library_name
                 and not self.engine.library_manager.is_worker
             ):
+                # The worker is handed .venv-exec as PYTHONPATH at spawn, and registration finishes
+                # building it before LOADED. A session can start while libraries are still loading;
+                # registration starts this one's worker once it gets there.
+                if library_info.lifecycle_state != LibraryLifecycleState.LOADED:
+                    logger.debug(
+                        "Not starting a worker for library '%s' until it finishes loading.",
+                        library_info.library_name,
+                    )
+                    continue
                 # A declared resource this machine does not have makes the whole spawn pointless:
                 # get_worker_for_library refuses on that reason before it ever consults a worker,
                 # so the process would resolve and download an entire execution environment --
@@ -306,17 +343,6 @@ class LibraryWorkers(EngineScoped):
                         "Not starting a worker for library '%s': %s",
                         library_info.library_name,
                         library_info.execution_unavailable_reason,
-                    )
-                    continue
-                # A worker already serving this library makes the whole block below wrong, not
-                # merely redundant: spawn_worker refuses the duplicate without raising, so the
-                # reset event below would never be set again and every later run would wait out
-                # the startup grace against a live, loaded worker. Reached whenever _start_workers
-                # runs twice for one session -- a second GUI client joining is enough.
-                if self.engine.worker_manager.get_worker_for_key(library_info.library_name) is not None:
-                    logger.debug(
-                        "Not restarting a worker for library '%s': one is already registered.",
-                        library_info.library_name,
                     )
                     continue
                 # The library's own nodes loaded locally already: the worker gates execution
@@ -338,11 +364,75 @@ class LibraryWorkers(EngineScoped):
                         library_info.library_name, build_failure
                     )
                     continue
-                # WorkerManager owns the gate execution routing waits on, and clears its own
-                # account of any previous attempt.
-                self.engine.library_manager._worker_manager.expect_worker(library_info.library_name)
                 # A fresh attempt, so an account of a previous one no longer applies. Not
                 # conditioned on the result: StartWorkerRequest only SCHEDULES the spawn, so one
-                # that dies records its own reason from _log_spawn_error.
+                # that dies records its own reason from _log_spawn_error. WorkerManager declares the
+                # worker coming, or does nothing when one already is.
                 library_info.execution_unavailable_reason = None
                 await self.engine.ahandle_request(StartWorkerRequest(library_name=library_info.library_name))
+        # Only on a full start, never as one library finishes registering: it loads every library and
+        # builds none of their environments, so it has to start after this process has built them all.
+        if only_library_name is None:
+            await self._start_general_purpose_worker()
+
+    async def _start_general_purpose_worker(self) -> None:
+        """Ask for the worker that runs the nodes of Isolated Execution groups, if that beta feature is on.
+
+        WorkerManager declines the request when one is already starting or running.
+        """
+        if not is_beta_enabled(ISOLATED_EXECUTION_IN_WORKER, self.engine.config_manager):
+            return
+        worker_manager = self.engine.library_manager._worker_manager
+        # Recorded only for a request WorkerManager will accept: a worker already starting or running
+        # loaded the libraries of its own start, and recording now would pass a stale one as current.
+        if worker_manager.is_worker_running_or_starting(None):
+            return
+        self._general_purpose_worker_generation = self._library_set_generation
+        await self.engine.ahandle_request(StartWorkerRequest(library_name=None))
+
+    def note_library_set_changed(self) -> None:
+        """Record that a library was registered or unloaded here, and restart a general-purpose worker it leaves behind.
+
+        Nothing tells a worker that one library changed. A full reload restarts every worker, but updating a
+        library, switching its ref, resetting it, refreshing the sandbox, or adding one mid-session does not,
+        and the general-purpose worker would keep running the libraries it started with.
+        """
+        self._library_set_generation += 1
+        if self.engine.library_manager.is_worker:
+            return
+        if self._general_purpose_restart is not None and not self._general_purpose_restart.done():
+            return
+        if not self.engine.library_manager._worker_manager.is_worker_running_or_starting(None):
+            return
+        self._general_purpose_restart = asyncio.get_running_loop().create_task(
+            self._restart_stale_general_purpose_worker()
+        )
+        self._general_purpose_restart.add_done_callback(self._log_general_purpose_restart_error)
+
+    async def _restart_stale_general_purpose_worker(self) -> None:
+        """Once any library load under way has finished, restart the general-purpose worker if it predates it.
+
+        Waiting first folds every change of one operation (an unload and a register, or a whole reload) into a
+        single restart. A full reload has stopped the worker and asked for a new one by then, so it is left alone.
+        """
+        library_manager = self.engine.library_manager
+        # Loop because another coroutine may close the gate between it opening and this resuming.
+        while not library_manager._libraries_loading_complete.is_set():
+            await library_manager._libraries_loading_complete.wait()
+        worker_manager = library_manager._worker_manager
+        if not worker_manager.is_worker_running_or_starting(None):
+            return
+        if self._general_purpose_worker_generation == self._library_set_generation:
+            return
+        logger.info("Restarting the general-purpose worker so it loads the libraries that changed.")
+        await worker_manager.stop_general_purpose_worker("it was restarted to load libraries that changed.")
+        await self._start_general_purpose_worker()
+
+    def _log_general_purpose_restart_error(self, task: asyncio.Task) -> None:
+        """Report a restart that raised, which nothing awaits."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is None:
+            return
+        logger.error("Failed to restart the general-purpose worker after libraries changed: %s", exc)

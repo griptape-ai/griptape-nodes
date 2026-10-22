@@ -56,6 +56,7 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
     OutgoingConnection,
+    ReplacedConnection,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
@@ -92,6 +93,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     UnresolveFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
+    PACKAGED_FLOW_BOUNDARY_KEY,
     TRANSIENT_KEY,
     AutoLayoutFlowRequest,
     AutoLayoutFlowResultFailure,
@@ -1041,6 +1043,8 @@ class FlowManager(EngineScoped):
         old_source_param_name = None
         old_target_node_name = None
         old_target_param_name = None
+        replaced_connection = None
+        replaced_details = ""
 
         # Some scenarios restrict when we can have more than one connection. See if we're in such a scenario and replace the
         # existing connection instead of adding a new one.
@@ -1073,7 +1077,20 @@ class FlowManager(EngineScoped):
                 details = f"Attempted to connect '{source_node_name}.{request.source_parameter_name}'. Failed because there was a previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' that could not be deleted."
                 return CreateConnectionResultFailure(result_details=details)
 
-            details = f"Deleted the previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' to make room for the new connection."
+            is_same_connection = (
+                old_source_node_name == source_node_name
+                and old_source_param_name == request.source_parameter_name
+                and old_target_node_name == target_node_name
+                and old_target_param_name == request.target_parameter_name
+            )
+            if not is_same_connection:
+                replaced_connection = ReplacedConnection(
+                    source_node_name=old_source_node_name,
+                    source_parameter_name=old_source_param_name,
+                    target_node_name=old_target_node_name,
+                    target_parameter_name=old_target_param_name,
+                )
+                replaced_details = f" Replaced the previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}', since only one connection is allowed there."
         try:
             # Actually create the Connection.
             # A connection between a group and a node inside it is internal. "Inside" is
@@ -1164,8 +1181,8 @@ class FlowManager(EngineScoped):
                 is_incoming=False,
             )
             if success:
-                details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}, remapped with proxy parameter."'
-                return CreateConnectionResultSuccess(result_details=details)
+                details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}, remapped with proxy parameter."{replaced_details}'
+                return CreateConnectionResultSuccess(result_details=details, replaced_connection=replaced_connection)
             details = f'Failed to connect "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name} by remapping to proxy."'
             return CreateConnectionResultFailure(result_details=details)
 
@@ -1176,12 +1193,12 @@ class FlowManager(EngineScoped):
                 is_incoming=True,
             )
             if success:
-                details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}, remapped with proxy parameter."'
-                return CreateConnectionResultSuccess(result_details=details)
+                details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}, remapped with proxy parameter."{replaced_details}'
+                return CreateConnectionResultSuccess(result_details=details, replaced_connection=replaced_connection)
             details = f'Failed to connect "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name} by remapping to proxy."'
             return CreateConnectionResultFailure(result_details=details)
 
-        details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
+        details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}".{replaced_details}'
 
         # Now update the parameter values if it exists.
         # check if it's been resolved/has a value in parameter_output_values
@@ -1239,7 +1256,7 @@ class FlowManager(EngineScoped):
             if isinstance(target_node, ErrorProxyNode):
                 target_node.set_post_init_connections_modified()
 
-        result = CreateConnectionResultSuccess(result_details=details)
+        result = CreateConnectionResultSuccess(result_details=details, replaced_connection=replaced_connection)
 
         return result
 
@@ -2017,7 +2034,7 @@ class FlowManager(EngineScoped):
             node_type=request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
             specific_library_name=request.end_node_library_name,
             node_name=end_node_name,
-            metadata={},
+            metadata={PACKAGED_FLOW_BOUNDARY_KEY: True},
             initial_setup=True,
             create_error_proxy_on_failure=False,
         )
@@ -2320,7 +2337,7 @@ class FlowManager(EngineScoped):
             node_type=request.start_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
             specific_library_name=request.start_node_library_name,
             node_name=start_node_name,
-            metadata={},
+            metadata={PACKAGED_FLOW_BOUNDARY_KEY: True},
             initial_setup=True,
             create_error_proxy_on_failure=False,
         )
@@ -4658,6 +4675,12 @@ class FlowManager(EngineScoped):
             not self._global_control_flow_machine.context.resolution_machine.is_complete()
             and self._global_control_flow_machine.context.resolution_machine.is_started()
         )
+
+    def running_flow_is_stopping_after_failure(self) -> bool:
+        """True while the running flow has failed and is waiting for its other nodes to finish."""
+        if self._global_control_flow_machine is None:
+            return False
+        return self._global_control_flow_machine.context.resolution_machine.is_stopping_after_failure()
 
     def execution_is_advancing(self) -> bool:
         """True while a coroutine is already driving the running flow's machines.

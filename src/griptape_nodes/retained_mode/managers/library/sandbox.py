@@ -818,7 +818,7 @@ class LibrarySandbox(EngineScoped):
 
         # Try to load existing library JSON for smart merging
         json_path = sandbox_directory / LIBRARY_CONFIG_FILENAME
-        metadata_result = self.engine.library_manager.metadata_loading.load_library_metadata_from_file_request(
+        metadata_result = self.engine.library_manager.metadata_loading.read_library_metadata(
             LoadLibraryMetadataFromFileRequest(file_path=str(json_path))
         )
 

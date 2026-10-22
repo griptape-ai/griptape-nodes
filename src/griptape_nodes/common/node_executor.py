@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import AbstractContextManager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
@@ -12,6 +13,7 @@ import anyio
 
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import SubprocessWebSocketUnavailableError
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
+from griptape_nodes.common.isolated_execution_scope import isolated_execution_scope
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types import node_types
 from griptape_nodes.exe_types.base_iterative_nodes import (
@@ -28,8 +30,8 @@ from griptape_nodes.exe_types.node_groups import (
 )
 from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
+    ISOLATED_EXECUTION,
     LOCAL_EXECUTION,
-    PRIVATE_EXECUTION,
     BaseNode,
     EndNode,
     NodeResolutionState,
@@ -39,6 +41,7 @@ from griptape_nodes.exe_types.variable_resolver import VariableResolver
 from griptape_nodes.files.path_utils import derive_registry_key
 from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
+from griptape_nodes.retained_mode.beta_features import ISOLATED_EXECUTION_IN_WORKER, is_beta_enabled
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
 from griptape_nodes.retained_mode.events.base_events import ForwardedException, ProgressEvent
@@ -317,13 +320,16 @@ class NodeExecutor(EngineScoped):
 
             if isinstance(node, SubflowNodeGroup):
                 execution_type = node.get_parameter_value(node.execution_environment.name)
-                if execution_type == LOCAL_EXECUTION:
-                    # Just execute the node normally! This means we aren't doing any special packaging.
-                    await node.aprocess()
+                if self._runs_locally(execution_type):
+                    # Just execute the node normally! This means we aren't doing any special packaging,
+                    # so there is no subprocess state to clear. Isolated Execution in the worker runs here
+                    # too, inside the scope that sends each of the group's nodes to the worker.
+                    with self._local_execution_scope(execution_type, node.name):
+                        await node.aprocess()
                     return
                 # Clear execution state before subprocess execution starts
                 node.subflow_execution_component.clear_execution_state()
-                if execution_type == PRIVATE_EXECUTION:
+                if execution_type == ISOLATED_EXECUTION:
                     # Package the flow and run it in a subprocess.
                     await self._execute_private_workflow(node)
                     return
@@ -346,7 +352,7 @@ class NodeExecutor(EngineScoped):
             result = await self.engine.ahandle_request(
                 ExecuteNodeRequest(
                     node_name=node.name,
-                    parameter_values=dict(node.parameter_values),
+                    parameter_values=node._list_rows.values_for_dispatch(),
                     node_metadata=cast("NodeMetadata", dict(node.metadata)),
                     variables=self._resolve_variables_for_node(node.name),
                     local_object_source=node.local_object_source,
@@ -584,6 +590,24 @@ class NodeExecutor(EngineScoped):
         my_subprocess_result = await self._execute_subprocess(workflow_path, file_name, node=subflow_node)
         parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
         self._apply_parameter_values_to_node(node, parameter_output_values, package_result)
+
+    def _runs_isolated_execution_in_worker(self, execution_type: str) -> bool:
+        """Whether an Isolated Execution run sends its nodes to the worker rather than starting a process."""
+        if execution_type != ISOLATED_EXECUTION:
+            return False
+        return is_beta_enabled(ISOLATED_EXECUTION_IN_WORKER, self.engine.config_manager)
+
+    def _runs_locally(self, execution_type: str) -> bool:
+        """Whether a run goes through the local path: Local Execution, or Isolated Execution in the worker."""
+        if execution_type == LOCAL_EXECUTION:
+            return True
+        return self._runs_isolated_execution_in_worker(execution_type)
+
+    def _local_execution_scope(self, execution_type: str, owner_name: str) -> AbstractContextManager[None]:
+        """The scope a local run executes in: for Isolated Execution, the one sending its nodes to the worker."""
+        if execution_type == ISOLATED_EXECUTION:
+            return isolated_execution_scope(owner_name)
+        return nullcontext()
 
     async def _execute_private_workflow(self, node: BaseNode) -> None:
         """Execute node in private subprocess environment.
@@ -1009,7 +1033,7 @@ class NodeExecutor(EngineScoped):
         entry_control_parameter_name = entry_node_parameter.entry_parameter
         # Determine library and node types based on execution_type
         library = None
-        if execution_type not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
+        if execution_type not in (LOCAL_EXECUTION, ISOLATED_EXECUTION):
             try:
                 library = LibraryRegistry.get_library(name=execution_type)
             except KeyError:
@@ -1500,21 +1524,22 @@ class NodeExecutor(EngineScoped):
         # Execute iterations sequentially based on execution environment
         break_occurred = False
         iteration_failures: list[IterationFailure] = []
-        if execution_type == LOCAL_EXECUTION:
-            (
-                iteration_results,
-                successful_iterations,
-                last_iteration_values,
-                _skipped_count,
-                break_occurred,
-                iteration_failures,
-            ) = await self._execute_loop_iterations_sequentially(
-                package_result=package_result,
-                total_iterations=total_iterations,
-                parameter_values_per_iteration=parameter_values_per_iteration,
-                end_loop_node=end_node,
-            )
-        elif execution_type == PRIVATE_EXECUTION:
+        if self._runs_locally(execution_type):
+            with self._local_execution_scope(execution_type, end_node.name):
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                    _skipped_count,
+                    break_occurred,
+                    iteration_failures,
+                ) = await self._execute_loop_iterations_sequentially(
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_per_iteration,
+                    end_loop_node=end_node,
+                )
+        elif execution_type == ISOLATED_EXECUTION:
             (
                 iteration_results,
                 successful_iterations,
@@ -1670,18 +1695,19 @@ class NodeExecutor(EngineScoped):
         )
 
         # Step 5: Execute all iterations based on execution environment
-        if execution_type == LOCAL_EXECUTION:
-            (
-                iteration_results,
-                successful_iterations,
-                last_iteration_values,
-            ) = await self._execute_loop_iterations_locally(
-                package_result=package_result,
-                total_iterations=total_iterations,
-                parameter_values_per_iteration=parameter_values_to_set_before_run,
-                end_loop_node=node,
-            )
-        elif execution_type == PRIVATE_EXECUTION:
+        if self._runs_locally(execution_type):
+            with self._local_execution_scope(execution_type, node.name):
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_loop_iterations_locally(
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_to_set_before_run,
+                    end_loop_node=node,
+                )
+        elif execution_type == ISOLATED_EXECUTION:
             (
                 iteration_results,
                 successful_iterations,
@@ -2295,7 +2321,7 @@ class NodeExecutor(EngineScoped):
         execution_type = node.get_parameter_value(node.execution_environment.name)
 
         library = None
-        if execution_type not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
+        if execution_type not in (LOCAL_EXECUTION, ISOLATED_EXECUTION):
             try:
                 library = LibraryRegistry.get_library(name=execution_type)
             except KeyError as err:
@@ -2393,18 +2419,19 @@ class NodeExecutor(EngineScoped):
 
         # Execute all iterations based on execution environment
         match execution_type:
-            case node_types.LOCAL_EXECUTION:
-                (
-                    iteration_results,
-                    successful_iterations,
-                    last_iteration_values,
-                ) = await self._execute_loop_iterations_locally(
-                    package_result=package_result,
-                    total_iterations=total_iterations,
-                    parameter_values_per_iteration=parameter_values_to_set_before_run,
-                    end_loop_node=node,
-                )
-            case node_types.PRIVATE_EXECUTION:
+            case _ if self._runs_locally(execution_type):
+                with self._local_execution_scope(execution_type, node.name):
+                    (
+                        iteration_results,
+                        successful_iterations,
+                        last_iteration_values,
+                    ) = await self._execute_loop_iterations_locally(
+                        package_result=package_result,
+                        total_iterations=total_iterations,
+                        parameter_values_per_iteration=parameter_values_to_set_before_run,
+                        end_loop_node=node,
+                    )
+            case node_types.ISOLATED_EXECUTION:
                 (
                     iteration_results,
                     successful_iterations,
@@ -2493,21 +2520,22 @@ class NodeExecutor(EngineScoped):
         break_occurred = False
         iteration_failures: list[IterationFailure] = []
         match execution_type:
-            case node_types.LOCAL_EXECUTION:
-                (
-                    iteration_results,
-                    successful_iterations,
-                    last_iteration_values,
-                    _skipped_count,
-                    break_occurred,
-                    iteration_failures,
-                ) = await self._execute_loop_iterations_sequentially(
-                    package_result=package_result,
-                    total_iterations=total_iterations,
-                    parameter_values_per_iteration=parameter_values_per_iteration,
-                    end_loop_node=node,
-                )
-            case node_types.PRIVATE_EXECUTION:
+            case _ if self._runs_locally(execution_type):
+                with self._local_execution_scope(execution_type, node.name):
+                    (
+                        iteration_results,
+                        successful_iterations,
+                        last_iteration_values,
+                        _skipped_count,
+                        break_occurred,
+                        iteration_failures,
+                    ) = await self._execute_loop_iterations_sequentially(
+                        package_result=package_result,
+                        total_iterations=total_iterations,
+                        parameter_values_per_iteration=parameter_values_per_iteration,
+                        end_loop_node=node,
+                    )
+            case node_types.ISOLATED_EXECUTION:
                 (
                     iteration_results,
                     successful_iterations,
@@ -3419,9 +3447,9 @@ class NodeExecutor(EngineScoped):
         Returns:
             Tuple of (iteration_results, successful_iterations, last_iteration_values)
         """
-        # if it's private execution, we aren't republishing it in a library.
+        # if it's isolated execution, we aren't republishing it in a library.
         # So our original package is what is running, and we can count on using these mappings
-        if execution_type == PRIVATE_EXECUTION:
+        if execution_type == ISOLATED_EXECUTION:
             start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
             start_node_name = start_node_mapping.node_name
         # For published libraries, we need to get the new Start Node name, based on what their registered nodes are.
@@ -3548,7 +3576,7 @@ class NodeExecutor(EngineScoped):
                 workflow_path=workflow_path,
                 workflow_result=workflow_result,
                 file_name_prefix=file_name_prefix,
-                execution_type=PRIVATE_EXECUTION,
+                execution_type=ISOLATED_EXECUTION,
                 run_sequentially=True,
             )
         finally:
@@ -3581,7 +3609,7 @@ class NodeExecutor(EngineScoped):
                 workflow_path=workflow_path,
                 workflow_result=workflow_result,
                 file_name_prefix=file_name_prefix,
-                execution_type=PRIVATE_EXECUTION,
+                execution_type=ISOLATED_EXECUTION,
                 run_sequentially=False,
             )
         finally:

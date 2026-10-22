@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
+from griptape_nodes.common.isolated_execution_scope import IsolatedExecutionScope, current_isolated_execution_scope
 from griptape_nodes.drivers.cloud_credentials import resolve_cloud_host
 from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeEndNode,
@@ -49,8 +50,8 @@ from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_groups import NodeGroupMembershipError, SubflowNodeGroup
 from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
 from griptape_nodes.exe_types.node_types import (
+    ISOLATED_EXECUTION,
     LOCAL_EXECUTION,
-    PRIVATE_EXECUTION,
     BaseNode,
     ErrorProxyNode,
     NodeDependencies,
@@ -58,8 +59,8 @@ from griptape_nodes.exe_types.node_types import (
     TransformedParameterValue,
     _values_differ,
     aprocess_scope,
-    sanctioned_parameter_mutation,
 )
+from griptape_nodes.exe_types.parameter_mutation import sanctioned_parameter_mutation
 from griptape_nodes.exe_types.trait_state import TraitStateEntry
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.node_library.library_declarations import (
@@ -105,6 +106,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowResultFailure,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
+    PACKAGED_FLOW_BOUNDARY_KEY,
     ListNodesInFlowRequest,
     ListNodesInFlowResultSuccess,
 )
@@ -2303,6 +2305,9 @@ class NodeManager(EngineScoped):
         if element is not None:
             with sanctioned_parameter_mutation():
                 node.remove_parameter_element(element)
+            if isinstance(element, Parameter) and element.parent_container_name is not None:
+                # The list lost an item, so what reads it has to run again.
+                self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
         else:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because element didn't exist."
 
@@ -2722,6 +2727,9 @@ class NodeManager(EngineScoped):
         # Output values take priority (they represent the result of execution).
         if param_name in node.parameter_output_values:
             data_value = node.parameter_output_values[param_name]
+        elif isinstance(parameter, ParameterContainer):
+            # A list is read from its rows, unless a connection handed it a whole list.
+            data_value = node._get_raw_parameter_value(param_name)
         elif param_name in node.parameter_values:
             data_value = node.parameter_values[param_name]
         else:
@@ -2840,7 +2848,8 @@ class NodeManager(EngineScoped):
 
         # Call before_value_set hook (allows nodes to modify values and temporarily control settable state)
         try:
-            modified_value = node.before_value_set(parameter, parameter_value)
+            with node._list_rows.hooks_running(parameter.parent_container_name):
+                modified_value = node.before_value_set(parameter, parameter_value)
             if modified_value is not None:
                 # Check if it's a TransformedParameterValue (value + type)
                 if isinstance(modified_value, TransformedParameterValue):
@@ -3017,15 +3026,29 @@ class NodeManager(EngineScoped):
         # Otherwise use set_parameter_value. This calls our converters and validators.
         # Skip before_value_set since we already called it earlier in the flow
         old_value = node._get_raw_parameter_value(request.parameter_name)
-        node.set_parameter_value(
-            request.parameter_name, object_created, initial_setup=request.initial_setup, skip_before_value_set=True
-        )
+        if not self._set_whole_list_as_rows(request, node):
+            node.set_parameter_value(
+                request.parameter_name, object_created, initial_setup=request.initial_setup, skip_before_value_set=True
+            )
         # Get the "converted" value here.
         finalized_value = node._get_raw_parameter_value(request.parameter_name)
         if old_value != finalized_value:
             modified = True
         # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
         return NodeManager.ModifiedReturnValue(finalized_value, modified)
+
+    def _set_whole_list_as_rows(self, request: SetParameterValueRequest, node: BaseNode) -> bool:
+        """Turn a caller's whole list for an unconnected list into rows. Returns whether it did.
+
+        Loading leaves the rows to the saved file, which sets each row next. A whole list saved for
+        an unconnected list is dropped, and its items don't become rows.
+        """
+        if request.initial_setup or request.incoming_connection_source_node_name is not None:
+            return False
+        parameter = node.get_parameter_by_name(request.parameter_name)
+        if parameter is None:
+            return False
+        return node._list_rows.set_as_rows_if_unconnected(parameter, request.value)
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     # For PLR0911 (too many return statements): don't want to do a ton of nested chains of success,
@@ -3310,6 +3333,11 @@ class NodeManager(EngineScoped):
             errormsg = f"This workflow is already in progress. Please wait for the current control process to finish before starting {node.name} again."
             return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
 
+        # Checked before anything below unresolves the node, so a rejected request leaves it as it was.
+        if flow_mgr.running_flow_is_stopping_after_failure():
+            errormsg = f"Attempted to run {node.name}. Failed because a node in the current run failed, and the run is waiting for its other nodes to finish. Try again once the run ends."
+            return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
+
         # Check if the node is already in the DAG - if so, skip this resolution. It's already queued or has been resolved.
         if node.name in flow_mgr._global_dag_builder.node_to_reference:
             return ResolveNodeResultFailure(
@@ -3409,6 +3437,17 @@ class NodeManager(EngineScoped):
             wm = self.engine.worker_manager
             if wm is not None and worker is not None:
                 return await self._execute_node_via_worker(request, wm, worker)
+            # A library's own worker comes first: that is where its dependencies are installed. Only a
+            # node that would otherwise run here moves to the worker its Isolated Execution names.
+            #
+            # The StartFlow and EndFlow the packager adds around a packaged body stay here. They are the
+            # flow's boundary and only pass values in and out, and the packager gives them their
+            # parameters by request, which the fresh copy a worker builds from metadata does not have.
+            # The packager flags them; a Start/End node a user placed carries no flag and goes.
+            isolated_scope = current_isolated_execution_scope.get()
+            is_flow_boundary = bool(node.metadata.get(PACKAGED_FLOW_BOUNDARY_KEY))
+            if wm is not None and isolated_scope is not None and not is_flow_boundary:
+                return await self._execute_node_in_isolated_execution_worker(request, wm, isolated_scope)
 
         async with STRICT_MODE.scoped_execution(
             kind=StrictModeScopeKind.RUNTIME_EXECUTE,
@@ -3537,6 +3576,35 @@ class NodeManager(EngineScoped):
         if library_info.lifecycle_state is LibraryManager.LibraryLifecycleState.LOADED:
             return None
         return library_manager.catalog.get_collated_problems_for_library(library_name)
+
+    async def _execute_node_in_isolated_execution_worker(
+        self, request: ExecuteNodeRequest, wm: WorkerManager, scope: IsolatedExecutionScope
+    ) -> ResultPayload:
+        """Run the node on the worker its Isolated Execution scope names.
+
+        The scope is set by NodeExecutor, which decided this run uses Isolated Execution, so nothing
+        here infers it from where the node sits in the graph.
+        """
+        try:
+            await wm.wait_until_executable(scope.worker_key)
+        except RuntimeError as err:
+            return ExecuteNodeResultFailure(result_details=str(err), exception=err)
+        unavailable = wm.worker_unavailable_reason(scope.worker_key)
+        if unavailable is not None:
+            details = (
+                f"Attempted to run '{request.node_name}' with the Isolated Execution set on '{scope.owner_name}'. "
+                f"Failed because {unavailable} Reload your libraries, or restart Griptape Nodes, to start it again."
+            )
+            return ExecuteNodeResultFailure(result_details=details)
+        worker = wm.get_worker_for_key(scope.worker_key)
+        if worker is None:
+            details = (
+                f"Attempted to run '{request.node_name}' with the Isolated Execution set on '{scope.owner_name}'. "
+                "Failed because the background process that runs Isolated Execution is not running. Reload your "
+                "libraries, or restart Griptape Nodes, to start it again."
+            )
+            return ExecuteNodeResultFailure(result_details=details)
+        return await self._execute_node_via_worker(request, wm, worker)
 
     async def _execute_node_via_worker(
         self,
@@ -3724,7 +3792,8 @@ class NodeManager(EngineScoped):
         node_name = request.node_name
         with self.engine.event_manager.node_execution_scope():
             hydrated_values = hydrate_parameter_values(request.parameter_values)
-            hydration_failure = self._apply_hydrated_values(node, node_name, hydrated_values)
+            with self.engine.event_manager.hydration_scope(node_name):
+                hydration_failure = self._apply_hydrated_values(node, node_name, hydrated_values)
             if hydration_failure is not None:
                 return hydration_failure
             # Materialize parameter defaults into parameter_values so that user
@@ -3736,7 +3805,8 @@ class NodeManager(EngineScoped):
             for param in node.parameters:
                 if param.name in node.parameter_values:
                     continue
-                if param.default_value is None:
+                # A list is read from its rows, and a stored default would hide them.
+                if param.default_value is None or isinstance(param, ParameterContainer):
                     continue
                 node.parameter_values[param.name] = param.default_value
             if self.engine.library_manager.is_worker:
@@ -3905,7 +3975,8 @@ class NodeManager(EngineScoped):
             deferred = {}
             made_progress = False
             for param_name, value in pending.items():
-                if node.get_parameter_by_name(param_name) is None:
+                parameter = node.get_parameter_by_name(param_name)
+                if parameter is None:
                     deferred[param_name] = value
                     continue
                 made_progress = True
@@ -3927,7 +3998,9 @@ class NodeManager(EngineScoped):
                         value.reason,
                     )
                 try:
-                    node.set_parameter_value(param_name, value)
+                    # A worker copy has no rows, so the list it runs with has to become them.
+                    if not self._fill_list_rows_on_copy(node, parameter, value):
+                        node.set_parameter_value(param_name, value)
                 except Exception as e:
                     return ExecuteNodeResultFailure(
                         result_details=f"Attempted to set parameter '{param_name}' on node '{node_name}'. Failed with error: {e}",
@@ -3945,6 +4018,18 @@ class NodeManager(EngineScoped):
                 param_name,
             )
         return None
+
+    def _fill_list_rows_on_copy(self, node: BaseNode, parameter: Parameter, value: Any) -> bool:
+        """Build a list's rows from the value it arrived with. Returns False for anything but a list.
+
+        A worker skips asking whether the list is connected, which would cost a round trip to the
+        orchestrator for every list on every run.
+        """
+        if not isinstance(parameter, ParameterList):
+            return False
+        if self.engine.library_manager.is_worker:
+            return node._list_rows.fill_copy(parameter, value)
+        return node._list_rows.set_as_rows_if_unconnected(parameter, value)
 
     @staticmethod
     def _unencodable_value_names(values: dict[str, Any]) -> list[str]:
@@ -4113,7 +4198,7 @@ class NodeManager(EngineScoped):
             execution_env_library_details = None
             if isinstance(node, SubflowNodeGroup):
                 execution_env = node.get_parameter_value(node.execution_environment.name)
-                if execution_env not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
+                if execution_env not in (LOCAL_EXECUTION, ISOLATED_EXECUTION):
                     # Get library details for the execution environment library
                     exec_env_metadata_request = GetLibraryMetadataRequest(library=execution_env)
                     exec_env_metadata_result = self.engine.library_manager.catalog.get_library_metadata_request(
@@ -6128,13 +6213,11 @@ class NodeManager(EngineScoped):
                 result_details=ResultDetails(message=details, level=logging.DEBUG)
             )
 
-        # Perform the reorder by moving the item in the _children list
-        item_to_move = children[request.from_index]
-        parameter_list._children.remove(item_to_move)
-        parameter_list._children.insert(request.to_index, item_to_move)
+        parameter_list.move_child(request.from_index, request.to_index)
 
-        # Mark the node as unresolved since parameter structure changed
+        # Mark the node and what follows it as unresolved since the list's order changed
         node.state = NodeResolutionState.UNRESOLVED
+        self.engine.flow_manager.get_connections().unresolve_future_nodes(node)
 
         # Manually add the reordered children structure to _changes so the event includes it
         parameter_list._changes["children"] = [child.to_dict() for child in parameter_list._children]
