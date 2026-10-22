@@ -335,6 +335,36 @@ class TestCloseWorkflowState:
         close.assert_awaited_once_with(runtime)
         assert engine.open_workflows.sole_workflow_or_none() is None
 
+    def test_deleting_the_open_workflow_while_it_runs_awaits_the_cancel_before_tearing_down(
+        self, engine: Engine
+    ) -> None:
+        workflow = push_unsaved_workflow(engine)
+        engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="canvas"))
+        flow_manager = engine.flow_manager
+        calls: list[str] = []
+        running = [True]
+        clear_top_entry = engine._clear_top_workflow_entry
+
+        async def cancel_flow_run() -> None:
+            await asyncio.sleep(0)
+            calls.append("cancel")
+            running[0] = False
+
+        def record_teardown() -> None:
+            calls.append("teardown")
+            clear_top_entry()
+
+        with (
+            patch.object(flow_manager, "check_for_existing_running_flow", side_effect=lambda: running[0]),
+            patch.object(flow_manager, "cancel_flow_run", side_effect=cancel_flow_run),
+            patch.object(engine, "_clear_top_workflow_entry", side_effect=record_teardown),
+        ):
+            result = engine.handle_request(DeleteWorkflowRequest(workflow_id=workflow.workflow_id))
+
+        assert result.succeeded()
+        assert calls == ["cancel", "teardown"]
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
     def test_deleting_another_workflow_leaves_the_open_one_alone(self, engine: Engine) -> None:
         other = engine.workflow_registry.register_unsaved("other", None)
         push_unsaved_workflow(engine)
