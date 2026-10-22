@@ -561,8 +561,10 @@ class Engine:
     async def close_workflow_state(self, workflow: WorkflowRuntime) -> None:
         """Close the open workflow: cancel its run, delete its flows, and release what it held.
 
-        Every teardown of the open workflow comes through here. The runtime leaves the open
-        workflows with its objects and variables when its last context entry is popped. The
+        Engine requests that close the open workflow (ClearAll, Delete) come through here. The
+        `GriptapeNodes.clear_current_workflow_data()` facade and a bare pop of the last context
+        entry close it without awaiting a cancel or telling the workers. The runtime leaves the
+        open workflows with its objects and variables when its last context entry is popped. The
         workers are told to release their held objects even when the teardown fails, since
         nothing retries it.
 

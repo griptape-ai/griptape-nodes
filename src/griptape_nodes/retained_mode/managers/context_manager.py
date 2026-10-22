@@ -978,7 +978,7 @@ class ContextManager(EngineScoped):
         name = self.get_current_workflow_name()
         self._workflow_stack.pop()
         if not self._workflow_stack:
-            # None on a worker, whose stack holds only a mirror.
+            # None when only a worker's mirror was on the stack, e.g. the facade's teardown on a worker.
             workflow = self.engine.open_workflows.sole_workflow_or_none()
             if workflow is not None:
                 self.engine.open_workflows.close(workflow)

@@ -9,8 +9,8 @@ from griptape_nodes.retained_mode.runtime.variables import WorkflowVariables
 class WorkflowRuntime:
     """The state of one open workflow, made when it opens and dropped when it closes.
 
-    Managers hold no state of their own for a workflow: what a workflow is lives here, one typed
-    attribute per concern.
+    Holds the workflow's objects (its flows and nodes by name) and its flow and global variables,
+    one typed attribute per concern.
     """
 
     def __init__(self, workflow_id: str) -> None:
