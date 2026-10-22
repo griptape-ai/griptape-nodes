@@ -44,6 +44,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     CreateNodeResultSuccess,
     SerializedNodeCommands,
+    SetLockNodeStateRequest,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
@@ -208,6 +209,21 @@ def test_package_leaves_out_values_its_connections_supply(engine: Engine, loop_f
 
     source_values = _find_node(commands, SOURCE).set_values_by_parameter()
     assert "left" not in source_values, "Source.left is fed from the group boundary through the Start node"
+
+
+def test_package_keeps_a_locked_nodes_connected_values(engine: Engine, loop_flow: str) -> None:
+    """A locked body node never runs, so nothing would feed its inputs; its frozen values travel with it."""
+    locked = engine.handle_request(SetLockNodeStateRequest(node_name=TARGET, lock=True))
+    assert not locked.failed(), locked
+
+    with engine.context_manager.flow(loop_flow):
+        result = engine.handle_request(
+            PackageNodesAsSerializedFlowRequest(node_names=[SOURCE, TARGET], node_group_name=GROUP)
+        )
+    assert isinstance(result, PackageNodesAsSerializedFlowResultSuccess), result
+
+    target_values = _find_node(result.serialized_flow_commands, TARGET).set_values_by_parameter()
+    assert target_values["left"] == STALE_LEFT
 
 
 def test_saving_the_workflow_still_keeps_connected_values(engine: Engine, loop_flow: str) -> None:
