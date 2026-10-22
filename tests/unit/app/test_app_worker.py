@@ -2429,6 +2429,13 @@ class _FakeEngineLinks:
         self.blocked: dict[str, asyncio.Event] = {}
         self.arrived: dict[str, asyncio.Event] = {}
         self.link_lost: Callable[[str], Awaitable[None]] | None = None
+        # What a worker run for another engine is given to reach it, by that engine.
+        self.worker_environments: dict[str, dict[str, str]] = {}
+        self.worker_environment_asks: list[tuple[str, str | None]] = []
+
+    def hosted_worker_environment(self, engine_id: str, *, relay_credential: str | None) -> dict[str, str]:
+        self.worker_environment_asks.append((engine_id, relay_credential))
+        return self.worker_environments.get(engine_id, {})
 
     async def request(self, engine_id: str, request: RequestPayload, *, timeout_s: float | None) -> ResultPayload:
         self.sent.append((engine_id, request, timeout_s))
@@ -2494,6 +2501,7 @@ def _machine(worker_manager: WorkerManager, *, refuse: dict[str, str] | None = N
     # As Engine.attach_engine_links does: requests go through the links, and a lost link reaches here.
     engine.can_reach_other_engines = True  # type: ignore[misc]
     engine.request = links.request  # type: ignore[method-assign]
+    engine.hosted_worker_environment = links.hosted_worker_environment  # type: ignore[method-assign]
     links.on_link_lost(worker_manager.on_engine_lost)
     return links
 
@@ -2542,6 +2550,8 @@ class TestStartingAWorkerOnAnotherMachine:
         assert registration[1].engine_version == engine_version
         assert registration[1].library_versions == {_LIBRARY: "1.0.0"}
         assert registration[1].license_token == _LICENSE
+        # The fixture's secrets answer every name with _LICENSE, the relay credential included.
+        assert registration[1].relay_credential == _LICENSE
         assert start[0] == _MACHINE
         assert isinstance(start[1], worker_events.StartWorkerRequest)
         assert (start[1].session_id, start[1].engine_id) == (_SESSION, _ENGINE)
@@ -3013,6 +3023,26 @@ class TestServingAnotherMachinesSession:
             "GRIPTAPE_NODES_LICENSE": _LICENSE,
             ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV: "http://workstation:8124",
         }
+
+    @pytest.mark.asyncio
+    async def test_the_worker_reaches_the_artist_the_way_the_artist_reached_this_machine(
+        self, worker_manager: WorkerManager
+    ) -> None:
+        """The transport decides how; the worker gets what it says, with the artist's relay credential."""
+        links = _machine(worker_manager)
+        _register_session(worker_manager, relay_credential="artist-relay-credential")
+        links.worker_environments[_ARTIST_ENGINE] = {"REACH_THE_ARTIST": "over the relay"}
+        spawned: dict[str, object] = {}
+
+        async def record_spawn(_args: list[str], _worker_key: str, **kwargs: object) -> None:
+            spawned.update(kwargs)
+
+        with patch.object(worker_manager, "spawn_worker", side_effect=record_spawn):
+            await worker_manager.handle_start_worker_request(_start_for_artist())  # type: ignore[arg-type]
+
+        assert links.worker_environment_asks == [(_ARTIST_ENGINE, "artist-relay-credential")]
+        environ = cast("dict[str, str]", spawned["environ_overrides"])
+        assert environ["REACH_THE_ARTIST"] == "over the relay"
 
     @pytest.mark.asyncio
     async def test_a_start_for_an_unregistered_session_fails(self, worker_manager: WorkerManager) -> None:

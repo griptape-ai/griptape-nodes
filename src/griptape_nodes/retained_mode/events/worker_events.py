@@ -199,6 +199,9 @@ class RegisterSessionRequest(RequestPayload):
             run under, or None when it has none.
         static_server_base_url: Where the artist's engine serves the shared workspace, so the asset
             URLs its workers mint are ones the artist's editor can open.
+        relay_credential: The artist's Griptape Cloud relay credential, or None when it has none. A
+            worker started for the session over the relay connects with it, so its traffic reaches
+            the artist's engine under the artist's identity.
     """
 
     engine_id: str
@@ -208,6 +211,7 @@ class RegisterSessionRequest(RequestPayload):
     library_versions: dict[str, str]
     license_token: str | None = None
     static_server_base_url: str | None = None
+    relay_credential: str | None = None
     broadcast_result: bool = field(default=False, kw_only=True)
 
 

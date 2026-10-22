@@ -574,6 +574,17 @@ class Engine:
             raise MachineNotFoundError(msg)
         return await self._engine_links.request(engine_id, request, timeout_s=timeout_s)
 
+    def hosted_worker_environment(self, engine_id: str, *, relay_credential: str | None) -> dict[str, str]:
+        """The environment a worker this engine runs for `engine_id` needs to reach that engine.
+
+        Raises:
+            MachineNotFoundError: This engine has no way to reach other engines.
+        """
+        if self._engine_links is None:
+            msg = f"Attempted to start a worker for engine {engine_id}. Failed because this engine has no connections to other machines."
+            raise MachineNotFoundError(msg)
+        return self._engine_links.hosted_worker_environment(engine_id, relay_credential=relay_credential)
+
     def clear_current_workflow_data(self) -> None:  # noqa: C901
         """Tear down the active workflow: cancel running flows, delete its orphan flows, then pop it.
 

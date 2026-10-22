@@ -212,7 +212,7 @@ You can run a library's nodes on another computer running Griptape Nodes, such a
 Your workstation reaches the GPU machine in one of two ways, and picks the way itself:
 
 - **Directly**, when the GPU machine publishes an address your workstation can reach. This works without Griptape Cloud, and the traffic stays on your network.
-- **Through Griptape Cloud**, when the GPU machine publishes no address and both machines are connected to Griptape Cloud (`websocket_api`). The GPU machine then needs no address of its own that your workstation can reach.
+- **Through Griptape Cloud**, when the GPU machine publishes no address and both machines are connected to Griptape Cloud (`websocket_api`). The GPU machine then needs no address of its own that your workstation can reach. Both machines must connect to Griptape Cloud as the same identity, such as one organization API key. Connecting through Griptape Cloud with a Griptape Nodes license isn't available yet; with a license, connect directly.
 
 If the GPU machine publishes an address, your workstation always connects directly. If that connection fails, the node fails with a message saying so; it doesn't switch to Griptape Cloud on its own.
 
