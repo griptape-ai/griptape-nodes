@@ -257,6 +257,34 @@ class TestWorkflowRegistryOperations:
         with pytest.raises(WorkflowPathTakenError):
             registry.register_file(tmp_path / "flow.py", _metadata(workflow_id=_workflow_id("second")))
 
+    def test_refused_path_names_the_holder_and_changes_nothing(self, tmp_path: Path) -> None:
+        registry = _registry(tmp_path)
+        _workflow_file(tmp_path / "flow.py")
+        holder = registry.register_file("flow.py", _metadata(workflow_id=_workflow_id("first")))
+
+        with pytest.raises(WorkflowPathTakenError) as raised:
+            registry.register_file("flow.py", _metadata(workflow_id=_workflow_id("second")))
+
+        assert raised.value.existing is holder
+        assert registry.find_by_id(_workflow_id("second")) is None
+        assert registry.find_by_path(tmp_path / "flow.py") is holder
+        assert list(registry.list_workflows()) == ["flow"]
+
+    def test_refused_name_names_the_holder_and_changes_nothing(self, tmp_path: Path) -> None:
+        registry = _registry(tmp_path)
+        _workflow_file(tmp_path / "flow.py")
+        _workflow_file(tmp_path / "flow.txt")
+        holder = registry.register_file("flow.py", _metadata(workflow_id=_workflow_id("first")))
+
+        with pytest.raises(WorkflowPathTakenError, match="already registered under that name") as raised:
+            registry.register_file("flow.txt", _metadata(workflow_id=_workflow_id("second")))
+
+        assert raised.value.existing is holder
+        assert registry.find_by_id(_workflow_id("second")) is None
+        assert registry.find_by_path(tmp_path / "flow.txt") is None
+        assert registry.find_by_name("flow") is holder
+        assert list(registry.list_workflows()) == ["flow"]
+
     def test_same_id_in_another_file_is_a_duplicate(self, tmp_path: Path) -> None:
         registry = _registry(tmp_path)
         _workflow_file(tmp_path / "original.py")
@@ -294,6 +322,17 @@ class TestWorkflowRegistryOperations:
         assert workflow.working_directory == str(tmp_path / "shots")
         assert workflow.metadata.name == "Untitled"
         assert registry.find_by_name(workflow.name) is workflow
+
+    def test_register_unsaved_refuses_an_id_another_entry_has(self, tmp_path: Path) -> None:
+        registry = _registry(tmp_path)
+        existing = registry.register_unsaved("First", workflow_id=_workflow_id("taken"))
+
+        with pytest.raises(DuplicateWorkflowIdError) as raised:
+            registry.register_unsaved("Second", workflow_id=_workflow_id("taken"))
+
+        assert raised.value.existing is existing
+        assert registry.get(_workflow_id("taken")) is existing
+        assert list(registry.list_workflows()) == [existing.name]
 
     def test_find_by_name_accepts_a_dashed_unsaved_name(self, tmp_path: Path) -> None:
         """Earlier engines minted "unsaved:<uuid>" with dashes; it names the same workflow as the hex form."""
@@ -345,6 +384,67 @@ class TestWorkflowRegistryOperations:
 
         assert first.name == "a"
         assert registry.find_by_name("a") is first
+
+    def test_set_file_path_restores_the_entry_when_the_new_name_is_taken(self, tmp_path: Path) -> None:
+        registry = _registry(tmp_path)
+        _workflow_file(tmp_path / "a.py")
+        _workflow_file(tmp_path / "b.py")
+        _workflow_file(tmp_path / "b.txt")
+        first = registry.register_file("a.py", _metadata(workflow_id=_workflow_id("a")))
+        holder = registry.register_file("b.py", _metadata(workflow_id=_workflow_id("b")))
+
+        with pytest.raises(WorkflowPathTakenError) as raised:
+            registry.set_file_path(first, "b.txt")
+
+        assert raised.value.existing is holder
+        assert first.absolute_path == tmp_path / "a.py"
+        assert first.file_path == "a.py"
+        assert first.name == "a"
+        assert registry.find_by_path(tmp_path / "a.py") is first
+        assert registry.find_by_path(tmp_path / "b.txt") is None
+        assert registry.find_by_name("a") is first
+        assert registry.find_by_name("b") is holder
+
+    @pytest.mark.skipif(platform.system() == "Windows", reason="symlink creation needs privileges on Windows")
+    def test_set_file_path_restores_the_aliases_when_the_new_name_is_taken(self, tmp_path: Path) -> None:
+        registry = _registry(tmp_path)
+        _workflow_file(tmp_path / "real" / "flow.py")
+        _workflow_file(tmp_path / "b.py")
+        _workflow_file(tmp_path / "b.txt")
+        (tmp_path / "linked").symlink_to(tmp_path / "real", target_is_directory=True)
+        workflow = registry.register_file("real/flow.py", _metadata(workflow_id=_workflow_id("one")))
+        registry.register_file("linked/flow.py", _metadata(workflow_id=_workflow_id("one")))
+        registry.register_file("b.py", _metadata(workflow_id=_workflow_id("b")))
+        known_paths = workflow.known_paths
+
+        with pytest.raises(WorkflowPathTakenError):
+            registry.set_file_path(workflow, "b.txt")
+
+        assert workflow.known_paths == known_paths
+        assert tmp_path / "linked" / "flow.py" in known_paths
+        assert registry.find_by_path(tmp_path / "linked" / "flow.py") is workflow
+        assert registry.find_by_name("linked/flow") is workflow
+        assert registry.find_by_name("real/flow") is workflow
+
+    def test_set_file_path_refuses_an_unregistered_workflow(self, tmp_path: Path) -> None:
+        registry = _registry(tmp_path)
+        _workflow_file(tmp_path / "flow.py")
+        stranger = Workflow(workflow_id=_workflow_id("stranger"), metadata=_metadata(), absolute_path=None)
+
+        with pytest.raises(KeyError, match="not registered"):
+            registry.set_file_path(stranger, "flow.py")
+
+        assert registry.find_by_path(tmp_path / "flow.py") is None
+
+    def test_set_file_path_requires_the_file(self, tmp_path: Path) -> None:
+        registry = _registry(tmp_path)
+        workflow = registry.register_unsaved("Untitled")
+
+        with pytest.raises(ValueError, match="does not exist"):
+            registry.set_file_path(workflow, "missing.py")
+
+        assert not workflow.is_saved
+        assert registry.find_by_name(workflow.name) is workflow
 
     def test_remove_refuses_an_open_workflow(self, tmp_path: Path) -> None:
         open_ids: set[str] = set()
