@@ -98,8 +98,14 @@ class SessionManager:
         Args:
             session_id: The session ID to set as active
         """
-        self._active_session_id = session_id
+        self._activate_session(session_id)
         logger.debug("Set active session ID to: %s", session_id)
+
+    def _activate_session(self, session_id: str | None) -> None:
+        """Clients belong to the session they attached to, so moving to another one drops them."""
+        if session_id != self._active_session_id:
+            self._clients.clear()
+        self._active_session_id = session_id
 
     @property
     def clients(self) -> list[SessionClient]:
@@ -149,7 +155,7 @@ class SessionManager:
         self._add_or_update_session(session_data)
 
         # Set as active session
-        self._active_session_id = session_id
+        self._activate_session(session_id)
         logger.debug("Saved and activated session: %s for engine: %s", session_id, engine_id)
 
     def remove_session(self, session_id: str) -> None:
@@ -168,9 +174,7 @@ class SessionManager:
         # Clear active session if it was the removed session
         if self._active_session_id == session_id:
             # Set to first remaining session or None
-            self._active_session_id = (
-                self._sessions_data.sessions[0].session_id if self._sessions_data.sessions else None
-            )
+            self._activate_session(self._sessions_data.sessions[0].session_id if self._sessions_data.sessions else None)
             logger.debug(
                 "Removed active session %s for engine %s, set new active session to: %s",
                 session_id,
@@ -184,7 +188,7 @@ class SessionManager:
     def clear_saved_session(self) -> None:
         """Clear all saved session data for the current engine."""
         # Clear active session
-        self._active_session_id = None
+        self._activate_session(None)
 
         # Clear in-memory session data
         self._sessions_data = SessionsStorage(sessions=[])
@@ -314,7 +318,6 @@ class SessionManager:
                 details = f"Session '{previous_session_id}' ended at {datetime.now(tz=UTC)}."
                 logger.debug(details)
                 self.clear_saved_session()
-                self._clients.clear()
 
             return AppEndSessionResultSuccess(
                 session_id=previous_session_id, result_details="Session ended successfully."

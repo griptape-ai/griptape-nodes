@@ -76,6 +76,51 @@ class TestSessionClients:
         assert isinstance(result, AppEndSessionResultSuccess)
         assert manager.clients == []
 
+    def test_clearing_saved_sessions_clears_clients(self, manager: SessionManager) -> None:
+        manager.save_session("session-a")
+        manager.attach_client("nuke:shot010", "nuke")
+
+        manager.clear_saved_session()
+
+        assert manager.active_session_id is None
+        assert manager.clients == []
+
+    def test_switching_to_another_session_drops_the_old_sessions_clients(self, manager: SessionManager) -> None:
+        manager.save_session("session-a")
+        manager.attach_client("nuke:shot010", "nuke")
+
+        manager.save_session("session-b")
+
+        assert manager.clients == []
+
+    def test_resaving_the_active_session_keeps_its_clients(self, manager: SessionManager) -> None:
+        manager.save_session("session-a")
+        manager.attach_client("nuke:shot010", "nuke")
+
+        manager.save_session("session-a")
+
+        assert [c.client_id for c in manager.clients] == ["nuke:shot010"]
+
+    def test_removing_the_active_session_drops_its_clients(self, manager: SessionManager) -> None:
+        manager.save_session("session-a")
+        manager.save_session("session-b")
+        manager.attach_client("nuke:shot010", "nuke")
+
+        manager.remove_session("session-b")
+
+        assert manager.active_session_id == "session-a"
+        assert manager.clients == []
+
+    def test_removing_another_session_keeps_the_active_sessions_clients(self, manager: SessionManager) -> None:
+        manager.save_session("session-a")
+        manager.save_session("session-b")
+        manager.attach_client("nuke:shot010", "nuke")
+
+        manager.remove_session("session-a")
+
+        assert manager.active_session_id == "session-b"
+        assert [c.client_id for c in manager.clients] == ["nuke:shot010"]
+
     def test_clients_are_not_persisted_with_the_session(self, manager: SessionManager, tmp_path: Path) -> None:
         manager.save_session("session-a")
         manager.attach_client("nuke:shot010", "nuke")
