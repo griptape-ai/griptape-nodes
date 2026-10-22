@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from griptape_nodes.exe_types.flow import ControlFlow
+from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest, ExecuteNodeResultFailure
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
     CreateFlowResultFailure,
     CreateFlowResultSuccess,
+    GetTopLevelFlowRequest,
+    GetTopLevelFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import (
     ClearAllObjectStateRequest,
@@ -26,6 +29,7 @@ from griptape_nodes.retained_mode.events.variable_events import (
     GetVariableValueRequest,
     GetVariableValueResultFailure,
 )
+from griptape_nodes.retained_mode.events.worker_events import WorkerGoneError
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     SetVariableSubstitutionEnabledRequest,
@@ -527,3 +531,163 @@ class TestSubstitutionFlagOnTheRuntime:
         engine.context_manager.push_workflow(workflow_id=workflow.workflow_id)
 
         assert engine.workflow_manager.variable_substitution.is_enabled() is True
+
+
+def _create_canvas(engine: Engine) -> str:
+    result = engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="canvas"))
+    assert isinstance(result, CreateFlowResultSuccess)
+    return result.flow_name
+
+
+class TestNodesOnTheRuntime:
+    def test_a_nodes_parent_flow_is_held_by_the_open_workflow(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        engine.open_workflows.sole_workflow().nodes.name_to_parent_flow_name["node"] = "canvas"
+
+        assert engine.node_manager.get_node_parent_flow_by_name("node") == "canvas"
+
+    def test_lookups_find_no_node_with_no_workflow_open(self, engine: Engine) -> None:
+        with pytest.raises(KeyError, match="could not be found"):
+            engine.node_manager.get_node_parent_flow_by_name("node")
+
+    @pytest.mark.asyncio
+    async def test_cancelling_a_worker_run_with_no_workflow_open_does_nothing(self, engine: Engine) -> None:
+        with patch.object(engine.worker_manager, "forward_event_to_worker", AsyncMock()) as forward:
+            await engine.node_manager.cancel_worker_execution("node")
+
+        forward.assert_not_awaited()
+
+    def test_renaming_a_flow_repoints_its_nodes(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        nodes = engine.open_workflows.sole_workflow().nodes
+        nodes.name_to_parent_flow_name["node"] = "canvas"
+
+        engine.node_manager.handle_flow_rename("canvas", "renamed")
+
+        assert nodes.name_to_parent_flow_name == {"node": "renamed"}
+
+    @pytest.mark.asyncio
+    async def test_a_worker_run_is_forgotten_by_its_workflow_even_if_it_closes_meanwhile(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        runtime = engine.open_workflows.sole_workflow()
+        tracked_while_running: list[str] = []
+
+        async def close_while_running(*_: object) -> dict:
+            tracked_while_running.extend(runtime.nodes.orch_worker_requests)
+            engine.context_manager.pop_workflow()
+            msg = "The worker went away."
+            raise WorkerGoneError(msg)
+
+        worker_manager = MagicMock()
+        worker_manager.route_to_worker = AsyncMock(side_effect=close_while_running)
+        result = await engine.node_manager._execute_node_via_worker(
+            ExecuteNodeRequest(node_name="node", parameter_values={}), worker_manager, ("worker", "topic")
+        )
+
+        assert isinstance(result, ExecuteNodeResultFailure)
+        assert tracked_while_running == ["node"]
+        assert runtime.nodes.orch_worker_requests == {}
+
+    def test_popping_the_last_entry_drops_the_node_bookkeeping(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        engine.open_workflows.sole_workflow().nodes.name_to_parent_flow_name["node"] = "canvas"
+
+        engine.context_manager.pop_workflow()
+        push_unsaved_workflow(engine)
+
+        assert engine.open_workflows.sole_workflow().nodes.name_to_parent_flow_name == {}
+
+
+class TestFlowsOnTheRuntime:
+    def test_a_created_flows_parentage_is_held_by_the_open_workflow(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+
+        flow_name = _create_canvas(engine)
+
+        assert engine.open_workflows.sole_workflow().flows.name_to_parent_name == {flow_name: None}
+        assert engine.flow_manager.does_canvas_exist()
+
+    def test_the_fronts_read_the_open_workflows_flows(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        flows = engine.open_workflows.sole_workflow().flows
+        flows.global_single_node_resolution = True
+
+        flow_manager = engine.flow_manager
+        assert flow_manager.get_connections() is flows.connections
+        assert flow_manager.global_flow_queue is flows.global_flow_queue
+        assert flow_manager.global_dag_builder is flows.global_dag_builder
+        assert flow_manager.global_single_node_resolution is True
+
+    def test_the_dag_builder_reads_its_workflows_connections(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        flows = engine.open_workflows.sole_workflow().flows
+
+        assert flows.global_dag_builder.connections is flows.connections
+
+    def test_lookups_find_no_flows_and_no_run_with_no_workflow_open(self, engine: Engine) -> None:
+        flow_manager = engine.flow_manager
+
+        assert not flow_manager.does_canvas_exist()
+        assert flow_manager.get_connections().connections == {}
+        assert not flow_manager.check_for_existing_running_flow()
+        assert not flow_manager.execution_is_advancing()
+        assert not flow_manager.global_single_node_resolution
+        assert flow_manager.global_flow_queue.empty()
+        assert flow_manager.global_dag_builder.node_to_reference == {}
+        assert flow_manager.get_next_node_from_execution_queue() is None
+        with pytest.raises(ValueError, match="doesn't exist"):
+            flow_manager.get_parent_flow("canvas")
+        result = engine.handle_request(GetTopLevelFlowRequest())
+        assert isinstance(result, GetTopLevelFlowResultSuccess)
+        assert result.flow_name is None
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+    def test_resetting_execution_state_with_no_workflow_open_does_nothing(self, engine: Engine) -> None:
+        engine.flow_manager.reset_global_execution_state()
+
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+    @pytest.mark.asyncio
+    async def test_closing_drops_flows_connections_and_run_state(self, engine: Engine) -> None:
+        workflow = push_unsaved_workflow(engine)
+        _create_canvas(engine)
+        runtime = engine.open_workflows.sole_workflow()
+        runtime.flows.connections.connections[1] = MagicMock()
+        runtime.flows.global_dag_builder.node_to_reference["node"] = MagicMock()
+        runtime.flows.global_single_node_resolution = True
+
+        await engine.close_workflow_state(runtime)
+        engine.context_manager.push_workflow(workflow_id=workflow.workflow_id)
+
+        reopened = engine.open_workflows.sole_workflow().flows
+        assert reopened is not runtime.flows
+        assert reopened.name_to_parent_name == {}
+        assert reopened.connections.connections == {}
+        assert reopened.global_control_flow_machine is None
+        assert reopened.global_dag_builder.node_to_reference == {}
+        assert not reopened.global_single_node_resolution
+        assert not engine.flow_manager.does_canvas_exist()
+
+    def test_a_bare_pop_of_the_last_entry_leaves_no_canvas_behind(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        _create_canvas(engine)
+
+        engine.context_manager.pop_workflow()
+        push_unsaved_workflow(engine)
+
+        assert not engine.flow_manager.does_canvas_exist()
+        assert _create_canvas(engine) == "canvas"
+
+    def test_a_run_in_one_workflow_is_not_seen_after_it_closes(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        machine = MagicMock()
+        machine.resolution_machine.is_complete.return_value = False
+        machine.resolution_machine.is_started.return_value = True
+        engine.open_workflows.sole_workflow().flows.global_control_flow_machine = machine
+        assert engine.flow_manager.check_for_existing_running_flow()
+
+        engine.context_manager.pop_workflow()
+
+        assert not engine.flow_manager.check_for_existing_running_flow()
+        push_unsaved_workflow(engine)
+        assert not engine.flow_manager.check_for_existing_running_flow()
