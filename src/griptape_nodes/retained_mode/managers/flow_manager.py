@@ -1751,13 +1751,21 @@ class FlowManager(EngineScoped):
         serialized_node_commands = []
         serialized_node_group_commands = []  # SubflowNodeGroups must be added LAST
 
+        incoming_index = self.get_connections().incoming_index
         for node in nodes_to_package:
+            # A connected input gets its value inside the rebuilt flow before its node runs: from the
+            # Start node when the connection comes from outside the package, from the upstream node's
+            # output when it is internal. The value the canvas node holds is overwritten either way, so
+            # it is left out rather than replayed, where it would be validated against the parameter's
+            # current rules and could abort the whole rebuild (issue #5889).
+            connected_parameter_names = set(incoming_index.get(node.name, {}))
             # Serialize this node using shared dictionaries for value deduplication
             serialize_request = SerializeNodeToCommandsRequest(
                 node_name=node.name,
                 unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
                 include_existing_subflow_in_group=True,
+                values_supplied_by_connections=connected_parameter_names,
             )
             serialize_result = self.engine.node_manager.on_serialize_node_to_commands(serialize_request)
 
@@ -4497,7 +4505,10 @@ class FlowManager(EngineScoped):
         indirect_set_value_command.set_parameter_value_command.node_name = node.name
         set_parameter_value_result = self.engine.handle_request(indirect_set_value_command.set_parameter_value_command)
         if set_parameter_value_result.failed():
-            msg = f"Failed while restoring the saved value of '{node.name}.{parameter_name}'."
+            msg = (
+                f"Failed while restoring the saved value of '{node.name}.{parameter_name}'. "
+                f"{set_parameter_value_result.result_details}"
+            )
             raise FlowDeserializationError(msg)
 
     async def start_flow(
