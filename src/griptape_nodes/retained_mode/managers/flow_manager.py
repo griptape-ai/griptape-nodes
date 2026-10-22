@@ -210,7 +210,6 @@ _current_run_id: ContextVar[str | None] = ContextVar("current_run_id", default=N
 
 @dataclass
 class _RunInProgress:
-    session: str
     run_id: str
     # True until the request that started the run returns. Until then its machine may not have started,
     # so nothing running does not yet mean the run is over.
@@ -4713,10 +4712,10 @@ class FlowManager(EngineScoped):
         """
         if self._is_inside_run_in_progress():
             return await start()
-        run = _RunInProgress(session=self.engine.get_session_id() or "local", run_id=str(uuid4()))
+        run = _RunInProgress(run_id=str(uuid4()))
         self._waiting_run_flows[run.run_id] = flow_name
         try:
-            await self._run_queue.acquire(run.session, run.run_id)
+            await self._run_queue.acquire(run.run_id)
         finally:
             del self._waiting_run_flows[run.run_id]
         self._run_in_progress = run
@@ -4728,7 +4727,7 @@ class FlowManager(EngineScoped):
             run.starting = False
             self._release_machine_if_run_ended()
 
-    def _report_place_in_line(self, _session: str, run_id: str, position: int) -> None:
+    def _report_place_in_line(self, run_id: str, position: int) -> None:
         self.engine.event_manager.put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
@@ -4764,7 +4763,7 @@ class FlowManager(EngineScoped):
         if run is None or run.starting or self.check_for_existing_running_flow():
             return
         self._run_in_progress = None
-        self._run_queue.release(run.session, run.run_id)
+        self._run_queue.release(run.run_id)
 
     def check_for_existing_running_flow(self) -> bool:
         if self._global_control_flow_machine is None:
