@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
@@ -230,6 +231,51 @@ class TestCloseWorkflowState:
             await engine.close_workflow_state(engine.open_workflows.sole_workflow())
 
         broadcast.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_workflow_opened_while_the_cancel_is_awaited_is_left_alone(self, engine: Engine) -> None:
+        """Delete awaits the cancel, so the editor can clear and open another workflow meanwhile."""
+        first = push_unsaved_workflow(engine, "first")
+        cancel_calls: list[None] = []
+        opened: dict[str, WorkflowRuntime] = {}
+
+        async def clear_and_open_another() -> None:
+            cancel_calls.append(None)
+            # ClearAll below awaits this same cancel; only the first call interleaves.
+            if len(cancel_calls) > 1:
+                return
+            await asyncio.sleep(0)
+            await engine.ahandle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+            push_unsaved_workflow(engine, "second")
+            engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="canvas"))
+            opened["second"] = engine.open_workflows.sole_workflow()
+
+        with patch.object(
+            engine.flow_manager, "cancel_running_flow_before_teardown", side_effect=clear_and_open_another
+        ):
+            result = await engine.ahandle_request(DeleteWorkflowRequest(workflow_id=first.workflow_id))
+
+        assert result.succeeded()
+        assert engine.open_workflows.sole_workflow() is opened["second"]
+        assert engine.object_manager.has_object_with_name("canvas")
+
+    @pytest.mark.asyncio
+    async def test_a_workflow_closed_while_the_cancel_is_awaited_does_not_tell_the_workers(
+        self, engine: Engine
+    ) -> None:
+        push_unsaved_workflow(engine)
+        runtime = engine.open_workflows.sole_workflow()
+
+        async def close_meanwhile() -> None:
+            engine.context_manager.pop_workflow()
+
+        with (
+            patch.object(engine.flow_manager, "cancel_running_flow_before_teardown", side_effect=close_meanwhile),
+            patch.object(engine.worker_manager, "broadcast_local_object_teardown", AsyncMock()) as broadcast,
+        ):
+            await engine.close_workflow_state(runtime)
+
+        broadcast.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_refuses_a_workflow_that_is_not_open(self, engine: Engine) -> None:

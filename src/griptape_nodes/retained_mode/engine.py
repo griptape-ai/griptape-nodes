@@ -574,6 +574,12 @@ class Engine:
             raise OpenWorkflowError(msg)
 
         await self._flow_manager.cancel_running_flow_before_teardown()
+        if self._open_workflows.sole_workflow_or_none() is not workflow:
+            # Another request closed the workflow while the cancel was awaited, and may have opened
+            # the next one. Tear nothing down. Skip the worker broadcast too: it would release objects
+            # the workers may now hold for the next workflow. A ClearAll that closed it told them already.
+            logger.debug("The workflow being closed was closed by another request while its run was cancelled.")
+            return
         try:
             while self._context_manager.has_current_workflow():
                 self._clear_top_workflow_entry()
