@@ -280,18 +280,18 @@ def get_post_dispatch_hooks(self) -> list[tuple[type[RequestPayload], Callable]]
 Returns `(request_type, callback)` pairs the engine registers on your behalf, and
 deregisters when your library unloads. After the engine's own handler for that request
 type produces a result, your callback is invoked with `(request, result)`. This is how a
-library runs its own step when something happens in the engine — appending to an audit
-log, posting to a chat channel, kicking off an export — for a request type it does not
+library runs its own step, such as appending to an audit log, posting to a chat channel,
+or kicking off an export, when the engine handles a request type the library does not
 own.
 
 It is the mirror image of [`get_request_handlers`](#get_request_handlers), and the
 difference is ownership:
 
-|                         | `get_request_handlers`         | `get_post_dispatch_hooks`                           |
-| ----------------------- | ------------------------------ | --------------------------------------------------- |
-| Claims the request type | Yes — one handler engine-wide  | No — any number of libraries may hook the same type |
-| When it runs            | *Instead of* an engine handler | *After* the engine's handler produced a result      |
-| Can change the outcome  | It **is** the outcome          | No, notification only                               |
+|                         | `get_request_handlers`         | `get_post_dispatch_hooks`                          |
+| ----------------------- | ------------------------------ | -------------------------------------------------- |
+| Claims the request type | Yes, one handler engine-wide   | No, any number of libraries may hook the same type |
+| When it runs            | *Instead of* an engine handler | *After* the engine's handler produced a result     |
+| Can change the outcome  | It **is** the outcome          | No, notification only                              |
 
 That is why you can hook `SaveWorkflowRequest`, which `WorkflowManager` already owns and
 which `get_request_handlers` would fail to claim.
@@ -319,8 +319,9 @@ Constraints on the mechanism:
     type to filter, as the example above does.
 - **Usually detached, sometimes not.** Whenever the engine has a live event loop the hook
     is scheduled as a detached task, so the result reaches the editor without waiting for
-    it. Some paths have no such loop — CLI commands, bootstrap workflow runs, worker
-    threads — and there the hook runs inline and **blocks the caller until it returns**.
+    it. Some paths, such as CLI commands, bootstrap workflow runs, and worker threads,
+    have no such loop, and there the hook runs inline and **blocks the caller until it
+    returns**.
     Keep hooks quick, or move slow work off-process, if they may fire on those paths.
 - **Exact type matching.** A hook registered for a request type fires for that exact type
     only, never for its subclasses.
@@ -330,7 +331,8 @@ Constraints on the mechanism:
     not a way to read them.
 - **Do not issue engine requests from a hook.** The engine's operation-depth and
     node-execution state is process-wide, so a request sent from a hook can perturb an
-    operation that is still in flight. Do external work — HTTP, file writes — instead.
+    operation that is still in flight. Do external work, such as HTTP calls or file
+    writes, instead.
 - **Registered per process.** Hooks are registered on the event manager of whichever
     process loads the library. A library whose nodes execute in a worker loads in both
     processes, so each copy observes only the requests its own process handles. See
@@ -338,10 +340,10 @@ Constraints on the mechanism:
 - **Not durable.** Hooks still in flight when the process exits are abandoned. Do not use
     them where delivery has to be guaranteed.
 
-A malformed pair — a callback that is not callable, or a key that is not a request type —
-is reported as a `PostDispatchHookRegistrationProblem` and stops the rest of the list from
-registering, leaving the library `FLAWED`. Pairs registered before the bad one stay
-active, and are still removed when the library unloads.
+A pair is malformed when its callback is not callable or its key is not a request type. A
+malformed pair is reported as a `PostDispatchHookRegistrationProblem` and stops the rest
+of the list from registering, leaving the library `FLAWED`. Pairs registered before the
+bad one stay active, and are still removed when the library unloads.
 
 ### `get_execution_event_listeners`
 
@@ -374,10 +376,10 @@ Rules for writing a listener:
 - **Exact type matching.** A listener for an event type hears that type only, never its
     subclasses.
 
-A malformed pair — a callback that is not callable, or a key that is not an execution event
-type — is reported as an `ExecutionEventListenerRegistrationProblem` and stops the rest of
-the list from registering, leaving the library `FLAWED`. Pairs registered before the bad
-one stay active, and are still removed when the library unloads.
+A pair is malformed when its callback is not callable or its key is not an execution event
+type. A malformed pair is reported as an `ExecutionEventListenerRegistrationProblem` and
+stops the rest of the list from registering, leaving the library `FLAWED`. Pairs
+registered before the bad one stay active, and are still removed when the library unloads.
 
 ### `get_app_event_listeners`
 
