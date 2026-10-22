@@ -42,6 +42,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
+from griptape_nodes.retained_mode.managers.machine_links import MachineNotFoundError
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.version_utils import engine_version
 
@@ -67,6 +68,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.managers.machine_links import EngineLinks
     from griptape_nodes.retained_mode.managers.manifest_manager import ManifestManager
     from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
     from griptape_nodes.retained_mode.managers.model_manager import ModelManager
@@ -256,6 +258,8 @@ class Engine:
         self._manifest_manager = ManifestManager(self._event_manager, engine=self)
         self._budget_manager = BudgetManager(self._event_manager, engine=self)
         self._diagnostics_manager = DiagnosticsManager(self._event_manager, engine=self)
+        # Attached by the app; None while this engine cannot reach engines on other machines.
+        self._engine_links: EngineLinks | None = None
 
         # Assign handlers now that these are created.
         self._event_manager.register_request_handlers(self)
@@ -545,6 +549,30 @@ class Engine:
 
     def get_engine_id(self) -> str | None:
         return self._engine_identity_manager.active_engine_id
+
+    @property
+    def can_reach_other_engines(self) -> bool:
+        """Whether the app gave this engine a way to reach engines on other machines."""
+        return self._engine_links is not None
+
+    def attach_engine_links(self, engine_links: EngineLinks) -> None:
+        """Give this engine the app's transport to other engines. The app attaches it at startup."""
+        self._engine_links = engine_links
+        engine_links.on_link_lost(self._worker_manager.on_engine_lost)
+
+    async def request(self, engine_id: str, request: RequestPayload, *, timeout_s: float | None) -> ResultPayload:
+        """Send `request` to the engine `engine_id`, wherever it runs, and return its result.
+
+        The app finds that engine and chooses how to reach it.
+
+        Raises:
+            MachineNotFoundError: The engine cannot be reached, did not answer within `timeout_s`,
+                or this engine has no way to reach other engines.
+        """
+        if self._engine_links is None:
+            msg = f"Attempted to reach engine {engine_id}. Failed because this engine has no connections to other machines."
+            raise MachineNotFoundError(msg)
+        return await self._engine_links.request(engine_id, request, timeout_s=timeout_s)
 
     def clear_current_workflow_data(self) -> None:  # noqa: C901
         """Tear down the active workflow: cancel running flows, delete its orphan flows, then pop it.

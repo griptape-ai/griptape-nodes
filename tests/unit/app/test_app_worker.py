@@ -35,6 +35,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     GetParameterValueResultSuccess,
 )
+from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.managers.machine_links import (
     DISTRIBUTED_EXECUTION_SCHEMA_VERSION,
     MachineNotFoundError,
@@ -52,7 +53,7 @@ from griptape_nodes.utils.version_utils import engine_version
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from griptape_nodes.retained_mode.events.base_events import RequestPayload
+    from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
 
 _SESSION = "sess-abc"
 _ENGINE = "eng-xyz"
@@ -114,6 +115,8 @@ def worker_manager() -> WorkerManager:
     # Spawn awaits the library's execution environment before starting the process; a bare
     # MagicMock is not awaitable.
     gtn.library_manager.wait_for_execution_env = AsyncMock()
+    # No transport to other engines until a test attaches one.
+    gtn.can_reach_other_engines = False
     wm = WorkerManager(engine=gtn, event_manager=MagicMock())
     wm.attach_transport(
         send_message=AsyncMock(),
@@ -2410,11 +2413,12 @@ _ARTIST_ENGINE = "artist-engine-id"
 _ARTIST_SESSION = "artist-sess"
 
 
-class _FakeMachineLinks:
-    """An in-process `MachineLinks` whose other engine answers like a machine that runs workers.
+class _FakeEngineLinks:
+    """An in-process `EngineLinks` whose other engine answers like a machine that runs workers.
 
     Each request succeeds unless `refuse` names its type, in which case it fails with that reason.
-    `answers` queues raw results to return, per request type, ahead of the default answer.
+    `answers` queues results to return, per request type, ahead of the default answer, in the wire
+    shape (`result_type` and `result`), read back into payloads as the app transport does.
     """
 
     def __init__(self, *, refuse: dict[str, str] | None = None) -> None:
@@ -2424,12 +2428,9 @@ class _FakeMachineLinks:
         self.not_found: str | None = None
         self.blocked: dict[str, asyncio.Event] = {}
         self.arrived: dict[str, asyncio.Event] = {}
-        self.reached: dict[str, str] = {}
-        self.relayed: dict[str, str] = {}
-        self.forgotten: list[str] = []
         self.link_lost: Callable[[str], Awaitable[None]] | None = None
 
-    async def request(self, engine_id: str, request: RequestPayload, *, timeout_s: float | None) -> dict:
+    async def request(self, engine_id: str, request: RequestPayload, *, timeout_s: float | None) -> ResultPayload:
         self.sent.append((engine_id, request, timeout_s))
         if self.not_found is not None:
             raise MachineNotFoundError(self.not_found)
@@ -2439,27 +2440,18 @@ class _FakeMachineLinks:
             await self.blocked[request_type].wait()
         queued = self.answers.get(request_type)
         if queued:
-            return queued.pop(0)
+            return _read_back(queued.pop(0))
         if request_type in self.refuse:
-            return {
-                "result_type": request_type.replace("Request", "ResultFailure"),
-                "result": {"result_details": self.refuse[request_type]},
-            }
+            return _read_back(
+                {
+                    "result_type": request_type.replace("Request", "ResultFailure"),
+                    "result": {"result_details": self.refuse[request_type]},
+                }
+            )
         result: dict[str, object] = {"result_details": "ok"}
         if request_type == "RegisterSessionRequest":
             result["engine_id"] = _MACHINE
-        return {"result_type": request_type.replace("Request", "ResultSuccess"), "result": result}
-
-    async def reach(self, worker_engine_id: str, *, via: str) -> None:
-        self.reached[worker_engine_id] = via
-
-    async def relay(self, worker_engine_id: str, *, session_id: str) -> None:
-        self.relayed[worker_engine_id] = session_id
-
-    async def forget(self, worker_engine_id: str) -> None:
-        self.reached.pop(worker_engine_id, None)
-        self.relayed.pop(worker_engine_id, None)
-        self.forgotten.append(worker_engine_id)
+        return _read_back({"result_type": request_type.replace("Request", "ResultSuccess"), "result": result})
 
     def on_link_lost(self, callback: Callable[[str], Awaitable[None]]) -> None:
         self.link_lost = callback
@@ -2469,6 +2461,13 @@ class _FakeMachineLinks:
 
     def sent_of(self, request_type: type[RequestPayload]) -> list[RequestPayload]:
         return [request for _engine_id, request, _timeout_s in self.sent if isinstance(request, request_type)]
+
+
+def _read_back(raw: dict) -> ResultPayload:
+    """A result in the wire shape, read back into its payload type."""
+    result_type = PayloadRegistry.get_type(raw["result_type"])
+    assert result_type is not None, raw["result_type"]
+    return cast("ResultPayload", converters.engine.structure(raw["result"], result_type))
 
 
 def _assign_libraries(worker_manager: WorkerManager, libraries: dict[str, str]) -> None:
@@ -2483,15 +2482,19 @@ def _assign_libraries(worker_manager: WorkerManager, libraries: dict[str, str]) 
     worker_manager.engine.config_manager.get_config_value.side_effect = get_config_value  # type: ignore[union-attr]
 
 
-def _machine(worker_manager: WorkerManager, *, refuse: dict[str, str] | None = None) -> _FakeMachineLinks:
+def _machine(worker_manager: WorkerManager, *, refuse: dict[str, str] | None = None) -> _FakeEngineLinks:
     """Assign `_LIBRARY` to `_MACHINE` and attach links whose machine answers, refusing what `refuse` names."""
     _assign_libraries(worker_manager, {_LIBRARY: _MACHINE})
-    worker_manager.engine.secrets_manager.get_secret.return_value = _LICENSE  # type: ignore[union-attr]
-    worker_manager.engine.library_manager.get_library_info_by_library_name.return_value = MagicMock(  # type: ignore[union-attr]
+    engine = worker_manager.engine
+    engine.secrets_manager.get_secret.return_value = _LICENSE  # type: ignore[union-attr]
+    engine.library_manager.get_library_info_by_library_name.return_value = MagicMock(  # type: ignore[union-attr]
         library_version="1.0.0"
     )
-    links = _FakeMachineLinks(refuse=refuse)
-    worker_manager.attach_machine_links(links)
+    links = _FakeEngineLinks(refuse=refuse)
+    # As Engine.attach_engine_links does: requests go through the links, and a lost link reaches here.
+    engine.can_reach_other_engines = True  # type: ignore[misc]
+    engine.request = links.request  # type: ignore[method-assign]
+    links.on_link_lost(worker_manager.on_engine_lost)
     return links
 
 
@@ -2501,7 +2504,7 @@ async def _start_on_machine(worker_manager: WorkerManager, library_name: str = _
         await worker_manager._requested_spawns[library_name]
 
 
-def _started_worker_id(links: _FakeMachineLinks) -> str:
+def _started_worker_id(links: _FakeEngineLinks) -> str:
     """The engine ID the last StartWorkerRequest named."""
     start = cast("worker_events.StartWorkerRequest", links.sent_of(worker_events.StartWorkerRequest)[-1])
     return cast("str", start.worker_engine_id)
@@ -2542,8 +2545,7 @@ class TestStartingAWorkerOnAnotherMachine:
         assert start[0] == _MACHINE
         assert isinstance(start[1], worker_events.StartWorkerRequest)
         assert (start[1].session_id, start[1].engine_id) == (_SESSION, _ENGINE)
-        worker_engine_id = _started_worker_id(links)
-        assert links.reached == {worker_engine_id: _MACHINE}
+        assert _started_worker_id(links) in worker_manager._remote_starts
         assert {timeout_s for _engine_id, _request, timeout_s in links.sent} == {60.0}
         assert worker_manager.worker_unavailable_reason(_LIBRARY) is None
 
@@ -2612,7 +2614,7 @@ class TestStartingAWorkerOnAnotherMachine:
     async def test_a_refused_start_makes_the_library_unavailable_and_forgets_the_worker(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager, refuse={"StartWorkerRequest": "no room"})
+        _machine(worker_manager, refuse={"StartWorkerRequest": "no room"})
 
         await _start_on_machine(worker_manager)
 
@@ -2620,7 +2622,6 @@ class TestStartingAWorkerOnAnotherMachine:
         assert reason is not None
         assert "no room" in reason
         assert worker_manager._remote_starts == {}
-        assert links.forgotten == [_started_worker_id(links)]
         assert not worker_manager.is_worker_running_or_starting(_LIBRARY)
 
     @pytest.mark.asyncio
@@ -2649,7 +2650,6 @@ class TestStartingAWorkerOnAnotherMachine:
 
         assert worker_manager.worker_unavailable_reason(_LIBRARY) == "gpu-01 did not answer within 60 seconds."
         assert worker_manager._remote_starts == {}
-        assert links.reached == {}
 
     @pytest.mark.asyncio
     async def test_a_machine_that_answers_as_another_engine_is_refused_naming_it(
@@ -2657,7 +2657,10 @@ class TestStartingAWorkerOnAnotherMachine:
     ) -> None:
         links = _machine(worker_manager)
         links.answers["RegisterSessionRequest"] = [
-            {"result_type": "RegisterSessionResultSuccess", "result": {"engine_id": "someone-else"}}
+            {
+                "result_type": "RegisterSessionResultSuccess",
+                "result": {"engine_id": "someone-else", "result_details": "ok"},
+            }
         ]
 
         await _start_on_machine(worker_manager)
@@ -2724,21 +2727,17 @@ class TestStartingAWorkerOnAnotherMachine:
             worker_engine_id=worker_engine_id, engine_id=_ENGINE, session_id=_SESSION
         )
         assert worker_manager._remote_starts == {}
-        assert worker_engine_id in links.forgotten
-        assert links.reached == {}
 
     @pytest.mark.asyncio
     async def test_a_lost_link_settles_the_starts_sent_to_that_machine(self, worker_manager: WorkerManager) -> None:
         """Otherwise a start the machine accepted waits out the library load timeout for a worker that never comes."""
         links = _machine(worker_manager)
         await _start_on_machine(worker_manager)
-        worker_engine_id = _started_worker_id(links)
         assert links.link_lost is not None
 
         await links.link_lost(_MACHINE)
 
         assert worker_manager._remote_starts == {}
-        assert worker_engine_id in links.forgotten
         reason = worker_manager.worker_unavailable_reason(_LIBRARY)
         assert reason is not None
         assert _MACHINE in reason
@@ -2797,23 +2796,6 @@ class TestARemoteWorkerRegisters:
         assert worker_manager._workers == {}
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("leaves", ["unregisters", "is evicted"])
-    async def test_its_traffic_is_forgotten_once_it_leaves(self, worker_manager: WorkerManager, leaves: str) -> None:
-        links = _machine(worker_manager)
-        worker_manager._workers[_ENGINE] = WorkerRegistration(
-            request_topic=_WORKER_REQUEST_TOPIC, worker_key=_LIBRARY, machine=_MACHINE
-        )
-
-        if leaves == "unregisters":
-            await worker_manager.handle_unregister_worker_request(
-                worker_events.UnregisterWorkerRequest(worker_engine_id=_ENGINE)
-            )
-        else:
-            await worker_manager.evict_worker(_ENGINE)
-
-        assert links.forgotten == [_ENGINE]
-
-    @pytest.mark.asyncio
     async def test_an_evicted_worker_is_stopped_on_its_machine(self, worker_manager: WorkerManager) -> None:
         """A hung worker cannot shut itself down, so only its machine can free what it holds."""
         links = _machine(worker_manager)
@@ -2828,26 +2810,16 @@ class TestARemoteWorkerRegisters:
         assert cast("worker_events.StopWorkerRequest", stop).worker_engine_id == _ENGINE
 
     @pytest.mark.asyncio
-    async def test_a_local_worker_leaving_forgets_nothing_on_the_links(self, worker_manager: WorkerManager) -> None:
-        links = _machine(worker_manager)
-        worker_manager._workers[_ENGINE] = WorkerRegistration(request_topic=_WORKER_REQUEST_TOPIC, worker_key="Lib")
-
-        await worker_manager.evict_worker(_ENGINE)
-
-        assert links.forgotten == []
-
-    @pytest.mark.asyncio
     async def test_a_reset_forgets_remote_workers_and_starts(self, worker_manager: WorkerManager) -> None:
-        links = _machine(worker_manager)
+        _machine(worker_manager)
         await _start_on_machine(worker_manager)
-        starting = _started_worker_id(links)
         worker_manager._workers[_ENGINE] = WorkerRegistration(
             request_topic=_WORKER_REQUEST_TOPIC, worker_key="Other", machine=_MACHINE
         )
 
         await worker_manager.reset_workers()
 
-        assert sorted(links.forgotten) == sorted([starting, _ENGINE])
+        assert worker_manager._workers == {}
         assert worker_manager._remote_starts == {}
         assert not worker_manager.is_worker_running_or_starting(_LIBRARY)
 
@@ -2882,12 +2854,11 @@ class TestARemoteWorkerExits:
         assert reason is not None
         assert "exit code 3" in reason
         assert _MACHINE in reason
-        assert worker_engine_id in links.forgotten
         assert not worker_manager.is_worker_running_or_starting(_LIBRARY)
 
     @pytest.mark.asyncio
     async def test_a_registered_worker_that_exits_is_removed_at_once(self, worker_manager: WorkerManager) -> None:
-        links = _machine(worker_manager)
+        _machine(worker_manager)
         worker_manager._workers[_ENGINE] = WorkerRegistration(
             request_topic=_WORKER_REQUEST_TOPIC, worker_key=_LIBRARY, machine=_MACHINE
         )
@@ -2899,7 +2870,6 @@ class TestARemoteWorkerExits:
         assert _ENGINE not in worker_manager._workers
         assert isinstance(pending.exception(), worker_events.WorkerGoneError)
         worker_manager._tx.unsubscribe_from_topic.assert_awaited_once_with(_WORKER_RESPONSE_TOPIC)  # type: ignore[union-attr]
-        assert links.forgotten == [_ENGINE]
         assert worker_manager.worker_unavailable_reason(_LIBRARY) is not None
 
     @pytest.mark.asyncio
@@ -2924,10 +2894,13 @@ class TestARemoteWorkerExits:
         worker_engine_id = _started_worker_id(links)
         await worker_manager.handle_worker_exited_request(_exited(worker_engine_id, "exited"))  # type: ignore[arg-type]
 
+        reason = worker_manager.worker_unavailable_reason(_LIBRARY)
+
         result = await worker_manager.handle_worker_exited_request(_exited(worker_engine_id, "exited"))  # type: ignore[arg-type]
 
         assert isinstance(result, worker_events.WorkerExitedResultSuccess)
-        assert links.forgotten == [worker_engine_id]
+        assert "nothing to record" in str(result.result_details)
+        assert worker_manager.worker_unavailable_reason(_LIBRARY) == reason
 
     @pytest.mark.asyncio
     async def test_an_exit_for_another_session_is_refused(self, worker_manager: WorkerManager) -> None:
@@ -3020,22 +2993,17 @@ class TestServingAnotherMachinesSession:
         assert "not installed" in result.refused_libraries[_LIBRARY]
 
     @pytest.mark.asyncio
-    async def test_the_worker_joins_the_session_under_its_license_and_id_relayed_first(
-        self, worker_manager: WorkerManager
-    ) -> None:
-        links = _machine(worker_manager)
+    async def test_the_worker_joins_the_session_under_its_license_and_id(self, worker_manager: WorkerManager) -> None:
+        _machine(worker_manager)
         _register_session(worker_manager)
-        relayed_at_spawn: dict[str, str] = {}
         spawned: dict[str, object] = {}
 
         async def record_spawn(args: list[str], worker_key: str, **kwargs: object) -> None:
-            relayed_at_spawn.update(links.relayed)
             spawned.update(kwargs, args=args, worker_key=worker_key)
 
         with patch.object(worker_manager, "spawn_worker", side_effect=record_spawn):
             await worker_manager.handle_start_worker_request(_start_for_artist())  # type: ignore[arg-type]
 
-        assert relayed_at_spawn == {"w1": _ARTIST_SESSION}
         assert spawned["worker_key"] == f"{_ARTIST_SESSION}/{_LIBRARY}"
         assert spawned["worker_engine_id"] == "w1"
         args = cast("list[str]", spawned["args"])
@@ -3117,18 +3085,14 @@ class TestServingAnotherMachinesSession:
         spawn.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_a_spawn_that_produced_no_worker_fails_and_stops_relaying_at_once(
-        self, worker_manager: WorkerManager
-    ) -> None:
-        links = _machine(worker_manager)
+    async def test_a_spawn_that_produced_no_worker_fails_and_forgets_it(self, worker_manager: WorkerManager) -> None:
+        _machine(worker_manager)
         _register_session(worker_manager)
 
         with patch.object(worker_manager, "spawn_worker", new=AsyncMock()):
             result = await worker_manager.handle_start_worker_request(_start_for_artist())  # type: ignore[arg-type]
 
         assert isinstance(result, worker_events.StartWorkerResultFailure)
-        assert links.relayed == {}
-        assert links.forgotten == ["w1"]
         assert worker_manager._hosted_workers == {}
 
     @pytest.mark.asyncio
@@ -3146,7 +3110,6 @@ class TestServingAnotherMachinesSession:
             worker_engine_id="w1", engine_id=_ARTIST_ENGINE, session_id=_ARTIST_SESSION, exit_code=7, reason="exited"
         )
         assert links.sent[-1][0] == _ARTIST_ENGINE
-        assert links.forgotten == ["w1"]
         assert f"{_ARTIST_SESSION}/{_LIBRARY}" not in worker_manager._managed_worker_processes
         assert worker_manager._hosted_workers == {}
 

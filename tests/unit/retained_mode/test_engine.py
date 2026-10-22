@@ -23,6 +23,7 @@ from griptape_nodes.retained_mode.engine import (
 from griptape_nodes.retained_mode.events.base_events import ResultPayloadFailure
 from griptape_nodes.retained_mode.events.secrets_events import SetSecretValueRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.machine_links import MachineNotFoundError
 
 
 def _engine_scoped_children(path: str, value: object) -> Iterator[tuple[str, EngineScoped]]:
@@ -330,3 +331,43 @@ class TestFailedRequestLogging:
         assert "req-42" in record.getMessage()
         assert record.exc_info is not None
         assert self.SECRET_VALUE not in caplog.text
+
+
+class _Links:
+    """Answers every request with a fixed result, and records the lost-link callback it is given."""
+
+    def __init__(self) -> None:
+        self.asked: list[tuple[str, object, float | None]] = []
+        self.link_lost: object = None
+
+    async def request(self, engine_id: str, request: object, *, timeout_s: float | None) -> object:
+        self.asked.append((engine_id, request, timeout_s))
+        return ResultPayloadFailure(result_details="answered")
+
+    def on_link_lost(self, callback: object) -> None:
+        self.link_lost = callback
+
+
+class TestRequestingAnotherEngine:
+    @pytest.mark.asyncio
+    async def test_without_links_a_request_fails_saying_so(self) -> None:
+        engine = Engine()
+
+        with pytest.raises(MachineNotFoundError, match="no connections to other machines"):
+            await engine.request("gpu-01", SetSecretValueRequest(key="k", value="v"), timeout_s=1.0)
+
+        assert not engine.can_reach_other_engines
+
+    @pytest.mark.asyncio
+    async def test_a_request_goes_through_the_attached_links(self) -> None:
+        engine = Engine()
+        links = _Links()
+        engine.attach_engine_links(links)  # type: ignore[arg-type]
+        request = SetSecretValueRequest(key="k", value="v")
+
+        result = await engine.request("gpu-01", request, timeout_s=1.0)
+
+        assert isinstance(result, ResultPayloadFailure)
+        assert links.asked == [("gpu-01", request, 1.0)]
+        assert links.link_lost == engine.worker_manager.on_engine_lost
+        assert engine.can_reach_other_engines
