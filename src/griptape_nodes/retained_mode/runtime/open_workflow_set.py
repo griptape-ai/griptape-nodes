@@ -63,10 +63,6 @@ class OpenWorkflowSet:
             raise OpenWorkflowError(msg)
         return workflow
 
-    def find(self, workflow_id: str) -> WorkflowRuntime | None:
-        """The runtime of the open workflow with this id, or None."""
-        return self._by_id.get(workflow_id)
-
     def sole_workflow(self) -> WorkflowRuntime:
         """The one open workflow, for work that needs a workflow but is not handed one.
 

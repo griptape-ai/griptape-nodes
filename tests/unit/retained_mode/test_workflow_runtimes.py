@@ -53,7 +53,6 @@ class TestOpenWorkflowSet:
         assert workflow.workflow_id == "abc"
         assert len(workflow.objects) == 0
         assert workflows.get("abc") is workflow
-        assert workflows.find("abc") is workflow
 
     def test_opening_the_same_id_twice_is_refused(self) -> None:
         workflows = OpenWorkflowSet()
@@ -76,7 +75,6 @@ class TestOpenWorkflowSet:
 
         with pytest.raises(OpenWorkflowError, match="not open"):
             workflows.get("abc")
-        assert workflows.find("abc") is None
 
     def test_close_forgets_the_workflow(self) -> None:
         workflows = OpenWorkflowSet()
@@ -84,8 +82,9 @@ class TestOpenWorkflowSet:
 
         workflows.close(workflow)
 
-        assert workflows.find("abc") is None
         assert workflows.sole_workflow_or_none() is None
+        with pytest.raises(OpenWorkflowError, match="not open"):
+            workflows.get("abc")
 
     def test_close_refuses_a_runtime_that_is_not_open(self) -> None:
         workflows = OpenWorkflowSet()
@@ -125,7 +124,6 @@ class TestOpenWorkflowSet:
     def test_reads_never_open_a_workflow(self) -> None:
         workflows = OpenWorkflowSet()
 
-        workflows.find("abc")
         workflows.sole_workflow_or_none()
         with pytest.raises(OpenWorkflowError):
             workflows.get("abc")
@@ -150,8 +148,9 @@ class TestRuntimeLifecycle:
         inner = push_unsaved_workflow(engine, "inner")
 
         assert engine.open_workflows.sole_workflow() is runtime
-        assert engine.open_workflows.find(outer.workflow_id) is runtime
-        assert engine.open_workflows.find(inner.workflow_id) is None
+        assert engine.open_workflows.get(outer.workflow_id) is runtime
+        with pytest.raises(OpenWorkflowError, match="not open"):
+            engine.open_workflows.get(inner.workflow_id)
 
     def test_popping_a_nested_entry_keeps_the_workflow_open(self, engine: Engine) -> None:
         push_unsaved_workflow(engine, "outer")

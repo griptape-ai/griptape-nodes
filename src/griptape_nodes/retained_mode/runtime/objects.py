@@ -14,23 +14,23 @@ class WorkflowObjects:
     """The flows and nodes of one open workflow, by name."""
 
     def __init__(self) -> None:
-        self.name_to_objects: dict[str, object] = {}
+        self._name_to_objects: dict[str, object] = {}
 
     def __len__(self) -> int:
-        return len(self.name_to_objects)
+        return len(self._name_to_objects)
 
     def add(self, name: str, obj: object) -> None:
-        if name in self.name_to_objects:
+        if name in self._name_to_objects:
             msg = f"Attempted to add an object with name '{name}' but an object with that name already exists. The Object Manager is sacrosanct in this regard."
             raise ValueError(msg)
-        self.name_to_objects[name] = obj
+        self._name_to_objects[name] = obj
 
     def get(self, name: str) -> object | None:
         """The object named `name`, or None."""
-        return self.name_to_objects.get(name)
+        return self._name_to_objects.get(name)
 
     def has(self, name: str) -> bool:
-        return name in self.name_to_objects
+        return name in self._name_to_objects
 
     def remove(self, name: str) -> object:
         """Forget the object named `name` and return it.
@@ -38,7 +38,7 @@ class WorkflowObjects:
         Raises:
             KeyError: No object has that name.
         """
-        return self.name_to_objects.pop(name)
+        return self._name_to_objects.pop(name)
 
     def rename(self, old_name: str, new_name: str) -> None:
         """Keep the object named `old_name` under `new_name` instead.
@@ -46,7 +46,7 @@ class WorkflowObjects:
         Raises:
             KeyError: No object is named `old_name`.
         """
-        self.name_to_objects[new_name] = self.name_to_objects.pop(old_name)
+        self._name_to_objects[new_name] = self._name_to_objects.pop(old_name)
 
     def get_filtered_subset[T](
         self,
@@ -68,7 +68,7 @@ class WorkflowObjects:
         if name and isinstance(name, str):
             name = re.compile(name)
 
-        for key, value in self.name_to_objects.items():
+        for key, value in self._name_to_objects.items():
             # Check key pattern if provided
             key_match = True
             if name:
@@ -87,7 +87,7 @@ class WorkflowObjects:
 
     def get_as_type[T](self, name: str, cast_type: type[T]) -> T | None:
         """The object named `name` if there is one and it is a `cast_type`, else None."""
-        obj = self.name_to_objects.get(name)
+        obj = self._name_to_objects.get(name)
         if obj is not None and isinstance(obj, cast_type):
             return obj
         return None
@@ -108,7 +108,7 @@ class WorkflowObjects:
         if requested_name is None:
             # 1. If no name was requested, use the type name + first free integer.
             incremental_prefix = f"{type_name}_"
-        elif requested_name not in self.name_to_objects:
+        elif requested_name not in self._name_to_objects:
             # 2. If a name was requested and no collision, use it as-is.
             name_to_return = requested_name
         else:
@@ -129,7 +129,7 @@ class WorkflowObjects:
             done = False
             while not done:
                 test_name = f"{incremental_prefix}{curr_idx}"
-                if test_name not in self.name_to_objects:
+                if test_name not in self._name_to_objects:
                     # Found it.
                     name_to_return = test_name
                     done = True

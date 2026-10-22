@@ -31,8 +31,3 @@ class WorkflowVariables:
             layer = VariableLayer()
             self.flow_layers[flow_name] = layer
         return layer
-
-    def clear(self) -> None:
-        self.flow_layers.clear()
-        self.global_layer.clear()
-        self.substitution_enabled = True
