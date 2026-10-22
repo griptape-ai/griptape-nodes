@@ -42,12 +42,19 @@ class DatePicker(Trait):
         return {"include_time": self.include_time, "min": self.min, "max": self.max}
 
     def apply_state(self, state: dict[str, Any]) -> None:
+        previous = (self.include_time, self.min, self.max)
         if "include_time" in state:
             self.include_time = state["include_time"]
         if "min" in state:
             self.min = state["min"]
         if "max" in state:
             self.max = state["max"]
+        # Reject a state the picker can't validate against, so it can't leave every value failing.
+        try:
+            self._check_options()
+        except (TypeError, ValueError):
+            self.include_time, self.min, self.max = previous
+            raise
 
     @classmethod
     def state_from_ui_options(cls, ui_options: dict[str, Any]) -> dict[str, Any]:
@@ -116,6 +123,16 @@ class DatePicker(Trait):
             )
             raise ValueError(msg)
         return parsed
+
+    def _check_options(self) -> None:
+        if not isinstance(self.include_time, bool):
+            msg = (
+                f"Attempted to set the DatePicker's include_time to {self.include_time!r}. "
+                "Failed because it must be true or false."
+            )
+            raise TypeError(msg)
+        self._parse_bound(self.min, "min")
+        self._parse_bound(self.max, "max")
 
     def _format(self) -> str:
         if self.include_time:

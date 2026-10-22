@@ -35,6 +35,41 @@ class TestUiOptions:
 
         assert (trait.include_time, trait.max) == (True, "2026-12-31T23:59")
 
+    def test_an_editor_write_turning_time_off_with_a_date_time_bound_is_refused(self) -> None:
+        trait = DatePicker(include_time=True, max="2026-12-31T23:59")
+        parameter = _parameter(trait)
+
+        parameter.ui_options = {"date_picker": {"include_time": False}}
+
+        assert (trait.include_time, trait.max) == (True, "2026-12-31T23:59")
+        _validate(trait, "2026-10-14T09:30")
+
+    def test_an_editor_write_with_a_malformed_bound_is_refused(self) -> None:
+        trait = DatePicker(min="2026-01-01")
+        parameter = _parameter(trait)
+
+        parameter.ui_options = {"date_picker": {"include_time": False, "min": "01/01/2026"}}
+
+        assert trait.min == "2026-01-01"
+        _validate(trait, "2026-10-14")
+
+    def test_apply_state_rejects_a_bound_that_does_not_parse(self) -> None:
+        trait = DatePicker(include_time=True, min="2026-01-01T00:00")
+
+        with pytest.raises(ValueError, match="min '2026-01-01T00:00'"):
+            trait.apply_state({"include_time": False})
+
+        assert (trait.include_time, trait.min) == (True, "2026-01-01T00:00")
+
+    @pytest.mark.parametrize("state", [{"min": 20260101}, {"include_time": "false"}])
+    def test_apply_state_rejects_values_of_the_wrong_type(self, state: dict[str, Any]) -> None:
+        trait = DatePicker(min="2026-01-01")
+
+        with pytest.raises(TypeError):
+            trait.apply_state(state)
+
+        assert (trait.include_time, trait.min) == (False, "2026-01-01")
+
     def test_state_round_trips_through_the_constructor(self) -> None:
         trait = DatePicker(include_time=True, min="2026-01-01T00:00")
 
