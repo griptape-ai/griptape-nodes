@@ -55,7 +55,6 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListNodeTypesInLibraryResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
-    NodeTypeParameterSpec,
     ParameterDescription,
     WidgetInfo,
 )
@@ -63,7 +62,11 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     NodeModuleImportProblem,
 )
-from griptape_nodes.retained_mode.managers.library.node_type_specs import NodeTypeSpecCache, build_parameter_spec
+from griptape_nodes.retained_mode.managers.library.node_type_specs import (
+    CompactNodeType,
+    NodeTypeSpecCache,
+    build_compact_node_type,
+)
 from griptape_nodes.retained_mode.request_handlers import handles
 
 if TYPE_CHECKING:
@@ -357,14 +360,16 @@ class LibraryCatalog(EngineScoped):
         details = f"Successfully described node type '{request.node_type}' in Library '{resolved.library_name}'."
 
         if request.compact:
-            parameter_specs = self._parameter_specs(resolved)
-            if isinstance(parameter_specs, _ParameterProbeFailure):
-                return self._described_with_metadata_only(resolved, parameter_specs, compact=True)
+            compact = self._compact_node_type(resolved)
+            if isinstance(compact, _ParameterProbeFailure):
+                return self._described_with_metadata_only(resolved, compact, compact=True)
+            # No metadata: listing the node types already gave it.
             return DescribeNodeTypeResultSuccess(
                 library=resolved.library_name,
                 node_type=request.node_type,
-                metadata=resolved.metadata,
-                parameter_specs=parameter_specs,
+                metadata=None,
+                parameter_specs=compact.parameter_specs,
+                exec_pins=compact.exec_pins,
                 result_details=details,
             )
 
@@ -528,20 +533,34 @@ class LibraryCatalog(EngineScoped):
     def _described_with_metadata_only(
         self, resolved: _ResolvedNodeType, failure: _ParameterProbeFailure, *, compact: bool
     ) -> DescribeNodeTypeResultSuccess:
-        """A description with library metadata only, for a node type whose parameters could not be read.
+        """A description without parameters, for a node type whose parameters could not be read.
 
-        Still a success: the library-level metadata is valid, and the WARNING entry tells callers why
-        the parameters are missing.
+        Still a success: the WARNING entry tells callers why the parameters are missing. A full
+        description keeps the library metadata; a compact one has none to begin with, so it is
+        empty `parameter_specs` with `exec_pins` None.
         """
-        parameter_specs = None
         if compact:
-            parameter_specs = []
+            return DescribeNodeTypeResultSuccess(
+                library=resolved.library_name,
+                node_type=resolved.node_type,
+                metadata=None,
+                parameter_specs=[],
+                result_details=ResultDetails(
+                    ResultDetail(
+                        level=logging.INFO,
+                        message=(
+                            f"Described node type '{resolved.node_type}' in Library '{resolved.library_name}' "
+                            "without its parameters."
+                        ),
+                    ),
+                    ResultDetail(level=logging.WARNING, message=failure.describe_warning),
+                ),
+            )
         return DescribeNodeTypeResultSuccess(
             library=resolved.library_name,
             node_type=resolved.node_type,
             metadata=resolved.metadata,
             parameters=[],
-            parameter_specs=parameter_specs,
             result_details=ResultDetails(
                 ResultDetail(
                     level=logging.INFO,
@@ -554,44 +573,42 @@ class LibraryCatalog(EngineScoped):
             ),
         )
 
-    def _parameter_specs(self, resolved: _ResolvedNodeType) -> list[NodeTypeParameterSpec] | _ParameterProbeFailure:
-        """Compact specs of a node type's parameters, from the cache when it holds them.
+    def _compact_node_type(self, resolved: _ResolvedNodeType) -> CompactNodeType | _ParameterProbeFailure:
+        """A node type's compact description, from the cache when it holds one.
 
         Returns a copy, so a caller changing a spec (a default value, say) cannot change what later
         requests receive.
         """
-        specs = self._node_type_specs.get(resolved.library_name, resolved.node_type)
-        if specs is None:
-            built = self._build_parameter_specs(resolved)
+        compact = self._node_type_specs.get(resolved.library_name, resolved.node_type)
+        if compact is None:
+            built = self._build_compact_node_type(resolved)
             if isinstance(built, _ParameterProbeFailure):
                 return built
-            specs = built
-        return copy.deepcopy(specs)
+            compact = built
+        return copy.deepcopy(compact)
 
-    def _build_parameter_specs(
-        self, resolved: _ResolvedNodeType
-    ) -> list[NodeTypeParameterSpec] | _ParameterProbeFailure:
-        """Probe a node type, reduce its parameters to compact specs, and keep them in the cache.
+    def _build_compact_node_type(self, resolved: _ResolvedNodeType) -> CompactNodeType | _ParameterProbeFailure:
+        """Probe a node type, reduce its parameters to a compact description, and keep it in the cache.
 
         Failures are not cached: the cause (a missing dependency, a failed network call, a missing
         API key) may be fixed without any library reloading.
         """
-        # Read before probing: specs built across a registration change are not kept.
+        # Read before probing: descriptions built across a registration change are not kept.
         generation = LibraryRegistry.get_generation()
         probe = self._probe_parameters(resolved)
         if isinstance(probe, _ParameterProbeFailure):
             return probe
 
-        # Reading a parameter runs library code (trait ui_options, for one), and the specs are copied
-        # out on every request, so a default that cannot be copied has to fail here, as a warning.
+        # Reading a parameter runs library code (trait ui_options, for one), and the description is
+        # copied out on every request, so a default that cannot be copied has to fail here, as a warning.
         try:
-            specs = copy.deepcopy([build_parameter_spec(param) for param in probe])
+            compact = copy.deepcopy(build_compact_node_type(probe))
         except Exception as err:
             spec_error = f"{type(err).__name__}: {err}"
             return _ParameterProbeFailure(describe_warning=f"Parameter read failed because: {spec_error}")
 
-        self._node_type_specs.put(resolved.library_name, resolved.node_type, specs, generation=generation)
-        return specs
+        self._node_type_specs.put(resolved.library_name, resolved.node_type, compact, generation=generation)
+        return compact
 
     def _resolve_node_type(
         self, node_type: str, library_name: str | None

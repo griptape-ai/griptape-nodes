@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path  # noqa: TC003 - read at runtime by the converter
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from griptape_nodes.node_library.library_registry import (
     LibraryMetadata,
@@ -18,9 +18,11 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.serialization.values import DisplayValue
+from griptape_nodes.serialization.values import DisplayValue, decode_value
 
 if TYPE_CHECKING:
+    from cattrs import Converter
+
     from griptape_nodes.exe_types.core_types import Parameter
 
     # Circular import: library_events -> library_manager -> library_events
@@ -287,20 +289,23 @@ class ParameterDescription:
 class NodeTypeParameterSpec:
     """Compact schema of one parameter on a node type, as a compact DescribeNodeTypeRequest returns it.
 
+    On the wire, a field at its default value is left out, so a client reads a missing field as:
+    `input_types` is `[type]`, `output_type` is `type`, `default` and `options` are None,
+    `multi_input` is False, and `note` is None.
+
     Args:
         name: Parameter name, used when wiring connections and setting values
         type: Canonical parameter type
         input_types: Accepted input types when used as an input
         output_type: Type produced when used as an output
         modes: Modes the parameter supports, any of "input", "property", "output"
-        default: Default value for the parameter (may be None)
+        default: Default value for the parameter (None when it has none)
         options: The choices a dropdown offers, or None when the parameter is not a dropdown.
             Choices a node builds from the machine it runs on (such as downloaded models) are the
             ones offered when the node type was described.
         multi_input: Whether the parameter is a list that takes one incoming connection per item
-        deprecated: Whether the parameter is kept only so older workflows still load. Its tooltip
-            names the replacement; new connections and values belong on that one instead.
-        note: The parameter's tooltip, cut to about 200 characters (None if it has no text tooltip)
+        note: The parameter's tooltip, cut to about 120 characters. None when it has no text
+            tooltip, or when the tooltip is short or only restates the parameter's name.
     """
 
     name: str
@@ -308,11 +313,46 @@ class NodeTypeParameterSpec:
     input_types: list[str]
     output_type: str
     modes: list[str]
-    default: DisplayValue
-    options: list[DisplayValue] | None
-    multi_input: bool
-    deprecated: bool
-    note: str | None
+    default: DisplayValue = None
+    options: list[DisplayValue] | None = None
+    multi_input: bool = False
+    note: str | None = None
+
+    # Leaves out fields at their default value; a heavy node type's specs shrink by half.
+    def _cattrs_unstructure(self, converter: Converter) -> dict[str, Any]:
+        data: dict[str, Any] = {"name": self.name, "type": self.type, "modes": list(self.modes)}
+        if self.input_types != [self.type]:
+            data["input_types"] = list(self.input_types)
+        if self.output_type != self.type:
+            data["output_type"] = self.output_type
+        if self.default is not None and self.default != "":
+            data["default"] = converter.unstructure(self.default, DisplayValue)
+        if self.options is not None:
+            data["options"] = [converter.unstructure(option, DisplayValue) for option in self.options]
+        if self.multi_input:
+            data["multi_input"] = True
+        if self.note is not None:
+            data["note"] = self.note
+        return data
+
+    @classmethod
+    def _cattrs_structure(cls, data: dict[str, Any], converter: Converter) -> NodeTypeParameterSpec:  # noqa: ARG003
+        # Values decode as the converter's DisplayValue hook decodes them.
+        param_type = data["type"]
+        options = data.get("options")
+        if options is not None:
+            options = [decode_value(option) for option in options]
+        return cls(
+            name=data["name"],
+            type=param_type,
+            input_types=list(data.get("input_types", [param_type])),
+            output_type=data.get("output_type", param_type),
+            modes=list(data["modes"]),
+            default=decode_value(data.get("default")),
+            options=options,
+            multi_input=data.get("multi_input", False),
+            note=data.get("note"),
+        )
 
 
 @dataclass
@@ -328,19 +368,22 @@ class DescribeNodeTypeRequest(RequestPayload):
     __init__ performs network or disk I/O will incur that cost here as well.
 
     To plan a workflow, send one compact request per node type in an EventRequestBatch. Compact
-    results leave out tooltips and ui_options, reduce each parameter to what wiring and setting
-    values needs, and are cached until a library is loaded, reloaded or unloaded, or a node type is
-    registered again, so describing a whole library is fast after the first time.
+    results carry only what wiring and setting values needs, and are cached until a library is
+    loaded, reloaded or unloaded, or a node type is registered again, so describing a whole library
+    is fast after the first time.
 
     Args:
         node_type: Name of the node type to describe
         library: Name of the library providing the node type. If omitted and exactly one
             library registers this node type, that library is used; otherwise the request fails.
-        compact: Return `parameter_specs` (types, modes, default, dropdown options, whether the
-            parameter takes several connections, whether it is deprecated, and a short note)
-            instead of full `parameters`. Leave False for full tooltips and ui_options, or to
-            re-read a node type whose dropdown choices depend on the machine (such as downloaded
-            models) after they changed.
+        compact: Return `parameter_specs` and `exec_pins` instead of `metadata` and full
+            `parameters`. Each spec is a parameter's name, type, modes, and, only where they say
+            something, its accepted input types, output type, default, dropdown options, whether it
+            takes one connection per item, and a short note. The standard `exec_in`/`exec_out`
+            control parameters become `exec_pins`, and deprecated parameters are left out. Leave
+            False for metadata, full tooltips, ui_options and deprecated parameters, or to re-read
+            a node type whose dropdown choices depend on the machine (such as downloaded models)
+            after they changed.
 
     Results: DescribeNodeTypeResultSuccess | DescribeNodeTypeResultFailure
     """
@@ -358,7 +401,9 @@ class DescribeNodeTypeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
     Args:
         library: Library that provided the node type
         node_type: Name of the node type
-        metadata: Library-level node metadata (category, description, display_name, tags, icon, color, group)
+        metadata: Library-level node metadata (category, description, display_name, tags, icon,
+            color, group). None when the request was compact, since listing the node types
+            (ListNodeTypesInLibraryRequest with include_metadata) already gives it.
         parameters: Parameter schemas in declaration order. Empty when the engine could not
             instantiate the probe node used to read parameter declarations (typically because the
             node's `__init__` performed I/O that failed). When that happens, the node-level
@@ -368,13 +413,17 @@ class DescribeNodeTypeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
         parameter_specs: Compact parameter schemas in declaration order when the request was
             compact, otherwise None. Empty, with the same WARNING, when the parameters could not
             be read.
+        exec_pins: When the request was compact, whether the node type has the standard
+            `exec_in` and `exec_out` control parameters, which `parameter_specs` then leaves out.
+            None when the request was not compact, or when the parameters could not be read.
     """
 
     library: str
     node_type: str
-    metadata: NodeMetadata
+    metadata: NodeMetadata | None
     parameters: list[ParameterDescription] = field(default_factory=list)
     parameter_specs: list[NodeTypeParameterSpec] | None = None
+    exec_pins: bool | None = None
 
 
 @dataclass

@@ -256,6 +256,12 @@ usually kept out of the build batch so its long timeout does not gate the rest:
    + GetParameterValueRequest("DisplayText_1", "text")            (2 calls)
 ```
 
+A compact result's `parameter_specs` lists only the fields that say something: a missing
+`input_types` means `[type]`, a missing `output_type` means `type`, and a missing `default`,
+`options`, `multi_input` or `note` means none. `exec_pins: true` means the node has the
+standard `exec_in` and `exec_out` control parameters, which the specs leave out but
+connections still name. Deprecated parameters are left out; their replacements are listed.
+
 Four round trips instead of thirteen. Walk the result arrays after each batch and
 verify every slot returned `ok: true` before moving on; per-slot failures don't
 abort the rest of the batch, so a typo in slot 4 still lets slots 5 and 6 run
