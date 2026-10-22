@@ -352,6 +352,30 @@ class _NodeInstantiationDeniedError(Exception):
     """
 
 
+@dataclass(frozen=True)
+class ResolveNodeSpec:
+    """A run of one node, from a `ResolveNodeRequest`."""
+
+    request: ResolveNodeRequest
+    flow_name: str
+    node_name: str
+
+    async def execute(self, engine: Engine) -> ResultPayload:
+        try:
+            node = engine.node_manager.get_node_by_name(self.node_name)
+        except ValueError as e:
+            return ResolveNodeResultFailure(
+                validation_exceptions=[e], result_details=f'Resolve failure. "{self.node_name}" does not exist. {e}'
+            )
+        flow = engine.object_manager.attempt_get_object_by_name_as_type(self.flow_name, ControlFlow)
+        if flow is None:
+            return self.failure(f'Failed to fetch parent flow for "{self.node_name}"')
+        return await engine.node_manager.execute_resolve_node(node, flow, debug_mode=self.request.debug_mode)
+
+    def failure(self, details: str) -> ResultPayload:
+        return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
+
+
 class NodeManager(EngineScoped):
     _name_to_parent_flow_name: dict[str, str]
 
@@ -3232,12 +3256,10 @@ class NodeManager(EngineScoped):
         flow_mgr = self.engine.flow_manager
         # A node run while another node's run is in progress joins that run, so the two run side by side.
         if flow_mgr.check_for_existing_running_flow() and flow_mgr.global_single_node_resolution:
-            return await self._resolve_node_run(node, flow, debug_mode=debug_mode)
-        return await flow_mgr.run_when_machine_is_free(
-            flow.name, lambda: self._resolve_node_run(node, flow, debug_mode=debug_mode)
-        )
+            return await self.execute_resolve_node(node, flow, debug_mode=debug_mode)
+        return await flow_mgr.start_run(ResolveNodeSpec(request=request, flow_name=flow.name, node_name=node.name))
 
-    async def _resolve_node_run(self, node: BaseNode, flow: ControlFlow, *, debug_mode: bool) -> ResultPayload:  # noqa: C901, PLR0911
+    async def execute_resolve_node(self, node: BaseNode, flow: ControlFlow, *, debug_mode: bool) -> ResultPayload:  # noqa: C901, PLR0911
         node_name = node.name
         flow_name = flow.name
         # Check for existing running flow

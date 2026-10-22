@@ -1,101 +1,88 @@
-"""The queue a machine keeps of the runs that use it, one run at a time.
+"""Runs, and the queue of runs waiting to start.
 
-A run is what one request starts: running a workflow, a subflow, or a single node. It takes the
-machine before it executes anything and gives it back when it ends; every other run waits, in the
-order it asked. The queue holds no transport and runs nothing itself: it only decides which run has
-the machine, and says where each waiting run is in line.
+A run is what one request starts: running a workflow, from a node, or a single node. The queue only
+holds the waiting runs, in the order they were submitted; `FlowManager` decides when each starts,
+drives it, and ends it.
 """
 
 from __future__ import annotations
 
-import asyncio
-import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from enum import StrEnum
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    import asyncio
+    import contextvars
+    from datetime import datetime
 
-logger = logging.getLogger("griptape_nodes")
+    from griptape_nodes.retained_mode.engine import Engine
+    from griptape_nodes.retained_mode.events.base_events import ResultPayload
+
+
+class RunState(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    # The request that started the run has returned, but the run goes on, as a debug run does at a pause.
+    PAUSED = "paused"
+    FINISHED = "finished"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class RunSpec(Protocol):
+    """What a run executes: the request that started it, with the flow it runs."""
+
+    @property
+    def flow_name(self) -> str: ...
+
+    async def execute(self, engine: Engine) -> ResultPayload:
+        """Execute the run, returning what its request returns."""
+        ...
+
+    def failure(self, details: str) -> ResultPayload:
+        """The failure its request returns for a run that did not execute."""
+        ...
 
 
 @dataclass
-class _WaitingRun:
+class Run:
     run_id: str
-    admitted: asyncio.Future[None]
-    # The place in line it was last told, 0 until it is told one.
+    spec: RunSpec
+    flow_name: str
+    queued_at: datetime
+    state: RunState
+    # What the run's request returns, set once the request is done.
+    outcome: asyncio.Future[ResultPayload]
+    # The submitter's context, so the run executes as if the request had run it directly.
+    context: contextvars.Context
+    # The place in line it was last reported at, 0 while it is not waiting.
     position: int = 0
 
 
-def _tell_no_one(_run_id: str, _position: int) -> None:
-    return
-
-
 class RunQueue:
-    """Gives the machine to one run at a time, first come first served."""
+    """The runs waiting to start, first submitted first."""
 
-    def __init__(self, on_position: Callable[[str, int], None] = _tell_no_one) -> None:
-        """Create an empty queue.
+    def __init__(self) -> None:
+        self._runs: list[Run] = []
 
-        Args:
-            on_position: Called with a waiting run's id and place in line, 1 being next, whenever
-                that place changes, and with 0 once the run stops waiting.
-        """
-        self._holder: str | None = None
-        self._waiting: list[_WaitingRun] = []
-        self._on_position = on_position
+    def enqueue(self, run: Run) -> None:
+        self._runs.append(run)
 
-    @property
-    def holder(self) -> str | None:
-        """The id of the run that has the machine, or None while it is free."""
-        return self._holder
+    def pop_next(self) -> Run | None:
+        """Remove and return the run that has waited longest, or None if none waits."""
+        if not self._runs:
+            return None
+        return self._runs.pop(0)
 
-    async def acquire(self, run_id: str) -> None:
-        """Return once the run has the machine, waiting behind every run that asked before it."""
-        if self._holder is None and not self._waiting:
-            self._hand_to(run_id)
-            return
-        waiting = _WaitingRun(run_id=run_id, admitted=asyncio.get_running_loop().create_future())
-        self._waiting.append(waiting)
-        self._report_positions()
-        try:
-            await waiting.admitted
-        except asyncio.CancelledError:
-            # The caller stopped waiting, perhaps just as the machine passed to it. Either way it will
-            # never release the machine, so it must not keep it or its place in line.
-            if waiting in self._waiting:
-                self._waiting.remove(waiting)
-                self._on_position(run_id, 0)
-                self._report_positions()
-            self.release(run_id)
-            raise
+    def remove(self, run_id: str) -> Run | None:
+        """Remove a waiting run, returning it, or None if it is not waiting."""
+        for run in self._runs:
+            if run.run_id == run_id:
+                self._runs.remove(run)
+                return run
+        return None
 
-    def release(self, run_id: str) -> None:
-        """Give the machine back after a run ends, to the run that has waited longest."""
-        if self._holder != run_id:
-            return
-        self._holder = None
-        self._advance()
-
-    def _advance(self) -> None:
-        while self._holder is None and self._waiting:
-            head = self._waiting.pop(0)
-            # A waiter whose wait was cancelled already left; the machine passes to the next one.
-            if head.admitted.done():
-                self._on_position(head.run_id, 0)
-                continue
-            self._hand_to(head.run_id)
-            head.admitted.set_result(None)
-            self._on_position(head.run_id, 0)
-        self._report_positions()
-
-    def _hand_to(self, run_id: str) -> None:
-        self._holder = run_id
-        logger.debug("Run %s has this machine.", run_id)
-
-    def _report_positions(self) -> None:
-        for index, waiting in enumerate(self._waiting):
-            position = index + 1
-            if position != waiting.position:
-                waiting.position = position
-                self._on_position(waiting.run_id, position)
+    def snapshot(self) -> list[Run]:
+        """The waiting runs, next first."""
+        return list(self._runs)

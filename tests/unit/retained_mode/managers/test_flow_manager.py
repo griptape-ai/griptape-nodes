@@ -4,7 +4,8 @@ import asyncio
 import itertools
 import json
 import tempfile
-from collections.abc import Generator
+from collections.abc import Awaitable, Callable, Generator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -25,6 +26,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowFromNodeResultFailure,
     StartFlowRequest,
     StartFlowResultFailure,
+    StartFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     TRANSIENT_KEY,
@@ -1047,22 +1049,93 @@ class TestReparentFlow:
         assert flow_manager.get_parent_flow(outer.flow_name) is None
 
 
+@dataclass
+class _Spec:
+    """A run that executes `body`, standing in for a request's run."""
+
+    flow_name: str
+    body: Callable[[], Awaitable[Any]]
+
+    async def execute(self, engine: Engine) -> Any:  # noqa: ARG002
+        return await self.body()
+
+    def failure(self, details: str) -> Any:
+        return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+
+
+def _ran(name: str) -> StartFlowResultSuccess:
+    return StartFlowResultSuccess(result_details=f"{name} ran")
+
+
 class TestRunsTakeTurns:
     """A run started while another is in progress waits its turn; a request from inside a run does not."""
+
+    @pytest.mark.asyncio
+    async def test_a_run_started_while_another_is_in_progress_starts_once_it_ends(self, engine: Engine) -> None:
+        flow_manager = engine.flow_manager
+        first_may_end = asyncio.Event()
+        order: list[str] = []
+
+        async def first() -> Any:
+            order.append("first started")
+            await first_may_end.wait()
+            order.append("first ended")
+            return _ran("first")
+
+        async def second() -> Any:
+            order.append("second started")
+            return _ran("second")
+
+        running = asyncio.ensure_future(flow_manager.start_run(_Spec("first", first)))
+        await asyncio.sleep(0)
+        waiting = asyncio.ensure_future(flow_manager.start_run(_Spec("second", second)))
+        await asyncio.sleep(0.05)
+        assert order == ["first started"]
+
+        first_may_end.set()
+        await asyncio.wait_for(asyncio.gather(running, waiting), timeout=1.0)
+
+        assert order == ["first started", "first ended", "second started"]
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_waiting_run_never_executes_and_its_request_says_so(self, engine: Engine) -> None:
+        flow_manager = engine.flow_manager
+        first_may_end = asyncio.Event()
+        executed: list[str] = []
+
+        async def first() -> Any:
+            await first_may_end.wait()
+            return _ran("first")
+
+        async def second() -> Any:
+            executed.append("second")
+            return _ran("second")
+
+        running = asyncio.ensure_future(flow_manager.start_run(_Spec("first", first)))
+        await asyncio.sleep(0)
+        waiting_run = flow_manager.submit_run(_Spec("second", second))
+
+        assert await flow_manager.cancel_run(waiting_run.run_id) is True
+        first_may_end.set()
+        await asyncio.wait_for(running, timeout=1.0)
+
+        result = await asyncio.wait_for(waiting_run.outcome, timeout=1.0)
+        assert "cancelled before it started" in str(result.result_details)
+        assert executed == []
 
     @pytest.mark.asyncio
     async def test_a_request_from_inside_the_run_in_progress_does_not_wait_for_it(self, engine: Engine) -> None:
         flow_manager = engine.flow_manager
 
         async def nested() -> Any:
-            return "nested ran"
+            return _ran("nested")
 
         async def outer() -> Any:
-            return await flow_manager.run_when_machine_is_free("flow", nested)
+            return await flow_manager.start_run(_Spec("flow", nested))
 
-        result = await asyncio.wait_for(flow_manager.run_when_machine_is_free("flow", outer), timeout=1.0)
+        result = await asyncio.wait_for(flow_manager.start_run(_Spec("flow", outer)), timeout=1.0)
 
-        assert result == "nested ran"
+        assert str(result.result_details) == "nested ran"
 
     @pytest.mark.asyncio
     async def test_a_task_that_outlives_its_run_waits_like_any_other_request(self, engine: Engine) -> None:
@@ -1074,27 +1147,28 @@ class TestRunsTakeTurns:
 
         async def first_run() -> Any:
             leftover.append(asyncio.ensure_future(_after(later_run_holds, flow_manager)))
-            return None
+            return _ran("first")
 
         async def later_run() -> Any:
             later_run_holds.set()
             await later_run_may_end.wait()
-            return None
+            return _ran("later")
 
-        await flow_manager.run_when_machine_is_free("first", first_run)
-        holding = asyncio.ensure_future(flow_manager.run_when_machine_is_free("later", later_run))
+        await flow_manager.start_run(_Spec("first", first_run))
+        holding = asyncio.ensure_future(flow_manager.start_run(_Spec("later", later_run)))
         await asyncio.sleep(0.05)
 
         assert not leftover[0].done(), "a task left over from an ended run skipped the line"
         later_run_may_end.set()
         await asyncio.wait_for(holding, timeout=1.0)
-        assert await asyncio.wait_for(leftover[0], timeout=1.0) == "left over ran"
+        result = await asyncio.wait_for(leftover[0], timeout=1.0)
+        assert str(result.result_details) == "left over ran"
 
 
 async def _after(event: asyncio.Event, flow_manager: Any) -> Any:
     await event.wait()
 
     async def left_over() -> Any:
-        return "left over ran"
+        return _ran("left over")
 
-    return await flow_manager.run_when_machine_is_free("left over", left_over)
+    return await flow_manager.start_run(_Spec("left over", left_over))

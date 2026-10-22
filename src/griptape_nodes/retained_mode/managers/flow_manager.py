@@ -5,8 +5,9 @@ import contextlib
 import copy
 import json
 import logging
-from contextvars import ContextVar
+from contextvars import ContextVar, copy_context
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from enum import StrEnum
 from io import BytesIO
 from pathlib import Path
@@ -180,7 +181,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.file_metadata.workflow_metadata import FLOW_COMMANDS_KEY
-from griptape_nodes.retained_mode.managers.run_queue import RunQueue
+from griptape_nodes.retained_mode.managers.run_queue import Run, RunQueue, RunState
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 from griptape_nodes.retained_mode.managers.workflow.shape import (
     build_workflow_shape_from_parameter_info,
@@ -193,11 +194,12 @@ from griptape_nodes.serialization.legacy_pickle import LegacyPickleError, read_l
 from griptape_nodes.serialization.values import Unencodable, decode_value, encodable_default, try_encode, value_key
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Iterator
+    from collections.abc import Iterator
 
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.run_queue import RunSpec
     from griptape_nodes.retained_mode.managers.workflow.shape import WorkflowShapeNodes
     from griptape_nodes.retained_mode.variable_types import FlowVariable
 
@@ -208,12 +210,48 @@ logger = logging.getLogger("griptape_nodes")
 _current_run_id: ContextVar[str | None] = ContextVar("current_run_id", default=None)
 
 
-@dataclass
-class _RunInProgress:
-    run_id: str
-    # True until the request that started the run returns. Until then its machine may not have started,
-    # so nothing running does not yet mean the run is over.
-    starting: bool = True
+@dataclass(frozen=True)
+class StartFlowSpec:
+    """A run of a whole flow, from a `StartFlowRequest`."""
+
+    request: StartFlowRequest
+    flow_name: str
+
+    async def execute(self, engine: Engine) -> ResultPayload:
+        try:
+            flow = engine.flow_manager.get_flow_by_name(self.flow_name)
+        except KeyError as err:
+            return StartFlowResultFailure(
+                validation_exceptions=[err], result_details=f"Cannot start flow. Error: {err}"
+            )
+        return await engine.flow_manager.execute_start_flow(self.request, self.flow_name, flow)
+
+    def failure(self, details: str) -> ResultPayload:
+        return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+
+
+@dataclass(frozen=True)
+class StartFlowFromNodeSpec:
+    """A run of a flow from one of its nodes, from a `StartFlowFromNodeRequest`."""
+
+    request: StartFlowFromNodeRequest
+    flow_name: str
+    node_name: str
+
+    async def execute(self, engine: Engine) -> ResultPayload:
+        start_node = engine.object_manager.attempt_get_object_by_name_as_type(self.node_name, BaseNode)
+        if not start_node:
+            return self.failure(f"Provided node with name {self.node_name} does not exist")
+        try:
+            flow = engine.flow_manager.get_flow_by_name(self.flow_name)
+        except KeyError as err:
+            return StartFlowFromNodeResultFailure(
+                validation_exceptions=[err], result_details=f"Cannot start flow. Error: {err}"
+            )
+        return await engine.flow_manager.execute_start_flow_from_node(self.request, self.flow_name, flow, start_node)
+
+    def failure(self, details: str) -> ResultPayload:
+        return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
 
 
 class DagExecutionType(StrEnum):
@@ -355,10 +393,10 @@ class FlowManager(EngineScoped):
         self._global_single_node_resolution = False
         self._global_dag_builder = DagBuilder(self.engine)
         self._node_executor = NodeExecutor(self.engine)
-        self._run_queue = RunQueue(on_position=self._report_place_in_line)
-        self._run_in_progress: _RunInProgress | None = None
-        # The flow of each run waiting for the machine, by run, for telling the editor where it is in line.
-        self._waiting_run_flows: dict[str, str] = {}
+        self._run_queue = RunQueue()
+        self._run_in_progress: Run | None = None
+        # The task executing the run in progress while its request has not returned.
+        self._run_driver: asyncio.Task[None] | None = None
 
     @property
     def global_single_node_resolution(self) -> bool:
@@ -821,7 +859,7 @@ class FlowManager(EngineScoped):
             ):
                 self._global_control_flow_machine = None
                 self._global_dag_builder.clear()
-                self._release_machine_if_run_ended()
+                self._finish_run_if_over()
 
         details = f"Successfully deleted Flow '{flow_name}'."
         result = DeleteFlowResultSuccess(result_details=details)
@@ -2813,15 +2851,9 @@ class FlowManager(EngineScoped):
                     "(e.g. via EnsureWorkflowAndFlowRequest or CreateFlowRequest) first."
                 )
                 return StartFlowResultFailure(validation_exceptions=[], result_details=details)
-        # get the flow by ID
-        try:
-            flow = self.get_flow_by_name(flow_name)
-        except KeyError as err:
-            details = f"Cannot start flow. Error: {err}"
-            return StartFlowResultFailure(validation_exceptions=[err], result_details=details)
-        return await self.run_when_machine_is_free(flow_name, lambda: self._start_flow_run(request, flow_name, flow))
+        return await self.start_run(StartFlowSpec(request=request, flow_name=flow_name))
 
-    async def _start_flow_run(  # noqa: C901, PLR0911, PLR0912
+    async def execute_start_flow(  # noqa: C901, PLR0911, PLR0912
         self, request: StartFlowRequest, flow_name: str, flow: ControlFlow
     ) -> ResultPayload:
         # Check to see if the flow is already running.
@@ -2917,17 +2949,11 @@ class FlowManager(EngineScoped):
             except KeyError as err:
                 details = f"Could not derive parent flow for node '{node_name}': {err}"
                 return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
-        # get the flow by ID
-        try:
-            flow = self.get_flow_by_name(flow_name)
-        except KeyError as err:
-            details = f"Cannot start flow. Error: {err}"
-            return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
-        return await self.run_when_machine_is_free(
-            flow_name, lambda: self._start_flow_from_node_run(request, flow_name, flow, start_node)
+        return await self.start_run(
+            StartFlowFromNodeSpec(request=request, flow_name=flow_name, node_name=start_node.name)
         )
 
-    async def _start_flow_from_node_run(  # noqa: PLR0911
+    async def execute_start_flow_from_node(  # noqa: PLR0911
         self, request: StartFlowFromNodeRequest, flow_name: str, flow: ControlFlow, start_node: BaseNode
     ) -> ResultPayload:
         # Check to see if the flow is already running.
@@ -3208,8 +3234,12 @@ class FlowManager(EngineScoped):
             details = f"Could not cancel flow execution. Error: {err}"
 
             return CancelFlowResultFailure(result_details=details)
+        run = self._run_in_progress
         try:
-            await self.cancel_flow_run()
+            if run is not None:
+                await self.cancel_run(run.run_id)
+            else:
+                await self.cancel_flow_run()
         except Exception as e:
             details = f"Could not cancel flow execution. Exception: {e}"
 
@@ -4702,43 +4732,140 @@ class FlowManager(EngineScoped):
         except CommandsFormatError as error:
             raise ImageFlowCommandsError(str(error)) from error
 
-    async def run_when_machine_is_free(
-        self, flow_name: str, start: Callable[[], Awaitable[ResultPayload]]
-    ) -> ResultPayload:
-        """Await `start` as a run of `flow_name` once the run in progress ends, waiting its turn behind any others.
+    async def start_run(self, spec: RunSpec) -> ResultPayload:
+        """Run `spec` once the runs ahead of it end, returning what its request returns.
 
-        A request made from inside the run in progress belongs to that run, so `start` is awaited at
-        once: waiting would wait on itself.
+        A request made from inside the run in progress belongs to that run, so it executes at once:
+        queueing it would wait on itself.
         """
         if self._is_inside_run_in_progress():
-            return await start()
-        run = _RunInProgress(run_id=str(uuid4()))
-        self._waiting_run_flows[run.run_id] = flow_name
+            return await spec.execute(self.engine)
+        run = self.submit_run(spec)
         try:
-            await self._run_queue.acquire(run.run_id)
-        finally:
-            del self._waiting_run_flows[run.run_id]
-        self._run_in_progress = run
-        token = _current_run_id.set(run.run_id)
-        try:
-            return await start()
-        finally:
-            _current_run_id.reset(token)
-            run.starting = False
-            self._release_machine_if_run_ended()
+            return await asyncio.shield(run.outcome)
+        except asyncio.CancelledError:
+            # Nothing will wait for this run any more, so one that has not started never should.
+            await self.cancel_run(run.run_id)
+            raise
 
-    def _report_place_in_line(self, run_id: str, position: int) -> None:
-        self.engine.event_manager.put_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(
-                    payload=RunQueuedEvent(run_id=run_id, flow_name=self._waiting_run_flows[run_id], position=position)
-                )
-            )
+    def submit_run(self, spec: RunSpec) -> Run:
+        """Queue a run of `spec`, starting it at once if no run is in progress."""
+        run = Run(
+            run_id=str(uuid4()),
+            spec=spec,
+            flow_name=spec.flow_name,
+            queued_at=datetime.now(tz=UTC),
+            state=RunState.QUEUED,
+            outcome=asyncio.get_running_loop().create_future(),
+            context=copy_context(),
         )
+        self._run_queue.enqueue(run)
+        self._start_next_run_if_idle()
+        self._report_places_in_line()
+        return run
+
+    async def cancel_run(self, run_id: str) -> bool:
+        """Cancel a run, returning whether there was one: a waiting run leaves the line, the run in progress stops."""
+        waiting = self._run_queue.remove(run_id)
+        if waiting is not None:
+            waiting.state = RunState.CANCELLED
+            self._leave_line(waiting)
+            waiting.outcome.set_result(waiting.spec.failure("The run was cancelled before it started."))
+            self._report_places_in_line()
+            return True
+        run = self._run_in_progress
+        if run is None or run.run_id != run_id:
+            return False
+        run.state = RunState.CANCELLED
+        await self.cancel_flow_run()
+        return True
+
+    def _start_next_run_if_idle(self) -> None:
+        if self._run_in_progress is not None:
+            return
+        run = self._run_queue.pop_next()
+        if run is None:
+            return
+        self._leave_line(run)
+        run.state = RunState.RUNNING
+        self._run_in_progress = run
+        self._run_driver = asyncio.get_running_loop().create_task(self._drive(run), context=run.context)
+
+    async def _drive(self, run: Run) -> None:
+        # run.context is the submitter's context copied, so this marks only the run's own tasks.
+        _current_run_id.set(run.run_id)
+        try:
+            result = await run.spec.execute(self.engine)
+        except BaseException as e:
+            # The request is waiting on the outcome, so it must hear how the run ended, then the next run starts.
+            if isinstance(e, asyncio.CancelledError):
+                run.outcome.cancel()
+            else:
+                run.outcome.set_exception(e)
+            if run.state is RunState.RUNNING:
+                run.state = RunState.FAILED
+            self._finish_run(run)
+            raise
+        run.outcome.set_result(result)
+        if run.state is not RunState.RUNNING:
+            self._finish_run(run)
+            return
+        if self.check_for_existing_running_flow():
+            run.state = RunState.PAUSED
+            return
+        if result.succeeded():
+            run.state = RunState.FINISHED
+        else:
+            run.state = RunState.FAILED
+        self._finish_run(run)
+
+    def _finish_run_if_over(self) -> None:
+        """End the run in progress if its flow has stopped, on the paths that can stop a paused run."""
+        run = self._run_in_progress
+        if run is None or self._is_driving() or self.check_for_existing_running_flow():
+            return
+        if run.state is RunState.PAUSED:
+            run.state = RunState.FINISHED
+        self._finish_run(run)
+
+    def _finish_run(self, run: Run) -> None:
+        """End `run`, the run in progress, and start the next. The only place a run ends."""
+        if self._run_in_progress is not run:
+            return
+        self._run_in_progress = None
+        self._run_driver = None
+        self._start_next_run_if_idle()
+        self._report_places_in_line()
+
+    def _is_driving(self) -> bool:
+        """True while the request that started the run in progress is still executing it."""
+        driver = self._run_driver
+        return driver is not None and not driver.done()
 
     def _is_inside_run_in_progress(self) -> bool:
         run = self._run_in_progress
         return run is not None and _current_run_id.get() == run.run_id
+
+    def _leave_line(self, run: Run) -> None:
+        if run.position:
+            run.position = 0
+            self._report_place_in_line(run)
+
+    def _report_places_in_line(self) -> None:
+        for index, run in enumerate(self._run_queue.snapshot()):
+            position = index + 1
+            if run.position != position:
+                run.position = position
+                self._report_place_in_line(run)
+
+    def _report_place_in_line(self, run: Run) -> None:
+        self.engine.event_manager.put_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(
+                    payload=RunQueuedEvent(run_id=run.run_id, flow_name=run.flow_name, position=run.position)
+                )
+            )
+        )
 
     @contextlib.contextmanager
     def _continuing_run_in_progress(self) -> Iterator[None]:
@@ -4752,18 +4879,7 @@ class FlowManager(EngineScoped):
             yield
         finally:
             _current_run_id.reset(token)
-            self._release_machine_if_run_ended()
-
-    def _release_machine_if_run_ended(self) -> None:
-        """Give the machine to the next waiting run once the run in progress is over.
-
-        Every path that can end a run calls this, so it does nothing while the run goes on.
-        """
-        run = self._run_in_progress
-        if run is None or run.starting or self.check_for_existing_running_flow():
-            return
-        self._run_in_progress = None
-        self._run_queue.release(run.run_id)
+            self._finish_run_if_over()
 
     def check_for_existing_running_flow(self) -> bool:
         if self._global_control_flow_machine is None:
@@ -4828,7 +4944,7 @@ class FlowManager(EngineScoped):
                 wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds))
             )
         )
-        self._release_machine_if_run_ended()
+        self._finish_run_if_over()
 
     async def _abandon_running_flow(self) -> None:
         """Give up on a run that has already failed, leaving the engine able to start another.
@@ -4870,7 +4986,7 @@ class FlowManager(EngineScoped):
                 wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds))
             )
         )
-        self._release_machine_if_run_ended()
+        self._finish_run_if_over()
 
     def reset_global_execution_state(self) -> None:
         """Reset all global execution state - useful when clearing all workflows."""
@@ -4887,7 +5003,7 @@ class FlowManager(EngineScoped):
         self._connections.connections.clear()
         self._connections.outgoing_index.clear()
         self._connections.incoming_index.clear()
-        self._release_machine_if_run_ended()
+        self._finish_run_if_over()
 
         logger.debug("Reset global execution state")
 
