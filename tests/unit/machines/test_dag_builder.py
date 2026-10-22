@@ -9,17 +9,6 @@ from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.machines.dag_builder import DagBuilder, DagNode, DagNodeCategories, NodeState
 
 
-def _engine_with_connections(connections: MagicMock) -> MagicMock:
-    """Build a stub engine whose flow_manager hands back `connections`.
-
-    DagBuilder resolves connections through its injected engine, so a stub engine replaces what
-    used to be a patch of the process-wide facade.
-    """
-    engine = MagicMock()
-    engine.flow_manager.get_connections.return_value = connections
-    return engine
-
-
 class TestDagNodeCategories:
     """Test cases for the DagNodeCategories seeding contract.
 
@@ -102,7 +91,7 @@ class TestDagBuilder:
         # The engine reports no connections
         mock_connections = MagicMock()
         mock_connections.get_connected_node.return_value = None
-        dag_builder = DagBuilder(_engine_with_connections(mock_connections))
+        dag_builder = DagBuilder(mock_connections)
 
         added_nodes = dag_builder.add_node_with_dependencies(mock_node)
 
@@ -138,7 +127,7 @@ class TestDagBuilder:
             (upstream_node, MagicMock()),  # downstream_node has upstream dependency
             None,  # upstream_node has no dependencies
         ]
-        dag_builder = DagBuilder(_engine_with_connections(mock_connections))
+        dag_builder = DagBuilder(mock_connections)
 
         added_nodes = dag_builder.add_node_with_dependencies(downstream_node)
 
@@ -175,7 +164,7 @@ class TestDagBuilder:
 
         mock_connections = MagicMock()
         mock_connections.get_connected_node.return_value = (upstream_node, MagicMock())
-        dag_builder = DagBuilder(_engine_with_connections(mock_connections))
+        dag_builder = DagBuilder(mock_connections)
 
         # Add upstream node first
         dag_builder.add_node(upstream_node)
@@ -237,7 +226,7 @@ class TestDagBuilder:
             return None
 
         mock_connections.get_connected_node.side_effect = mock_get_connected_node
-        dag_builder = DagBuilder(_engine_with_connections(mock_connections))
+        dag_builder = DagBuilder(mock_connections)
 
         # This should not cause infinite recursion due to visited set
         added_nodes = dag_builder.add_node_with_dependencies(node_a)
@@ -308,7 +297,7 @@ class TestDagBuilder:
             (upstream_node, MagicMock()),  # downstream has upstream dependency
             None,  # upstream has no dependencies
         ]
-        dag_builder = DagBuilder(_engine_with_connections(mock_connections))
+        dag_builder = DagBuilder(mock_connections)
 
         dag_builder.add_node_with_dependencies(downstream_node)
 

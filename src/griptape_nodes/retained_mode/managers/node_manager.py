@@ -3233,7 +3233,7 @@ class NodeManager(EngineScoped):
 
         # Check for existing running flow
         flow_mgr = self.engine.flow_manager
-        if flow_mgr.check_for_existing_running_flow() and not flow_mgr._global_single_node_resolution:
+        if flow_mgr.check_for_existing_running_flow() and not flow_mgr.global_single_node_resolution:
             # Behavior should also match if the flow running is a Control Flow, and not a singular node resolution.
             errormsg = f"This workflow is already in progress. Please wait for the current control process to finish before starting {node.name} again."
             return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
@@ -3244,7 +3244,7 @@ class NodeManager(EngineScoped):
             return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
 
         # Check if the node is already in the DAG - if so, skip this resolution. It's already queued or has been resolved.
-        if node.name in flow_mgr._global_dag_builder.node_to_reference:
+        if node.name in flow_mgr.global_dag_builder.node_to_reference:
             return ResolveNodeResultFailure(
                 validation_exceptions=[],
                 result_details=f"Node {node.name} is already executing. Cannot start execution.",

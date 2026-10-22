@@ -27,6 +27,8 @@ from griptape_nodes.retained_mode.events.execution_events import NodeErrorEvent
 from griptape_nodes.retained_mode.events.node_error_details import NodeErrorDetails
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
+from griptape_nodes.retained_mode.runtime.flows import WorkflowFlows
+from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowSet
 
 
 def _engine_with_execution_mode(mode: WorkflowExecutionMode, dag_builder: DagBuilder) -> MagicMock:
@@ -226,83 +228,41 @@ class TestFlowManagerDagBuilderIntegration:
     """Test cases for FlowManager's DAG builder integration during flow execution."""
 
     def test_flow_manager_creates_dag_builder_for_parallel_flow(self) -> None:
-        """Test that FlowManager creates a DAG builder when starting a parallel flow."""
-        # This test is complex and involves async flow manager methods that are hard to mock
-        # For now, just test that the basic FlowManager functionality works
-        from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
+        """Test that each open workflow gets a DAG builder over its own connections."""
+        flows = WorkflowFlows()
 
-        try:
-            # Test basic FlowManager creation
-            flow_manager = FlowManager(MagicMock(spec=EventManager))
-            assert hasattr(flow_manager, "_global_dag_builder")
-
-            # Test that DAG builder can be set
-            mock_dag_builder = MagicMock(spec=DagBuilder)
-            flow_manager._global_dag_builder = mock_dag_builder
-            assert flow_manager._global_dag_builder is mock_dag_builder
-
-            # Test basic functionality without async complexity
-        except Exception:  # noqa: S110
-            # If FlowManager requires complex setup, skip this test
-            pass
+        assert isinstance(flows.global_dag_builder, DagBuilder)
+        assert flows.global_dag_builder.connections is flows.connections
 
     def test_flow_manager_preserves_dag_builder_between_single_node_resolutions(self) -> None:
-        """Test that FlowManager preserves DAG builder between single node resolutions."""
-        from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
+        """Test that clearing the DAG builder keeps the same builder for the next resolution."""
+        flows = WorkflowFlows()
+        initial_dag_builder = flows.global_dag_builder
 
-        try:
-            # Create FlowManager instance
-            flow_manager = FlowManager(MagicMock(spec=EventManager))
+        initial_dag_builder.clear()
 
-            # Create initial DAG builder
-            initial_dag_builder = MagicMock(spec=DagBuilder)
-            flow_manager._global_dag_builder = initial_dag_builder
-
-            # Verify that the DAG builder is preserved
-            assert flow_manager._global_dag_builder is initial_dag_builder
-
-            # Test that it can be cleared and reset
-            flow_manager._global_dag_builder.clear()
-            assert flow_manager._global_dag_builder is not None
-
-        except Exception:  # noqa: S110
-            # If FlowManager requires complex setup, skip this test
-            pass
+        assert flows.global_dag_builder is initial_dag_builder
 
     @pytest.mark.asyncio
     async def test_flow_manager_clears_dag_builder_on_cancel(self) -> None:
-        """Test that FlowManager clears DAG builder reference when canceling a flow."""
+        """Test that FlowManager clears the DAG builder when canceling a flow."""
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 
-        try:
-            # Create FlowManager instance with existing DAG builder
-            flow_manager = FlowManager(MagicMock(spec=EventManager))
-            mock_dag_builder = MagicMock(spec=DagBuilder)
-            flow_manager._global_dag_builder = mock_dag_builder
+        engine = MagicMock()
+        engine.open_workflows = OpenWorkflowSet()
+        flows = engine.open_workflows.open("workflow").flows
+        flow_manager = FlowManager(MagicMock(spec=EventManager), engine=engine)
+        flows.global_dag_builder.node_to_reference["node"] = MagicMock()
 
-            # Create mock control flow machine
-            mock_control_flow = MagicMock()
-            mock_control_flow.reset_machine = MagicMock()
-            mock_control_flow.context.flow_name = "test_flow"
-            flow_manager._global_control_flow_machine = mock_control_flow
+        mock_control_flow = MagicMock()
+        mock_control_flow.cancel_flow = AsyncMock()
+        mock_control_flow.context.flow_name = "test_flow"
+        flows.global_control_flow_machine = mock_control_flow
 
-            # Create mock flow with no nodes to avoid async complexity in test
-            mock_flow = MagicMock()
-            mock_flow.nodes = {}
+        with patch.object(flow_manager, "check_for_existing_running_flow", return_value=True):
+            await flow_manager.cancel_flow_run()
 
-            with (
-                patch.object(flow_manager, "check_for_existing_running_flow", return_value=True),
-                patch.object(flow_manager, "get_flow_by_name", return_value=mock_flow),
-            ):
-                # Cancel flow
-                await flow_manager.cancel_flow_run()
-
-                # Verify DAG builder reference is cleared
-                assert flow_manager._global_dag_builder is None
-
-        except Exception:  # noqa: S110
-            # If FlowManager requires complex setup, skip this test
-            pass
+        assert flows.global_dag_builder.node_to_reference == {}
 
     def test_dag_builder_prevents_duplicate_node_addition_after_clear(self) -> None:
         """Test that DAG builder prevents duplicate node addition and allows re-addition after clear."""
@@ -314,7 +274,7 @@ class TestFlowManagerDagBuilderIntegration:
         # The engine reports no connections
         mock_connections = MagicMock()
         mock_connections.get_connected_node.return_value = None
-        dag_builder = DagBuilder(_engine_with_connections(mock_connections))
+        dag_builder = DagBuilder(mock_connections)
 
         # First addition should succeed
         added_nodes_1 = dag_builder.add_node_with_dependencies(mock_node)

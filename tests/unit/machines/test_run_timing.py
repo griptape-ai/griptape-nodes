@@ -11,6 +11,7 @@ from griptape_nodes.machines.parallel_resolution import ExecuteDagState
 from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
+from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowSet
 
 
 def _dag_node() -> DagNode:
@@ -69,6 +70,8 @@ class TestRunSeconds:
     @pytest.mark.asyncio
     async def test_cancelling_a_run_reports_how_long_it_ran(self) -> None:
         engine = MagicMock()
+        engine.open_workflows = OpenWorkflowSet()
+        workflow = engine.open_workflows.open("workflow")
         flow_manager = FlowManager(MagicMock(spec=EventManager), engine=engine)
         machine = MagicMock()
         machine.cancel_flow = AsyncMock()
@@ -77,7 +80,7 @@ class TestRunSeconds:
         machine.reset_machine.side_effect = lambda **_: setattr(
             machine.context.seconds_since_run_started, "return_value", None
         )
-        flow_manager._global_control_flow_machine = machine
+        workflow.flows.global_control_flow_machine = machine
         flow_manager.check_for_existing_running_flow = MagicMock(return_value=True)
 
         await flow_manager.cancel_flow_run()

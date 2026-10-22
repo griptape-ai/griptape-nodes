@@ -23,21 +23,10 @@ from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.machines.control_flow import ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder, DagNodeCategories
 from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType, QueueItem
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
-
-
-def _engine_with_connections(connections: MagicMock) -> MagicMock:
-    """Build a stub engine whose flow_manager hands back `connections`.
-
-    DagBuilder resolves connections through its injected engine, so a stub engine replaces what
-    used to be a patch of the process-wide facade. Passing it explicitly also keeps the seeding
-    helpers off the real engine a bare DagBuilder would otherwise fall back to.
-    """
-    engine = MagicMock()
-    engine.flow_manager.get_connections.return_value = connections
-    return engine
 
 
 def _mock_node(name: str) -> MagicMock:
@@ -53,6 +42,7 @@ class TestDrainGlobalFlowQueue:
     """Tests for ControlFlowMachine._drain_global_flow_queue."""
 
     def test_buckets_items_by_type_and_empties_queue(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
         flow_manager = engine.flow_manager
         flow_manager.global_flow_queue.queue.clear()
 
@@ -94,7 +84,7 @@ class TestSeedDagFromCategories:
 
         connections = MagicMock()
         connections.get_connected_node.return_value = None
-        dag_builder = DagBuilder(_engine_with_connections(connections))
+        dag_builder = DagBuilder(connections)
 
         entry_nodes = ControlFlowMachine._seed_dag_from_categories(
             start, categories, dag_builder, flow_manager, node_manager
@@ -119,7 +109,7 @@ class TestSeedDagFromCategories:
 
         connections = MagicMock()
         connections.get_connected_node.return_value = None
-        dag_builder = DagBuilder(_engine_with_connections(connections))
+        dag_builder = DagBuilder(connections)
 
         ControlFlowMachine._seed_dag_from_categories(start, categories, dag_builder, flow_manager, node_manager)
 
@@ -139,7 +129,7 @@ class TestSeedDagFromCategories:
 
         connections = MagicMock()
         connections.get_connected_node.return_value = None
-        dag_builder = DagBuilder(_engine_with_connections(connections))
+        dag_builder = DagBuilder(connections)
 
         ControlFlowMachine._seed_dag_from_categories(start, categories, dag_builder, flow_manager, node_manager)
 
@@ -157,7 +147,7 @@ class TestSeedDagFromCategories:
 
         connections = MagicMock()
         connections.get_connected_node.return_value = None
-        dag_builder = DagBuilder(_engine_with_connections(connections))
+        dag_builder = DagBuilder(connections)
 
         # Pre-seed the sink so PASS 2 sees it already present.
         dag_builder.add_node(sink)

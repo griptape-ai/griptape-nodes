@@ -43,7 +43,7 @@ def _machine_parked_on_a_node_task() -> _ParkedMachine:
     # A stub engine keeps EngineScoped.engine from falling back to
     # current_engine(), which would stand up the process-root engine here.
     engine = MagicMock()
-    dag_builder = DagBuilder(engine)
+    dag_builder = DagBuilder()
     dag_builder.graphs["n"] = graph
     dag_builder.node_to_reference["n"] = DagNode(node_reference=node, node_state=NodeState.PROCESSING)
 
