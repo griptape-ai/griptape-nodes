@@ -43,6 +43,7 @@ from griptape_nodes.utils.async_utils import call_function, to_thread
 if TYPE_CHECKING:
     import types
     from collections.abc import Awaitable, Callable, Iterator
+    from collections.abc import Set as AbstractSet
 
     from griptape_nodes.api_client.request_client import RequestClient
     from griptape_nodes.retained_mode.engine import Engine
@@ -275,13 +276,21 @@ class EventManager(EngineScoped):
         attribute depending on the wrapper: request results expose it as ``result``, execution
         events as ``payload``, and both may arrive already wrapped in a ``GriptapeNodeEvent``.
 
+        Matching is by ``isinstance``, so a set may name a base class: ``ResultPayload`` hides every
+        request result dispatched inside the window, which is what a loop rebuilding its body in
+        transient flows needs -- the editor has no node to attach any of those results to.
+
         Suppression is scoped to the current context; see ``_suppressed_event_types``.
         """
         suppressed_types = _suppressed_event_types.get()
         if not suppressed_types:
             return False
 
-        return any(type(candidate) in suppressed_types for candidate in _suppression_candidates(event))
+        return any(
+            isinstance(candidate, suppressed_type)
+            for candidate in _suppression_candidates(event)
+            for suppressed_type in suppressed_types
+        )
 
     def clear_event_suppression(self) -> None:
         """Drop any suppression the current context has in effect.
@@ -342,6 +351,13 @@ class EventManager(EngineScoped):
         if self._event_queue is None:
             return
 
+        # A suppressed event still reaches the engine's own listeners below; only the broadcast to
+        # websocket clients is skipped. Checked here, not only on request results (engine.py), so
+        # the execution traffic of a loop's transient iteration flows stays off the wire too.
+        if self.should_suppress_event(event):
+            self._dispatch_to_execution_listeners(event)
+            return
+
         if self._is_cross_thread_call() and self._event_loop is not None:
             # We're in a different thread from the event loop, use thread-safe method
             # _is_cross_thread_call() guarantees _event_loop is not None
@@ -364,6 +380,11 @@ class EventManager(EngineScoped):
             event: The event to publish to the queue
         """
         if self._event_queue is None:
+            return
+
+        # See put_event: suppressed events skip the wire, not the engine's own listeners.
+        if self.should_suppress_event(event):
+            self._dispatch_to_execution_listeners(event)
             return
 
         if self._is_cross_thread_call() and self._event_loop is not None:
@@ -1512,9 +1533,9 @@ class EventSuppressionContext:
     permanently dark event stream desyncs the editor.
     """
 
-    events_to_suppress: set[type]
+    events_to_suppress: AbstractSet[type]
 
-    def __init__(self, manager: EventManager, events_to_suppress: set[type]):
+    def __init__(self, manager: EventManager, events_to_suppress: AbstractSet[type]):
         self.manager = manager
         self.events_to_suppress = events_to_suppress
         self._tokens: list[contextvars.Token[frozenset[type]]] = []

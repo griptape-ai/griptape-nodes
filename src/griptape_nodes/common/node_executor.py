@@ -57,6 +57,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     ForwardedException,
     ProgressEvent,
+    ResultPayload,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionResultFailure,
@@ -230,16 +231,14 @@ LOOP_EVENTS_TO_SUPPRESS = {
     DeserializeFlowFromCommandsResultFailure,
 }
 
-# NOTE: every member of this set is inert, and test_execution_events_to_suppress_is_entirely_inert
-# checks that it stays that way. Execution events are emitted through put_event/aput_event, which
-# never consult should_suppress_event -- only request results are checked (engine.py). The set is
-# kept as the record of intent: the aim is to stop parallel iterations from flooding the websocket
-# with per-node execution traffic. Wiring put_event up to suppression would also silence the node
-# highlighting that EventTranslationContext exists to provide, so it needs its own design rather
-# than a one-line change. Execution-event listeners hear every parallel iteration either way.
+# Execution traffic of a parallel loop's transient iteration flows. put_event/aput_event consult
+# should_suppress_event, so inside a suppression window these stay off the wire: the editor has no
+# node named after a packaged copy, and a 24-item loop otherwise sends it thousands of events it can
+# only discard. The sequential path runs its body under EventTranslationContext instead, which
+# renames the packaged copy to the real node so the editor can highlight it; that path must never
+# enter a window built from this set. Execution-event listeners hear every parallel iteration either way.
 #
-# Only ExecutionPayload members belong here. A ResultPayload in this set is a live transport change
-# wearing the costume of a no-op: put it in LOOP_EVENTS_TO_SUPPRESS deliberately, or leave it out.
+# Only ExecutionPayload members belong here; request results go in LOOP_EVENTS_TO_SUPPRESS.
 EXECUTION_EVENTS_TO_SUPPRESS = {
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
@@ -260,6 +259,15 @@ EXECUTION_EVENTS_TO_SUPPRESS = {
     RemoveElementEvent,
     ProgressEvent,
 }
+
+# Everything a parallel loop's local execution emits about its iteration flows, from the first
+# deserialize to the last delete. ``ResultPayload`` matches by isinstance (see
+# EventManager.should_suppress_event), so every request result dispatched while the window is open
+# is hidden without listing each type: the connection listings, parameter additions and deletions
+# the deserializer and the teardown issue all name nodes the editor has never seen.
+PARALLEL_LOOP_EVENTS_TO_SUPPRESS: frozenset[type] = frozenset(
+    LOOP_EVENTS_TO_SUPPRESS | EXECUTION_EVENTS_TO_SUPPRESS | {ResultPayload}
+)
 
 
 @dataclass
@@ -3305,6 +3313,17 @@ class NodeExecutor(EngineScoped):
 
         return last_iteration_values
 
+    def _parallel_iteration_gate(self, total_iterations: int) -> asyncio.Semaphore:
+        """How many iterations of an all-at-once loop may run at the same time.
+
+        Read from the `max_loop_iterations_in_parallel` setting at run start. A missing, zero or
+        negative value means no limit, which is the pre-setting behavior.
+        """
+        configured_limit = self.engine.config_manager.get_config_value("max_loop_iterations_in_parallel", default=8)
+        if configured_limit is None or configured_limit <= 0:
+            return asyncio.Semaphore(max(total_iterations, 1))
+        return asyncio.Semaphore(configured_limit)
+
     async def _delete_iteration_flows(
         self,
         deserialized_flows: list[tuple[int, str, dict[str, str]]],
@@ -3335,7 +3354,28 @@ class NodeExecutor(EngineScoped):
                         delete_result.result_details,
                     )
 
-    async def _execute_loop_iterations_locally(  # noqa: C901, PLR0912, PLR0915
+    async def _execute_loop_iterations_locally(
+        self,
+        package_result: PackageNodesAsSerializedFlowResultSuccess,
+        total_iterations: int,
+        parameter_values_per_iteration: dict[int, dict[str, Any]],
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
+    ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
+        """Run every iteration of a loop at once in transient local flows, silently to the editor.
+
+        The whole run -- deserializing the iteration flows, seeding their inputs, executing them,
+        collecting their outputs and deleting them -- happens inside one suppression window, so the
+        editor hears about the loop node it can see and nothing about the copies it cannot.
+        """
+        with EventSuppressionContext(self.engine.event_manager, PARALLEL_LOOP_EVENTS_TO_SUPPRESS):
+            return await self._execute_loop_iterations_locally_unsuppressed(
+                package_result=package_result,
+                total_iterations=total_iterations,
+                parameter_values_per_iteration=parameter_values_per_iteration,
+                end_loop_node=end_loop_node,
+            )
+
+    async def _execute_loop_iterations_locally_unsuppressed(  # noqa: C901, PLR0912, PLR0915
         self,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
@@ -3413,30 +3453,35 @@ class NodeExecutor(EngineScoped):
             logger.debug("Successfully deserialized %d flow instances for parallel execution", total_iterations)
             # Step 2: Define the per-iteration coroutine
             packaged_start_node_name = self.get_node_parameter_mappings(package_result, "start").node_name
+            # Every iteration task is created at once below so a cancel can reach all of them; the
+            # gate is what keeps N API calls, N worker threads and N bursts of events from starting
+            # in the same instant and starving the editor's heartbeat.
+            concurrency_gate = self._parallel_iteration_gate(total_iterations)
 
             async def run_single_iteration(
                 flow_name: str, iteration_index: int, start_node_name: str, loop_body_scope: LoopBodyScope
             ) -> IterationOutcome:
                 """Run a single iteration flow and report whether it finished, and why not."""
                 # Suppress execution events during parallel iteration to prevent flooding websockets
-                with (
-                    entered_loop_body_scope(loop_body_scope),
-                    EventSuppressionContext(event_manager, EXECUTION_EVENTS_TO_SUPPRESS),
-                ):
-                    start_subflow_request = StartLocalSubflowRequest(
-                        flow_name=flow_name,
-                        start_node=start_node_name,
-                    )
-                    start_subflow_result = await self.engine.ahandle_request(start_subflow_request)
-                    if isinstance(start_subflow_result, StartLocalSubflowResultSuccess):
-                        return IterationOutcome(iteration_index=iteration_index, succeeded=True, detail="")
-                    # The reason travels out with the verdict: this closure is the only place that
-                    # holds it, so anything narrower than IterationOutcome loses it for good.
-                    return IterationOutcome(
-                        iteration_index=iteration_index,
-                        succeeded=False,
-                        detail=str(start_subflow_result.result_details),
-                    )
+                async with concurrency_gate:
+                    with (
+                        entered_loop_body_scope(loop_body_scope),
+                        EventSuppressionContext(event_manager, EXECUTION_EVENTS_TO_SUPPRESS),
+                    ):
+                        start_subflow_request = StartLocalSubflowRequest(
+                            flow_name=flow_name,
+                            start_node=start_node_name,
+                        )
+                        start_subflow_result = await self.engine.ahandle_request(start_subflow_request)
+                        if isinstance(start_subflow_result, StartLocalSubflowResultSuccess):
+                            return IterationOutcome(iteration_index=iteration_index, succeeded=True, detail="")
+                        # The reason travels out with the verdict: this closure is the only place that
+                        # holds it, so anything narrower than IterationOutcome loses it for good.
+                        return IterationOutcome(
+                            iteration_index=iteration_index,
+                            succeeded=False,
+                            detail=str(start_subflow_result.result_details),
+                        )
 
             # Step 3: Set input values on start nodes for each iteration
             for iteration_index, _, node_name_mappings in deserialized_flows:

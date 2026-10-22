@@ -305,37 +305,32 @@ class TestSuppressionIsScopedToItsCaller:
 
 
 class TestSuppressionSetReachability:
-    """Which of the executor's two suppression sets the matcher can actually reach.
+    """Both of the executor's suppression sets reach the transport they are written for.
 
-    The distinction is transport, not naming. ``ResultPayload`` subclasses are broadcast from
-    ``engine.ahandle_request``, which consults ``should_suppress_event`` before queueing -- so
-    listing one has a real effect. ``ExecutionPayload`` members are emitted through
-    ``put_event``/``aput_event``, which never consult it -- so listing one does nothing.
-
-    So the mistake these tests catch is a request result added to ``EXECUTION_EVENTS_TO_SUPPRESS``:
-    a live transport change in a set everybody reads as a no-op, which would silently drop a
-    parallel loop's per-iteration results on the way to the editor. The mirror mistake -- an
-    execution payload in ``LOOP_EVENTS_TO_SUPPRESS`` -- is documentation posing as behaviour.
+    ``ResultPayload`` subclasses are broadcast from ``engine.ahandle_request``, which consults
+    ``should_suppress_event`` before queueing. ``ExecutionPayload`` members are emitted through
+    ``put_event``/``aput_event``, which consult it too -- so a parallel loop can keep the execution
+    traffic of its transient iteration flows off the wire. The sets stay split by transport so a
+    reader knows which path each member rides, and so a request result never hides in a set that
+    reads as "execution events".
     """
 
-    def test_execution_events_to_suppress_is_entirely_inert(self) -> None:
-        live = sorted(
+    def test_execution_events_to_suppress_holds_only_execution_payloads(self) -> None:
+        results = sorted(
             event_type.__name__ for event_type in EXECUTION_EVENTS_TO_SUPPRESS if issubclass(event_type, ResultPayload)
         )
-        assert live == [], (
-            "EXECUTION_EVENTS_TO_SUPPRESS documents itself as having no effect, but these are "
-            f"request results, which suppression does reach: {live}. Either put them in "
-            "LOOP_EVENTS_TO_SUPPRESS deliberately, or leave them out."
+        assert results == [], (
+            f"EXECUTION_EVENTS_TO_SUPPRESS is for execution payloads, but these are request results: {results}. "
+            "Put them in LOOP_EVENTS_TO_SUPPRESS."
         )
 
-    def test_loop_events_to_suppress_is_entirely_live(self) -> None:
-        """The mirror assertion: a member that cannot be reached is documentation, not behaviour."""
-        inert = sorted(
+    def test_loop_events_to_suppress_holds_only_request_results(self) -> None:
+        payloads = sorted(
             event_type.__name__ for event_type in LOOP_EVENTS_TO_SUPPRESS if not issubclass(event_type, ResultPayload)
         )
-        assert inert == [], (
-            "LOOP_EVENTS_TO_SUPPRESS is the set that is supposed to work, but these are not "
-            f"request results, so suppression never sees them: {inert}."
+        assert payloads == [], (
+            f"LOOP_EVENTS_TO_SUPPRESS is for request results, but these are not: {payloads}. "
+            "Put them in EXECUTION_EVENTS_TO_SUPPRESS."
         )
 
     def test_a_loop_suppressed_type_is_matched_in_its_real_shape(self) -> None:
@@ -345,12 +340,21 @@ class TestSuppressionSetReachability:
             assert event_manager.should_suppress_event(_create_node_result_event()) is True
             assert event_manager.should_suppress_event(_create_node_failure_event()) is True
 
-    @pytest.mark.asyncio
-    async def test_an_execution_event_is_queued_even_inside_its_own_suppression_window(self) -> None:
-        """Why the set is inert, demonstrated on the real transport rather than by type inspection.
+    def test_a_base_class_in_the_set_matches_every_subclass(self) -> None:
+        """``ResultPayload`` in a set hides every request result, so a loop need not list each type."""
+        event_manager = EventManager()
+        with EventSuppressionContext(event_manager, {ResultPayload}):
+            assert event_manager.should_suppress_event(_create_node_result_event()) is True
+            assert event_manager.should_suppress_event(_create_node_failure_event()) is True
+        assert event_manager.should_suppress_event(_create_node_result_event()) is False
 
-        ``put_event`` enqueues unconditionally. If that ever changes, this test fails and whoever
-        changed it has to decide what happens to the node highlighting the editor relies on.
+    @pytest.mark.asyncio
+    async def test_an_execution_event_is_held_back_inside_its_own_suppression_window(self) -> None:
+        """The real transport: inside the window the event never reaches the queue, outside it does.
+
+        This is what keeps a parallel loop's per-copy execution traffic off the websocket. The
+        sequential path never opens a window from this set: it relies on these events, renamed by
+        EventTranslationContext, to highlight the real node.
         """
         event_manager = EventManager()
         queue: asyncio.Queue = asyncio.Queue()
@@ -361,5 +365,7 @@ class TestSuppressionSetReachability:
         )
         with EventSuppressionContext(event_manager, EXECUTION_EVENTS_TO_SUPPRESS):
             event_manager.put_event(execution_event)
+        assert queue.empty()
 
+        event_manager.put_event(execution_event)
         assert queue.get_nowait() is execution_event
