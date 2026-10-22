@@ -17,7 +17,6 @@ from PIL import Image
 
 from griptape_nodes.common.node_executor import NodeExecutor
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
-from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterContainer,
@@ -183,12 +182,14 @@ from griptape_nodes.retained_mode.managers.workflow.shape import (
     extract_parameter_shape_info,
 )
 from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.runtime.flows import WorkflowFlows
 from griptape_nodes.retained_mode.variable_types import VariableScope
 from griptape_nodes.serialization.commands import CommandsFormatError, decode_commands
 from griptape_nodes.serialization.legacy_pickle import LegacyPickleError, read_legacy_image_flow_commands
 from griptape_nodes.serialization.values import Unencodable, decode_value, encodable_default, try_encode, value_key
 
 if TYPE_CHECKING:
+    from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -312,9 +313,11 @@ class DeserializedFlowNodes:
 
 
 class FlowManager(EngineScoped):
-    _name_to_parent_name: dict[str, str | None]
-    _flow_to_referenced_workflow_name: dict[ControlFlow, str]
-    _connections: Connections
+    """Creates, connects, serializes, and runs the open workflow's flows.
+
+    The flow hierarchy and connections belong to the open workflow and live on its runtime. Lookups
+    find nothing when no workflow is open.
+    """
 
     # Global execution state (moved from individual ControlFlows)
     _global_flow_queue: Queue[QueueItem]
@@ -326,10 +329,6 @@ class FlowManager(EngineScoped):
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
         event_manager.register_request_handlers(self)
-
-        self._name_to_parent_name = {}
-        self._flow_to_referenced_workflow_name = {}
-        self._connections = Connections()
 
         # Initialize global execution state
         self._global_flow_queue = Queue[QueueItem]()
@@ -355,8 +354,18 @@ class FlowManager(EngineScoped):
         return self._node_executor
 
     def get_connections(self) -> Connections:
-        """Get the connections instance."""
-        return self._connections
+        """The open workflow's connections, empty when no workflow is open."""
+        return self._flows_or_empty().connections
+
+    def _flows_or_empty(self) -> WorkflowFlows:
+        """The open workflow's flows for a lookup, which finds none when no workflow is open.
+
+        Only lookups read through here. Recording a flow or a connection needs a workflow to hold it.
+        """
+        workflow = self.engine.open_workflows.sole_workflow_or_none()
+        if workflow is None:
+            return WorkflowFlows()
+        return workflow.flows
 
     def _cleanup_flow_on_failed_deserialization(self, flow_name: str, *, pushed_flow_context: bool) -> None:
         """Clean up a flow that failed during deserialization.
@@ -397,11 +406,12 @@ class FlowManager(EngineScoped):
     def get_connected_output_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
         """Get connected output parameters."""
         connections = []
-        if node.name in self._connections.outgoing_index:
-            outgoing_params = self._connections.outgoing_index[node.name]
+        connection_mgr = self.get_connections()
+        if node.name in connection_mgr.outgoing_index:
+            outgoing_params = connection_mgr.outgoing_index[node.name]
             if param.name in outgoing_params:
                 for connection_id in outgoing_params[param.name]:
-                    connection = self._connections.connections[connection_id]
+                    connection = connection_mgr.connections[connection_id]
                     connections.append((connection.target_node, connection.target_parameter))
         return connections
 
@@ -413,10 +423,11 @@ class FlowManager(EngineScoped):
         """
         flow_connections = []
         flow_name = flow.name
+        flows = self._flows_or_empty()
 
         # Get all child flow names for this flow
         child_flow_names = set()
-        for child_name, parent_name in self._name_to_parent_name.items():
+        for child_name, parent_name in flows.name_to_parent_name.items():
             if parent_name == flow_name:
                 child_flow_names.add(child_name)
 
@@ -436,7 +447,7 @@ class FlowManager(EngineScoped):
             all_node_names.update(child_flow.nodes.keys())
 
         # Include connections where both nodes are in this flow hierarchy
-        for connection in self._connections.connections.values():
+        for connection in flows.connections.connections.values():
             source_in_hierarchy = connection.source_node.name in all_node_names
             target_in_hierarchy = connection.target_node.name in all_node_names
 
@@ -446,8 +457,9 @@ class FlowManager(EngineScoped):
         return flow_connections
 
     def get_parent_flow(self, flow_name: str) -> str | None:
-        if flow_name in self._name_to_parent_name:
-            return self._name_to_parent_name[flow_name]
+        name_to_parent_name = self._flows_or_empty().name_to_parent_name
+        if flow_name in name_to_parent_name:
+            return name_to_parent_name[flow_name]
         msg = f"Flow with name {flow_name} doesn't exist"
         raise ValueError(msg)
 
@@ -459,7 +471,7 @@ class FlowManager(EngineScoped):
         Serialization walks parent/child links, so a subflow left parented to the top-level flow is
         saved outside its enclosing group and its members go missing on load.
 
-        No peer manager has to be told: ``_name_to_parent_name`` is the only record of parentage, and
+        No peer manager has to be told: ``name_to_parent_name`` is the only record of parentage, and
         NodeManager tracks a node's flow by name, which reparenting does not change.
 
         Unlike every other structural change in retained mode, this is a plain method rather than a
@@ -477,10 +489,11 @@ class FlowManager(EngineScoped):
         Raises:
             ValueError: If either Flow is unknown, or the move would create a cycle
         """
-        if flow_name not in self._name_to_parent_name:
+        name_to_parent_name = self._flows_or_empty().name_to_parent_name
+        if flow_name not in name_to_parent_name:
             msg = f"Flow with name {flow_name} doesn't exist"
             raise ValueError(msg)
-        if new_parent_flow_name not in self._name_to_parent_name:
+        if new_parent_flow_name not in name_to_parent_name:
             msg = f"Flow with name {new_parent_flow_name} doesn't exist"
             raise ValueError(msg)
         if flow_name == new_parent_flow_name:
@@ -489,16 +502,16 @@ class FlowManager(EngineScoped):
 
         # Walk up from the proposed parent: if we meet the flow being moved, the move would
         # detach that branch from the tree and make the ancestor walk loop forever.
-        ancestor = self._name_to_parent_name[new_parent_flow_name]
+        ancestor = name_to_parent_name[new_parent_flow_name]
         while ancestor is not None:
             if ancestor == flow_name:
                 msg = (
                     f"Attempted to move Flow '{flow_name}' under '{new_parent_flow_name}', which is already inside it."
                 )
                 raise ValueError(msg)
-            ancestor = self._name_to_parent_name.get(ancestor)
+            ancestor = name_to_parent_name.get(ancestor)
 
-        self._name_to_parent_name[flow_name] = new_parent_flow_name
+        name_to_parent_name[flow_name] = new_parent_flow_name
 
     def is_referenced_workflow(self, flow: ControlFlow) -> bool:
         """Check if this flow was created by importing a referenced workflow.
@@ -506,7 +519,7 @@ class FlowManager(EngineScoped):
         Returns True if this flow originated from a workflow import operation,
         False if it was created standalone.
         """
-        return flow in self._flow_to_referenced_workflow_name
+        return flow in self._flows_or_empty().flow_to_referenced_workflow_name
 
     def get_referenced_workflow_name(self, flow: ControlFlow) -> str | None:
         """Get the name of the referenced workflow, if any.
@@ -514,11 +527,11 @@ class FlowManager(EngineScoped):
         Returns the workflow name that was imported to create this flow,
         or None if this flow was created standalone.
         """
-        return self._flow_to_referenced_workflow_name.get(flow)
+        return self._flows_or_empty().flow_to_referenced_workflow_name.get(flow)
 
     @handles(GetTopLevelFlowRequest)
     def on_get_top_level_flow_request(self, request: GetTopLevelFlowRequest) -> ResultPayload:  # noqa: ARG002 (the request has to be assigned to the method)
-        for flow_name, parent in self._name_to_parent_name.items():
+        for flow_name, parent in self._flows_or_empty().name_to_parent_name.items():
             if parent is None:
                 return GetTopLevelFlowResultSuccess(
                     flow_name=flow_name, result_details=f"Successfully found top level flow: '{flow_name}'"
@@ -623,7 +636,7 @@ class FlowManager(EngineScoped):
 
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
-        return any([parent is None for parent in self._name_to_parent_name.values()])  # noqa: C419
+        return any([parent is None for parent in self._flows_or_empty().name_to_parent_name.values()])  # noqa: C419
 
     @handles(CreateFlowRequest)
     def on_create_flow_request(self, request: CreateFlowRequest) -> ResultPayload:
@@ -675,12 +688,13 @@ class FlowManager(EngineScoped):
         workflow_manager = self.engine.workflow_manager
         flow = ControlFlow(name=final_flow_name, engine=self.engine, metadata=request.metadata)
         self.engine.object_manager.add_object_by_name(name=final_flow_name, obj=flow)
-        self._name_to_parent_name[final_flow_name] = parent_name
+        flows = self.engine.open_workflows.sole_workflow().flows
+        flows.name_to_parent_name[final_flow_name] = parent_name
 
         # Track referenced workflow if this flow was created within a referenced workflow context
         if workflow_manager.has_current_referenced_workflow():
             referenced_workflow_name = workflow_manager.get_current_referenced_workflow()
-            self._flow_to_referenced_workflow_name[flow] = referenced_workflow_name
+            flows.flow_to_referenced_workflow_name[flow] = referenced_workflow_name
 
         # See if we need to push it as the current context.
         if request.set_as_new_context:
@@ -785,11 +799,12 @@ class FlowManager(EngineScoped):
             # If we've made it this far, we have deleted all the children Flows and their nodes.
             # Remove the flow from our map.
             obj_mgr.del_obj_by_name(flow.name)
-            del self._name_to_parent_name[flow.name]
+            flows = self.engine.open_workflows.sole_workflow().flows
+            del flows.name_to_parent_name[flow.name]
 
             # Clean up referenced workflow tracking
-            if flow in self._flow_to_referenced_workflow_name:
-                del self._flow_to_referenced_workflow_name[flow]
+            if flow in flows.flow_to_referenced_workflow_name:
+                del flows.flow_to_referenced_workflow_name[flow]
 
             # Clean up ControlFlowMachine and DAG orchestrator only if this is the global flow.
             # Isolated subflows have their own machines and should not clear the global state.
@@ -872,7 +887,7 @@ class FlowManager(EngineScoped):
 
         # Create a list of all child flow names that point DIRECTLY to us.
         ret_list = []
-        for flow_name, parent_name in self._name_to_parent_name.items():
+        for flow_name, parent_name in self._flows_or_empty().name_to_parent_name.items():
             if parent_name == request.parent_flow_name:
                 ret_list.append(flow_name)
 
@@ -902,14 +917,15 @@ class FlowManager(EngineScoped):
 
     def handle_flow_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old flow name and its parent first.
-        parent = self._name_to_parent_name[old_name]
-        self._name_to_parent_name[new_name] = parent
-        del self._name_to_parent_name[old_name]
+        name_to_parent_name = self.engine.open_workflows.sole_workflow().flows.name_to_parent_name
+        parent = name_to_parent_name[old_name]
+        name_to_parent_name[new_name] = parent
+        del name_to_parent_name[old_name]
 
         # Now iterate through everyone who pointed to the old one as a parent and update it.
-        for flow_name, parent_name in self._name_to_parent_name.items():
+        for flow_name, parent_name in name_to_parent_name.items():
             if parent_name == old_name:
-                self._name_to_parent_name[flow_name] = new_name
+                name_to_parent_name[flow_name] = new_name
 
         # Let the Node Manager know about the change, too.
         self.engine.node_manager.handle_flow_rename(old_name=old_name, new_name=new_name)
@@ -1048,7 +1064,7 @@ class FlowManager(EngineScoped):
 
         # Some scenarios restrict when we can have more than one connection. See if we're in such a scenario and replace the
         # existing connection instead of adding a new one.
-        connection_mgr = self._connections
+        connection_mgr = self.engine.open_workflows.sole_workflow().flows.connections
         # Try the OUTGOING restricted scenario first.
         restricted_scenario_connection = connection_mgr.get_existing_connection_for_restricted_scenario(
             node=source_node, parameter=source_param, is_source=True
@@ -1105,7 +1121,7 @@ class FlowManager(EngineScoped):
             else:
                 # If not true, we default to the request
                 is_node_group_internal = request.is_node_group_internal
-            conn = self._connections.add_connection(
+            conn = connection_mgr.add_connection(
                 source_node=source_node,
                 source_parameter=source_param,
                 target_node=target_node,
@@ -1247,7 +1263,7 @@ class FlowManager(EngineScoped):
                     {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
                 )
             )
-            self._connections.unresolve_future_nodes(target_node)
+            connection_mgr.unresolve_future_nodes(target_node)
 
         # Check if either node is ErrorProxyNode and mark connection modification if not initial_setup
         if not request.initial_setup:
@@ -1351,13 +1367,14 @@ class FlowManager(EngineScoped):
         # Check if either node is in a NodeGroup and untrack connections BEFORE removing connection
 
         # Find the connection before it's deleted
+        connection_mgr = self.engine.open_workflows.sole_workflow().flows.connections
         if (
-            source_node.name in self._connections.outgoing_index
-            and source_param.name in self._connections.outgoing_index[source_node.name]
+            source_node.name in connection_mgr.outgoing_index
+            and source_param.name in connection_mgr.outgoing_index[source_node.name]
         ):
-            connection_ids = self._connections.outgoing_index[source_node.name][source_param.name]
+            connection_ids = connection_mgr.outgoing_index[source_node.name][source_param.name]
             for candidate_id in connection_ids:
-                candidate = self._connections.connections[candidate_id]
+                candidate = connection_mgr.connections[candidate_id]
                 if (
                     candidate.target_node.name == target_node.name
                     and candidate.target_parameter.name == target_param.name
@@ -1365,7 +1382,7 @@ class FlowManager(EngineScoped):
                     break
 
         # Remove the connection.
-        if not self._connections.remove_connection(
+        if not connection_mgr.remove_connection(
             source_node=source_node.name,
             source_parameter=source_param.name,
             target_node=target_node.name,
@@ -1397,7 +1414,7 @@ class FlowManager(EngineScoped):
                 target_node.reset_input_value_after_execution(target_param.name)
                 # Consumers still need invalidating, and this pass only unresolves targets that are
                 # already RESOLVED, so it cannot disturb another node mid-flight either.
-                self._connections.unresolve_future_nodes(target_node)
+                connection_mgr.unresolve_future_nodes(target_node)
             else:
                 try:
                     # Only try to remove a value where one exists, otherwise it will generate errant warnings.
@@ -1405,7 +1422,7 @@ class FlowManager(EngineScoped):
                         target_node.remove_parameter_value(target_param.name)
                     # It removed it accurately
                     # Unresolve future nodes that depended on that value
-                    self._connections.unresolve_future_nodes(target_node)
+                    connection_mgr.unresolve_future_nodes(target_node)
                     target_node.make_node_unresolved(
                         current_states_to_trigger_change_event=set(
                             {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
@@ -3320,7 +3337,7 @@ class FlowManager(EngineScoped):
 
         # Create a list of all child flow names that point DIRECTLY to us.
         ret_list = []
-        for flow_name, parent_name in self._name_to_parent_name.items():
+        for flow_name, parent_name in self._flows_or_empty().name_to_parent_name.items():
             if parent_name == parent_flow_name:
                 ret_list.append(flow_name)
 
@@ -3372,7 +3389,7 @@ class FlowManager(EngineScoped):
         node_name_set = set(node_names)
         incoming: dict[str, set[str]] = {name: set() for name in node_names}
         outgoing: dict[str, set[str]] = {name: set() for name in node_names}
-        for connection in self._connections.connections.values():
+        for connection in self.get_connections().connections.values():
             src = connection.source_node.name
             tgt = connection.target_node.name
             if src in node_name_set and tgt in node_name_set and src != tgt:
@@ -4799,9 +4816,10 @@ class FlowManager(EngineScoped):
         self._global_single_node_resolution = False
 
         # Clear all connections to prevent memory leaks and stale references
-        self._connections.connections.clear()
-        self._connections.outgoing_index.clear()
-        self._connections.incoming_index.clear()
+        connections = self.get_connections()
+        connections.connections.clear()
+        connections.outgoing_index.clear()
+        connections.incoming_index.clear()
 
         logger.debug("Reset global execution state")
 
