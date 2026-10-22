@@ -299,13 +299,19 @@ class Connections:
         return internal_connections
 
     # Used to check data connections for all future nodes to be BAD!
-    def unresolve_future_nodes(self, node: BaseNode, _visited: set[str] | None = None) -> None:
-        # Recursively traverse downstream nodes, tracking visited nodes to avoid cycles.
-        if _visited is None:
-            _visited = set()
-        if node.name in _visited:
+    def unresolve_future_nodes(self, node: BaseNode, visited: set[str] | None = None) -> None:
+        """Mark every data node downstream of `node` unresolved.
+
+        `visited` guards against cycles. A caller that passes its own set makes the walk
+        incremental: a node already in the set is not visited again, so a scheduler that
+        unresolves downstream of every node it executes can hand it one set per run and have
+        each node walked once instead of once per upstream execution.
+        """
+        if visited is None:
+            visited = set()
+        if node.name in visited:
             return
-        _visited.add(node.name)
+        visited.add(node.name)
 
         # There are no outgoing connections from this node.
         if node.name not in self.outgoing_index:
@@ -336,7 +342,7 @@ class Connections:
                         # Always continue traversal through downstream nodes so that
                         # resolved nodes beyond an already-unresolved intermediate are
                         # still reached and unresolved.
-                        self.unresolve_future_nodes(target_node, _visited)
+                        self.unresolve_future_nodes(target_node, visited)
 
     def get_outgoing_connections_to_node(self, node: BaseNode, to_node: BaseNode) -> dict[str, list[Connection]]:
         connections = {}
