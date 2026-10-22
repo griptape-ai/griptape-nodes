@@ -561,6 +561,7 @@ class Engine:
 
         # Cancel any running flow so the delete path doesn't race with execution.
         flow_manager = self._flow_manager
+        flow_manager.turn_away_waiting_runs("the workflow it belonged to was closed.")
         for flow_name in self._object_manager.get_filtered_subset(type=ControlFlow):
             if flow_manager.check_for_existing_running_flow():
                 self.handle_request(CancelFlowRequest(flow_name=flow_name))

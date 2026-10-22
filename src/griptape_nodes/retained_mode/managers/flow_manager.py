@@ -194,7 +194,7 @@ from griptape_nodes.serialization.legacy_pickle import LegacyPickleError, read_l
 from griptape_nodes.serialization.values import Unencodable, decode_value, encodable_default, try_encode, value_key
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -395,8 +395,8 @@ class FlowManager(EngineScoped):
         self._node_executor = NodeExecutor(self.engine)
         self._run_queue = RunQueue()
         self._run_in_progress: Run | None = None
-        # The task executing the run in progress while its request has not returned.
-        self._run_driver: asyncio.Task[None] | None = None
+        # True while the run in progress is executing its request, before that request has returned.
+        self._driving = False
 
     @property
     def global_single_node_resolution(self) -> bool:
@@ -782,6 +782,9 @@ class FlowManager(EngineScoped):
             details = f"Attempted to delete Flow '{flow_name}', but no Flow with that name could be found."
             result = DeleteFlowResultFailure(result_details=details)
             return result
+
+        # Before the cancel below, which would start the next waiting run against the flow being deleted.
+        self._turn_away(self._run_queue.runs_for_flow(flow.name), f"its flow '{flow.name}' was deleted.")
 
         # Only cancel if the flow being deleted is the one tracked by the global control flow machine.
         # Isolated subflows (e.g., ForEach loop iterations) have their own separate ControlFlowMachine
@@ -4744,8 +4747,8 @@ class FlowManager(EngineScoped):
         try:
             return await asyncio.shield(run.outcome)
         except asyncio.CancelledError:
-            # Nothing will wait for this run any more, so one that has not started never should.
-            await self.cancel_run(run.run_id)
+            # Nothing will wait for this run any more, so if it has not started it never should.
+            self._turn_away([run], "its request was cancelled.")
             raise
 
     def submit_run(self, spec: RunSpec) -> Run:
@@ -4765,20 +4768,43 @@ class FlowManager(EngineScoped):
         return run
 
     async def cancel_run(self, run_id: str) -> bool:
-        """Cancel a run, returning whether there was one: a waiting run leaves the line, the run in progress stops."""
-        waiting = self._run_queue.remove(run_id)
-        if waiting is not None:
-            waiting.state = RunState.CANCELLED
-            self._leave_line(waiting)
-            waiting.outcome.set_result(waiting.spec.failure("The run was cancelled before it started."))
-            self._report_places_in_line()
+        """Cancel a run, returning whether there was one: a waiting run leaves the line, the run in progress stops.
+
+        Raises:
+            RuntimeError: The run in progress has not started its flow yet, so there is nothing to stop.
+        """
+        waiting = [run for run in self._run_queue.snapshot() if run.run_id == run_id]
+        if waiting:
+            self._turn_away(waiting, "it was cancelled before it started.")
             return True
         run = self._run_in_progress
         if run is None or run.run_id != run_id:
             return False
+        previous_state = run.state
         run.state = RunState.CANCELLED
-        await self.cancel_flow_run()
+        try:
+            await self.cancel_flow_run()
+        except RuntimeError:
+            run.state = previous_state
+            raise
         return True
+
+    def turn_away_waiting_runs(self, reason: str) -> None:
+        """Fail every waiting run without executing it, before the workflows its spec names go away.
+
+        Call it before cancelling the run in progress: that cancel starts the next waiting run.
+        """
+        self._turn_away(self._run_queue.snapshot(), reason)
+
+    def _turn_away(self, runs: list[Run], reason: str) -> None:
+        """Take waiting runs out of the line without executing them; each one's request returns `reason`."""
+        for run in runs:
+            if self._run_queue.remove(run.run_id) is None:
+                continue
+            run.state = RunState.CANCELLED
+            self._leave_line(run)
+            self._on_run_loop(run, run.outcome.set_result, run.spec.failure(f"The run did not start: {reason}"))
+        self._report_places_in_line()
 
     def _start_next_run_if_idle(self) -> None:
         if self._run_in_progress is not None:
@@ -4789,40 +4815,46 @@ class FlowManager(EngineScoped):
         self._leave_line(run)
         run.state = RunState.RUNNING
         self._run_in_progress = run
-        self._run_driver = asyncio.get_running_loop().create_task(self._drive(run), context=run.context)
+        self._driving = True
+        # The run that just ended may have ended on a short-lived loop, such as a synchronous request's.
+        self._on_run_loop(run, self._create_driver, run)
+
+    def _create_driver(self, run: Run) -> None:
+        asyncio.get_running_loop().create_task(self._drive(run), context=run.context)
 
     async def _drive(self, run: Run) -> None:
         # run.context is the submitter's context copied, so this marks only the run's own tasks.
         _current_run_id.set(run.run_id)
         try:
             result = await run.spec.execute(self.engine)
-        except BaseException as e:
-            # The request is waiting on the outcome, so it must hear how the run ended, then the next run starts.
-            if isinstance(e, asyncio.CancelledError):
-                run.outcome.cancel()
-            else:
-                run.outcome.set_exception(e)
-            if run.state is RunState.RUNNING:
-                run.state = RunState.FAILED
+        except asyncio.CancelledError:
+            run.outcome.cancel()
+            self._driving = False
             self._finish_run(run)
             raise
-        run.outcome.set_result(result)
-        if run.state is not RunState.RUNNING:
+        except Exception as e:
+            # The request awaiting the outcome reports the error, so the driver does not raise it again.
+            run.outcome.set_exception(e)
+            run.state = RunState.FAILED
+            self._driving = False
             self._finish_run(run)
             return
+        run.outcome.set_result(result)
+        self._driving = False
         if self.check_for_existing_running_flow():
             run.state = RunState.PAUSED
             return
-        if result.succeeded():
-            run.state = RunState.FINISHED
-        else:
-            run.state = RunState.FAILED
+        if run.state is RunState.RUNNING:
+            if result.succeeded():
+                run.state = RunState.FINISHED
+            else:
+                run.state = RunState.FAILED
         self._finish_run(run)
 
     def _finish_run_if_over(self) -> None:
         """End the run in progress if its flow has stopped, on the paths that can stop a paused run."""
         run = self._run_in_progress
-        if run is None or self._is_driving() or self.check_for_existing_running_flow():
+        if run is None or self._driving or self.check_for_existing_running_flow():
             return
         if run.state is RunState.PAUSED:
             run.state = RunState.FINISHED
@@ -4833,14 +4865,21 @@ class FlowManager(EngineScoped):
         if self._run_in_progress is not run:
             return
         self._run_in_progress = None
-        self._run_driver = None
         self._start_next_run_if_idle()
         self._report_places_in_line()
 
-    def _is_driving(self) -> bool:
-        """True while the request that started the run in progress is still executing it."""
-        driver = self._run_driver
-        return driver is not None and not driver.done()
+    @staticmethod
+    def _on_run_loop(run: Run, callback: Callable[..., object], *args: object) -> None:
+        """Call `callback` on the loop the run was submitted on, which owns its outcome."""
+        loop = run.outcome.get_loop()
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is loop:
+            callback(*args)
+            return
+        loop.call_soon_threadsafe(callback, *args)
 
     def _is_inside_run_in_progress(self) -> bool:
         run = self._run_in_progress

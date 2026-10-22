@@ -57,7 +57,9 @@ class TestRunQueue:
         queue = RunQueue()
         queue.enqueue(_run("a"))
 
-        assert queue.remove("missing") is None
+        removed = queue.remove("missing")
+
+        assert removed is None
         assert [run.run_id for run in queue.snapshot()] == ["a"]
 
     @pytest.mark.asyncio

@@ -34,15 +34,17 @@ class RunSpec(Protocol):
     """What a run executes: the request that started it, with the flow it runs."""
 
     @property
-    def flow_name(self) -> str: ...
+    def flow_name(self) -> str:
+        """The flow the run executes."""
+        raise NotImplementedError
 
     async def execute(self, engine: Engine) -> ResultPayload:
         """Execute the run, returning what its request returns."""
-        ...
+        raise NotImplementedError
 
     def failure(self, details: str) -> ResultPayload:
         """The failure its request returns for a run that did not execute."""
-        ...
+        raise NotImplementedError
 
 
 @dataclass
@@ -82,6 +84,10 @@ class RunQueue:
                 self._runs.remove(run)
                 return run
         return None
+
+    def runs_for_flow(self, flow_name: str) -> list[Run]:
+        """The waiting runs of `flow_name`, next first."""
+        return [run for run in self._runs if run.flow_name == flow_name]
 
     def snapshot(self) -> list[Run]:
         """The waiting runs, next first."""
