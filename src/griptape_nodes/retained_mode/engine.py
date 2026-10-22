@@ -579,7 +579,8 @@ class Engine:
         if self._open_workflows.sole_workflow_or_none() is not workflow:
             # Another request closed the workflow while the cancel was awaited, and may have opened
             # the next one. Tear nothing down. Skip the worker broadcast too: it would release objects
-            # the workers may now hold for the next workflow. A ClearAll that closed it told them already.
+            # the workers may now hold for the next workflow. A ClearAll that closed it told them
+            # already; the facade or a bare pop tells them nothing, as before.
             logger.debug("The workflow being closed was closed by another request while its run was cancelled.")
             return
         try:

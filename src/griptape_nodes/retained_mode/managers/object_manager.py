@@ -137,6 +137,9 @@ class ObjectManager(EngineScoped):
                     # process holds, as closing a workflow does.
                     context_manager.mirror_workflow_context(None, None, None, None)
                     self.engine.resource_manager.drop_all_local_objects()
+            except Exception as e:
+                details = f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
+                return ClearAllObjectStateResultFailure(result_details=details)
             finally:
                 # The workers may still hold objects. Nothing retries this request, so a worker that
                 # was never told keeps them for the life of the process.
