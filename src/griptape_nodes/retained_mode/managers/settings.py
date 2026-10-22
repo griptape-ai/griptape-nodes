@@ -698,11 +698,8 @@ class Settings(BaseModel):
     )
     max_loop_iterations_in_parallel: int | None = Field(
         category=EXECUTION,
-        default=8,
-        description=(
-            "How many iterations of a loop set to run its items all at once may run at the same time. "
-            "Iterations past this number wait for one to finish. Set to 0 or leave empty for no limit."
-        ),
+        default=0,
+        description="Maximum number of loop iterations running at a time when a loop runs all items at once. 0 means no limit.",
     )
     worker: WorkerSettings = Field(
         category=EXECUTION,

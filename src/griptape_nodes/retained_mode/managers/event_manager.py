@@ -276,9 +276,7 @@ class EventManager(EngineScoped):
         attribute depending on the wrapper: request results expose it as ``result``, execution
         events as ``payload``, and both may arrive already wrapped in a ``GriptapeNodeEvent``.
 
-        Matching is by ``isinstance``, so a set may name a base class: ``ResultPayload`` hides every
-        request result dispatched inside the window, which is what a loop rebuilding its body in
-        transient flows needs -- the editor has no node to attach any of those results to.
+        Matching is by ``isinstance``, so a set may name a base class such as ``ResultPayload``.
 
         Suppression is scoped to the current context; see ``_suppressed_event_types``.
         """
@@ -351,9 +349,7 @@ class EventManager(EngineScoped):
         if self._event_queue is None:
             return
 
-        # A suppressed event still reaches the engine's own listeners below; only the broadcast to
-        # websocket clients is skipped. Checked here, not only on request results (engine.py), so
-        # the execution traffic of a loop's transient iteration flows stays off the wire too.
+        # Suppressed events still reach the engine's own listeners; only the broadcast is skipped.
         if self.should_suppress_event(event):
             self._dispatch_to_execution_listeners(event)
             return
@@ -382,7 +378,7 @@ class EventManager(EngineScoped):
         if self._event_queue is None:
             return
 
-        # See put_event: suppressed events skip the wire, not the engine's own listeners.
+        # Suppressed events still reach the engine's own listeners; only the broadcast is skipped.
         if self.should_suppress_event(event):
             self._dispatch_to_execution_listeners(event)
             return

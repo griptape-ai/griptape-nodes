@@ -231,13 +231,9 @@ LOOP_EVENTS_TO_SUPPRESS = {
     DeserializeFlowFromCommandsResultFailure,
 }
 
-# Execution traffic of a parallel loop's transient iteration flows. put_event/aput_event consult
-# should_suppress_event, so inside a suppression window these stay off the wire: the editor has no
-# node named after a packaged copy, and a 24-item loop otherwise sends it thousands of events it can
-# only discard. The sequential path runs its body under EventTranslationContext instead, which
-# renames the packaged copy to the real node so the editor can highlight it; that path must never
-# enter a window built from this set. Execution-event listeners hear every parallel iteration either way.
-#
+# Execution events from a parallel loop's iteration flows. The editor has no node by those names.
+# Don't use in the sequential path: it relies on EventTranslationContext to highlight the real node.
+# Execution-event listeners hear every parallel iteration either way.
 # Only ExecutionPayload members belong here; request results go in LOOP_EVENTS_TO_SUPPRESS.
 EXECUTION_EVENTS_TO_SUPPRESS = {
     CurrentControlNodeEvent,
@@ -260,20 +256,13 @@ EXECUTION_EVENTS_TO_SUPPRESS = {
     ProgressEvent,
 }
 
-# What a loop's bookkeeping emits about the packaged copies in its transient flow: the request
-# results of deserializing, seeding and deleting it, and the element events of nodes whose element
-# ids exist nowhere on the canvas. The sequential path runs its body under EventTranslationContext
-# so progress and value events rename to the real node; AlterElementEvent cannot be renamed, since
-# the editor matches elements by id and a copy's ids are its own, so it is hidden here instead.
+# Request results and element events about a loop's packaged copies. Element events can't be
+# translated to the real node because the editor matches elements by id.
 LOOP_BOOKKEEPING_EVENTS_TO_SUPPRESS: frozenset[type] = frozenset(
     LOOP_EVENTS_TO_SUPPRESS | {AlterElementEvent, RemoveElementEvent, ResultPayload}
 )
 
-# Everything a parallel loop's local execution emits about its iteration flows, from the first
-# deserialize to the last delete. ``ResultPayload`` matches by isinstance (see
-# EventManager.should_suppress_event), so every request result dispatched while the window is open
-# is hidden without listing each type: the connection listings, parameter additions and deletions
-# the deserializer and the teardown issue all name nodes the editor has never seen.
+# Everything a parallel loop's local execution emits. ResultPayload matches every request result.
 PARALLEL_LOOP_EVENTS_TO_SUPPRESS: frozenset[type] = frozenset(
     LOOP_EVENTS_TO_SUPPRESS | EXECUTION_EVENTS_TO_SUPPRESS | {ResultPayload}
 )
@@ -3325,12 +3314,8 @@ class NodeExecutor(EngineScoped):
         return last_iteration_values
 
     def _parallel_iteration_gate(self, total_iterations: int) -> asyncio.Semaphore:
-        """How many iterations of an all-at-once loop may run at the same time.
-
-        Read from the `max_loop_iterations_in_parallel` setting at run start. A missing, zero or
-        negative value means no limit, which is the pre-setting behavior.
-        """
-        configured_limit = self.engine.config_manager.get_config_value("max_loop_iterations_in_parallel", default=8)
+        """Semaphore sized by `max_loop_iterations_in_parallel`; 0 or unset means no limit."""
+        configured_limit = self.engine.config_manager.get_config_value("max_loop_iterations_in_parallel", default=0)
         if configured_limit is None or configured_limit <= 0:
             return asyncio.Semaphore(max(total_iterations, 1))
         return asyncio.Semaphore(configured_limit)
@@ -3372,12 +3357,7 @@ class NodeExecutor(EngineScoped):
         parameter_values_per_iteration: dict[int, dict[str, Any]],
         end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
-        """Run every iteration of a loop at once in transient local flows, silently to the editor.
-
-        The whole run -- deserializing the iteration flows, seeding their inputs, executing them,
-        collecting their outputs and deleting them -- happens inside one suppression window, so the
-        editor hears about the loop node it can see and nothing about the copies it cannot.
-        """
+        """Run all loop iterations locally, hiding events about the iteration flows from the editor."""
         with EventSuppressionContext(self.engine.event_manager, PARALLEL_LOOP_EVENTS_TO_SUPPRESS):
             return await self._execute_loop_iterations_locally_unsuppressed(
                 package_result=package_result,
@@ -3464,9 +3444,7 @@ class NodeExecutor(EngineScoped):
             logger.debug("Successfully deserialized %d flow instances for parallel execution", total_iterations)
             # Step 2: Define the per-iteration coroutine
             packaged_start_node_name = self.get_node_parameter_mappings(package_result, "start").node_name
-            # Every iteration task is created at once below so a cancel can reach all of them; the
-            # gate is what keeps N API calls, N worker threads and N bursts of events from starting
-            # in the same instant and starving the editor's heartbeat.
+            # All tasks are created up front so a cancel reaches them; the gate limits how many run.
             concurrency_gate = self._parallel_iteration_gate(total_iterations)
 
             async def run_single_iteration(

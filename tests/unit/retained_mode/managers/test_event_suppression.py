@@ -305,15 +305,7 @@ class TestSuppressionIsScopedToItsCaller:
 
 
 class TestSuppressionSetReachability:
-    """Both of the executor's suppression sets reach the transport they are written for.
-
-    ``ResultPayload`` subclasses are broadcast from ``engine.ahandle_request``, which consults
-    ``should_suppress_event`` before queueing. ``ExecutionPayload`` members are emitted through
-    ``put_event``/``aput_event``, which consult it too -- so a parallel loop can keep the execution
-    traffic of its transient iteration flows off the wire. The sets stay split by transport so a
-    reader knows which path each member rides, and so a request result never hides in a set that
-    reads as "execution events".
-    """
+    """The executor's suppression sets stay split by transport: execution payloads vs request results."""
 
     def test_execution_events_to_suppress_holds_only_execution_payloads(self) -> None:
         results = sorted(
@@ -341,7 +333,6 @@ class TestSuppressionSetReachability:
             assert event_manager.should_suppress_event(_create_node_failure_event()) is True
 
     def test_a_base_class_in_the_set_matches_every_subclass(self) -> None:
-        """``ResultPayload`` in a set hides every request result, so a loop need not list each type."""
         event_manager = EventManager()
         with EventSuppressionContext(event_manager, {ResultPayload}):
             assert event_manager.should_suppress_event(_create_node_result_event()) is True
@@ -350,12 +341,6 @@ class TestSuppressionSetReachability:
 
     @pytest.mark.asyncio
     async def test_an_execution_event_is_held_back_inside_its_own_suppression_window(self) -> None:
-        """The real transport: inside the window the event never reaches the queue, outside it does.
-
-        This is what keeps a parallel loop's per-copy execution traffic off the websocket. The
-        sequential path never opens a window from this set: it relies on these events, renamed by
-        EventTranslationContext, to highlight the real node.
-        """
         event_manager = EventManager()
         queue: asyncio.Queue = asyncio.Queue()
         event_manager.initialize_queue(queue)
