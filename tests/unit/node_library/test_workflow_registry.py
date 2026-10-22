@@ -362,7 +362,9 @@ class TestWorkflowRegistryOperations:
         _workflow_file(tmp_path / "flow.py")
         workflow = registry.register_file("flow.py", _metadata(workflow_id=_workflow_id("gone")))
 
-        assert registry.remove(_workflow_id("gone")) is workflow
+        removed = registry.remove(_workflow_id("gone"))
+
+        assert removed is workflow
 
         assert registry.find_by_name("flow") is None
         assert registry.find_by_path(tmp_path / "flow.py") is None
