@@ -105,6 +105,13 @@ class AppGetSessionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Session information retrieval failed. Common causes: session not found, access error."""
 
 
+def _current_engine_instance_id() -> str | None:
+    """instance_id of the engine in this process, or None before one exists."""
+    from griptape_nodes.retained_mode.engine import current_engine, has_current_engine
+
+    return current_engine().instance_id if has_current_engine() else None
+
+
 @dataclass
 @PayloadRegistry.register
 class AppInitializationComplete(AppPayload):
@@ -129,6 +136,10 @@ class AppInitializationComplete(AppPayload):
     # URL of the static file server the host process runs for this workspace. The engine serves
     # nothing itself, so when unset it assumes the host's default address (see StaticFilesManager).
     static_server_base_url: str | None = None
+    # instance_id of the engine that finished initializing, matching the one its heartbeat
+    # reports, so a client can tell which engine process this event came from. Filled from this
+    # process's engine, since the host app builds the event. None from engines too old to send it.
+    instance_id: str | None = field(default_factory=_current_engine_instance_id)
 
 
 @dataclass
@@ -474,6 +485,8 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
         engine_os: Platform StrEnum value where the engine is running (windows, darwin, linux)
         user: User information including ID, email, and name (None if not logged in)
         user_organization: User's organization information including ID and name (None if not logged in)
+        instance_id: Random id generated each time the engine starts, so a client can detect a
+            restart that kept the same engine_id and session_id
         orchestrator_engine_id: Engine id of the orchestrator that spawned this engine as a
             worker process, or None when this engine IS the orchestrator. A discovery client
             treats a non-None value as "this is a worker engine, nest it under that orchestrator".
@@ -512,6 +525,11 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
     # always fills this in, so the "" default means the heartbeat came from an engine too old
     # to report it -- a client should show nothing rather than guess.
     engine_os: str = ""
+    # Random id generated each time the engine starts. engine_id and session_id survive a
+    # restart, so a client that sees this change knows the engine restarted and that anything
+    # it loaded from the old process is stale, even if its connection never dropped.
+    # Defaulted for backward compatibility with older clients.
+    instance_id: str | None = None
 
 
 @dataclass

@@ -120,7 +120,8 @@
       "is_worker": false,
       "defer_pending_library_resets": false,
       "is_general_purpose_worker": false,
-      "static_server_base_url": null
+      "static_server_base_url": null,
+      "instance_id": "instance-1"
     }
   }
 }

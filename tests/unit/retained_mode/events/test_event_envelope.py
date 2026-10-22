@@ -59,7 +59,7 @@ def _events() -> dict[str, BaseEvent]:
             request_id="r2",
         ),
         "ExecutionEvent": ExecutionEvent(payload=CurrentControlNodeEvent(node_name="n")),
-        "AppEvent": AppEvent(payload=AppInitializationComplete()),
+        "AppEvent": AppEvent(payload=AppInitializationComplete(instance_id="instance-1")),
     }
 
 
