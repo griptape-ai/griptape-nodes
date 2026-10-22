@@ -255,7 +255,7 @@ class WorkflowFileOperations(EngineScoped):
             )
             return RenameWorkflowResultFailure(result_details=details)
 
-        if new_absolute_path != previous_absolute_path:
+        if new_absolute_path.name != previous_absolute_path.name:
             move_result = await self.engine.ahandle_request(
                 RenameFileRequest(
                     old_path=str(previous_absolute_path), new_path=str(new_absolute_path), workspace_only=False
@@ -299,7 +299,7 @@ class WorkflowFileOperations(EngineScoped):
 
     async def _restore_renamed_file(self, new_absolute_path: Path, previous_absolute_path: Path) -> str:
         """Move a renamed file back after its header could not be rewritten. Returns what to add to the failure."""
-        if new_absolute_path == previous_absolute_path:
+        if new_absolute_path.name == previous_absolute_path.name:
             return ""
         restore_result = await self.engine.ahandle_request(
             RenameFileRequest(
