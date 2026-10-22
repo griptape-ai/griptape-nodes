@@ -43,7 +43,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
 from griptape_nodes.retained_mode.request_handlers import handles
-from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowSet
+from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowError, OpenWorkflowSet
 from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
@@ -94,6 +94,7 @@ if TYPE_CHECKING:
     )
     from griptape_nodes.retained_mode.managers.worker_manager import WorkerManager
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -557,16 +558,40 @@ class Engine:
     def get_engine_id(self) -> str | None:
         return self._engine_identity_manager.active_engine_id
 
-    def clear_current_workflow_data(self) -> None:  # noqa: C901
-        """Tear down the active workflow: cancel running flows, delete its orphan flows, then pop it.
+    async def close_workflow_state(self, workflow: WorkflowRuntime) -> None:
+        """Close the open workflow: cancel its run, delete its flows, and release what it held.
 
-        Requires an active workflow on the ContextManager stack. Order matters:
-        `on_delete_flow_request` pushes a flow context via `ContextManager().flow(...)`,
-        which raises `NoActiveWorkflowError` if the workflow has already been popped.
-        So we delete flows first and pop the workflow last.
+        Every teardown of the open workflow comes through here. The runtime leaves the open
+        workflows with its objects and variables when its last context entry is popped. The
+        workers are told to release their held objects even when the teardown fails, since
+        nothing retries it.
+
+        Raises:
+            OpenWorkflowError: `workflow` is not the open workflow.
         """
-        context_manager = self._context_manager
-        if not context_manager.has_current_workflow():
+        if self._open_workflows.sole_workflow_or_none() is not workflow:
+            msg = "Attempted to close a workflow. Failed because it is not the open workflow."
+            raise OpenWorkflowError(msg)
+
+        await self._flow_manager.cancel_running_flow_before_teardown()
+        try:
+            while self._context_manager.has_current_workflow():
+                self._clear_top_workflow_entry()
+        finally:
+            # _clear_top_workflow_entry releases the objects this process holds; the workers hold their
+            # own, and telling them has to be awaited.
+            await self._worker_manager.broadcast_local_object_teardown()
+
+    def clear_current_workflow_data(self) -> None:
+        """Tear down the top workflow on the context stack, requesting cancellation of its run.
+
+        The target of `GriptapeNodes.clear_current_workflow_data()`. Engine code awaits
+        `close_workflow_state` instead, which awaits the cancellation and tells the workers.
+
+        Raises:
+            RuntimeError: No workflow is in the context.
+        """
+        if not self._context_manager.has_current_workflow():
             msg = "Cannot clear current workflow data without an active workflow context."
             raise RuntimeError(msg)
 
@@ -575,6 +600,18 @@ class Engine:
         for flow_name in self._object_manager.get_filtered_subset(type=ControlFlow):
             if flow_manager.check_for_existing_running_flow():
                 self.handle_request(CancelFlowRequest(flow_name=flow_name))
+
+        self._clear_top_workflow_entry()
+
+    def _clear_top_workflow_entry(self) -> None:
+        """Delete the open workflow's orphan flows, then pop the top workflow off the context stack.
+
+        Order matters: `on_delete_flow_request` pushes a flow context via `ContextManager().flow(...)`,
+        which raises `NoActiveWorkflowError` if the workflow has already been popped. So we delete
+        flows first and pop the workflow last.
+        """
+        context_manager = self._context_manager
+        flow_manager = self._flow_manager
 
         # Delete all orphan (top-level) flows. We can't rely on
         # `ListFlowsInCurrentContextRequest` here because the caller may only have a
@@ -606,10 +643,8 @@ class Engine:
         # Every key referring to a held object lived on a node just deleted, so each entry would hold
         # what it holds -- a multi-gigabyte pipeline -- until something else cleared it.
         #
-        # Here rather than in the clear-all-object-state handler because this is the chokepoint every
-        # teardown shares: deleting the open workflow reaches this without going through that handler.
-        # This covers only the objects in this process; ObjectManager and WorkflowManager tell the
-        # workers about theirs.
+        # Here because this is the chokepoint every teardown shares. This covers only the objects in
+        # this process; close_workflow_state tells the workers about theirs.
         dropped = self._resource_manager.drop_all_local_objects()
         if dropped:
             logger.debug("Released %d held object(s) while tearing down the workflow.", dropped)

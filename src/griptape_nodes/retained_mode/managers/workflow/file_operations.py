@@ -70,10 +70,7 @@ class WorkflowFileOperations(EngineScoped):
 
         context_manager = self.engine.context_manager
         if context_manager.has_current_workflow() and context_manager.get_current_workflow_id() == workflow.workflow_id:
-            self.engine.clear_current_workflow_data()
-            # clear_current_workflow_data releases what THIS process holds; the worker half must be
-            # awaited, so it belongs here in the async handler rather than in that sync method.
-            await self.engine.worker_manager.broadcast_local_object_teardown()
+            await self.engine.close_workflow_state(self.engine.open_workflows.sole_workflow())
         try:
             registry.remove(workflow.workflow_id)
         except Exception as e:

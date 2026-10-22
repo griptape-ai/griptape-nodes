@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+from griptape_nodes.retained_mode.events.workflow_events import DeleteWorkflowRequest
 from griptape_nodes.retained_mode.runtime.open_workflow_set import (
     NoOpenWorkflowError,
     OpenWorkflowError,
@@ -153,3 +156,109 @@ class TestRuntimeLifecycle:
 
         engine.context_manager.mirror_workflow_context(None, None, None, None)
         assert engine.open_workflows.sole_workflow_or_none() is None
+
+
+class TestCloseWorkflowState:
+    @pytest.mark.asyncio
+    async def test_cancels_the_running_flow_before_tearing_down(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        calls: list[str] = []
+        clear_top_entry = engine._clear_top_workflow_entry
+
+        def record_teardown() -> None:
+            calls.append("teardown")
+            clear_top_entry()
+
+        with (
+            patch.object(
+                engine.flow_manager,
+                "cancel_running_flow_before_teardown",
+                AsyncMock(side_effect=lambda: calls.append("cancel")),
+            ),
+            patch.object(engine, "_clear_top_workflow_entry", side_effect=record_teardown),
+            patch.object(
+                engine.worker_manager,
+                "broadcast_local_object_teardown",
+                AsyncMock(side_effect=lambda: calls.append("broadcast")),
+            ),
+        ):
+            await engine.close_workflow_state(engine.open_workflows.sole_workflow())
+
+        assert calls == ["cancel", "teardown", "broadcast"]
+
+    @pytest.mark.asyncio
+    async def test_pops_every_entry_and_leaves_no_workflow_open(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine, "outer")
+        push_unsaved_workflow(engine, "inner")
+
+        await engine.close_workflow_state(engine.open_workflows.sole_workflow())
+
+        assert not engine.context_manager.has_current_workflow()
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+    @pytest.mark.asyncio
+    async def test_tells_the_workers_even_when_the_teardown_raises(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+
+        with (
+            patch.object(engine, "_clear_top_workflow_entry", side_effect=RuntimeError("teardown blew up")),
+            patch.object(engine.worker_manager, "broadcast_local_object_teardown", AsyncMock()) as broadcast,
+            pytest.raises(RuntimeError, match="teardown blew up"),
+        ):
+            await engine.close_workflow_state(engine.open_workflows.sole_workflow())
+
+        broadcast.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_refuses_a_workflow_that_is_not_open(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+
+        with pytest.raises(OpenWorkflowError, match="not the open workflow"):
+            await engine.close_workflow_state(WorkflowRuntime("stale"))
+
+        assert engine.context_manager.has_current_workflow()
+
+    def test_clear_all_object_state_closes_the_open_workflow_through_it(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        runtime = engine.open_workflows.sole_workflow()
+
+        with patch.object(engine, "close_workflow_state", wraps=engine.close_workflow_state) as close:
+            result = engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+
+        assert result.succeeded()
+        close.assert_awaited_once_with(runtime)
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+    def test_clear_all_object_state_with_nothing_open_still_tells_the_workers(self, engine: Engine) -> None:
+        with (
+            patch.object(engine, "close_workflow_state", AsyncMock()) as close,
+            patch.object(engine.worker_manager, "broadcast_local_object_teardown", AsyncMock()) as broadcast,
+        ):
+            result = engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+
+        assert result.succeeded()
+        close.assert_not_awaited()
+        broadcast.assert_awaited_once()
+
+    def test_deleting_the_open_workflow_closes_it_through_it(self, engine: Engine) -> None:
+        workflow = push_unsaved_workflow(engine)
+        runtime = engine.open_workflows.sole_workflow()
+
+        with patch.object(engine, "close_workflow_state", wraps=engine.close_workflow_state) as close:
+            result = engine.handle_request(DeleteWorkflowRequest(workflow_id=workflow.workflow_id))
+
+        assert result.succeeded()
+        close.assert_awaited_once_with(runtime)
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+    def test_deleting_another_workflow_leaves_the_open_one_alone(self, engine: Engine) -> None:
+        other = engine.workflow_registry.register_unsaved("other", None)
+        push_unsaved_workflow(engine)
+        runtime = engine.open_workflows.sole_workflow()
+
+        with patch.object(engine, "close_workflow_state", AsyncMock()) as close:
+            result = engine.handle_request(DeleteWorkflowRequest(workflow_id=other.workflow_id))
+
+        assert result.succeeded()
+        close.assert_not_awaited()
+        assert engine.open_workflows.sole_workflow() is runtime

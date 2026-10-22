@@ -4728,6 +4728,24 @@ class FlowManager(EngineScoped):
             )
         )
 
+    async def cancel_running_flow_before_teardown(self) -> None:
+        """Cancel the running flow, if any, ahead of tearing the open workflow down.
+
+        Without this the previous run's node tasks keep going after their flows are deleted:
+        billing API calls, and emitting parameter updates keyed by node name onto the same-named
+        nodes of whatever run comes next.
+
+        Best-effort: a node that refuses to cancel must not block the teardown. A driver still
+        parked holds its FSM claim until it wakes and abandons the run; harmless here because
+        deleting the flows drops the machine it holds.
+        """
+        if not self.check_for_existing_running_flow():
+            return
+        try:
+            await self.cancel_flow_run()
+        except Exception as e:
+            logger.warning("Could not cancel the running workflow before clearing it. Continuing anyway: %s", e)
+
     async def _abandon_running_flow(self) -> None:
         """Give up on a run that has already failed, leaving the engine able to start another.
 

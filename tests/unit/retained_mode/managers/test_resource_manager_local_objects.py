@@ -454,7 +454,7 @@ class TestWorkflowStateClearReleasesObjects:
         push_unsaved_workflow(engine, "wf")
 
         with (
-            patch.object(engine, "clear_current_workflow_data", side_effect=RuntimeError("teardown blew up")),
+            patch.object(engine, "_clear_top_workflow_entry", side_effect=RuntimeError("teardown blew up")),
             patch.object(engine.worker_manager, "broadcast_local_object_teardown", AsyncMock()) as broadcast,
         ):
             result = engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
