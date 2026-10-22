@@ -206,7 +206,7 @@ class AdvancedNodeLibrary:
         calls the callback with the event each time one of that type happens. Where
         get_post_dispatch_hooks() reacts to a request the engine handled, these react to what
         happens during a run. ``NodeStartProcessEvent`` and ``NodeFinishProcessEvent`` report
-        every node a workflow runs; see the Execution Events reference in the docs.
+        every node a workflow runs.
 
         The engine registers all returned listeners after after_library_nodes_loaded()
         and deregisters them automatically when the library is unloaded.

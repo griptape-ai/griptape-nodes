@@ -462,7 +462,14 @@ class NodeUnresolvedEvent(ExecutionPayload):
 
 
 class NodeProcessOutcome(StrEnum):
-    """How a node's run ended, as reported on `NodeFinishProcessEvent`."""
+    """How a node's run ended, as reported on `NodeFinishProcessEvent`.
+
+    SUCCEEDED: the node finished its work.
+    FAILED: the node ran into an error, described by the event's `error_message` and `error`. A
+        node that runs into an error after the user asked it to stop still counts as failed.
+    CANCELLED: the run was stopped, for example because the user cancelled the workflow, or the
+        node stopped early because it was asked to.
+    """
 
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -478,6 +485,15 @@ class NodeStartProcessEvent(ExecutionPayload):
     loop nodes, and the nodes inside them. A loop runs its body once per iteration, so a body node
     sends one of these for each iteration.
 
+    Nodes that never start send neither this nor `NodeFinishProcessEvent`: locked nodes, which keep
+    their values without running; Start Loop nodes, since the loop is reported by its End Loop
+    node; and nodes that fail before they start, such as when an input can't be read or the node
+    fails validation, which send a `NodeErrorEvent` instead.
+
+    A group set to Isolated Execution, or to run in a library's environment, can run its nodes in a
+    separate Griptape Nodes process. Libraries load there too, so their listeners hear those nodes
+    there, and the main process hears only the group node itself.
+
     Args:
         node_name: The node on the canvas. A loop body node is named as it is on the canvas on
             every iteration.
@@ -485,7 +501,9 @@ class NodeStartProcessEvent(ExecutionPayload):
         specific_library_name: The library the node type came from.
         flow_name: The flow the node is in.
         execution_id: Identifies this run of the node. The `NodeFinishProcessEvent` for the same run
-            carries the same value. Opaque: compare it, but don't parse it.
+            carries the same value. Opaque: compare it, but don't parse it. Match a finish to its
+            start by this rather than by `node_name`: a loop set to Run Group Items All at Once runs
+            the nodes inside it at the same time, so the same node can have several runs going.
         parent_execution_id: The `execution_id` of the nearest run this one is part of, such as the
             group or loop node whose body this node is in, or None at the top of a run.
     """

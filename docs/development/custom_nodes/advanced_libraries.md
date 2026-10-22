@@ -353,8 +353,7 @@ def get_execution_event_listeners(self) -> list[tuple[type[ExecutionPayload], Ca
 
 Returns `(event_type, callback)` pairs. While Griptape Nodes runs a workflow, it calls
 your callback with the event each time one of that type happens. The engine registers
-the pairs when your library loads and removes them when it unloads. For the events you
-can listen to, see the [Execution Events reference](../../reference/execution_events.md).
+the pairs when your library loads and removes them when it unloads.
 
 |               | `get_post_dispatch_hooks`    | `get_execution_event_listeners`  | `get_app_event_listeners`          |
 | ------------- | ---------------------------- | -------------------------------- | ---------------------------------- |

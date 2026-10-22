@@ -192,7 +192,6 @@ plugins:
         Reference:
           - reference/command_line_interface.md: gtn CLI reference
           - reference/configuration_reference.md: Every engine setting with type, default, and env var
-          - reference/execution_events.md: The node start and finish events a library can listen for, their fields and outcomes, and which nodes send them
         Enterprise:
           - enterprise/on_premises_quick_start.md: Step-by-step rollout of an on-premises deployment, from Cloud API key to activated workstations
           - enterprise/admin_dashboard.md: Manage license keys, access groups, and permission templates from the editor's admin interface
@@ -576,7 +575,6 @@ nav:
   - Reference:
       - Command Line Interface: reference/command_line_interface.md
       - Configuration Reference: reference/configuration_reference.md
-      - Execution Events: reference/execution_events.md
   - Enterprise:
       - On-Premises Quick Start: enterprise/on_premises_quick_start.md
       - Admin Dashboard: enterprise/admin_dashboard.md
