@@ -114,9 +114,10 @@ from griptape_nodes.retained_mode.managers.library.common import (
     LibraryLifecycleState,
     RegisteredEventHandler,
 )
+from griptape_nodes.retained_mode.managers.workflow.saving import WriteWorkflowFileResult
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator
 
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -1247,6 +1248,16 @@ class TestRequestsAddressAWorkflowById:
         assert isinstance(command, GetWorkflowRunCommandResultSuccess), command.result_details
         assert Path(saved.file_path).name in command.run_command
 
+    def test_run_command_with_no_address_uses_the_workflow_in_context(self, project_engine: Engine) -> None:
+        workflow_id = _open_new_workflow(project_engine, "in_context")
+        saved = _save(project_engine)
+        project_engine.workflow_registry.get(workflow_id).metadata.workflow_shape = WorkflowShape()  # type: ignore[arg-type]
+
+        command = _run(project_engine, GetWorkflowRunCommandRequest())
+
+        assert isinstance(command, GetWorkflowRunCommandResultSuccess), command.result_details
+        assert Path(saved.file_path).name in command.run_command
+
     def test_run_command_names_the_field_that_was_given(self, project_engine: Engine) -> None:
         refused = _run(project_engine, GetWorkflowRunCommandRequest(workflow_name="shot", file_path="shot.py"))
 
@@ -1294,6 +1305,44 @@ class TestRequestsAddressAWorkflowById:
         assert isinstance(refused, DeleteWorkflowResultFailure)
         assert "names no workflow" in str(refused.result_details)
         assert project_engine.context_manager.has_current_workflow()
+
+
+# Requests that resolve an address, each built with the id no workflow has. CompareWorkflowsRequest's
+# compare_workflow_id is left out: an unknown one is a "no_source" status, not a failure
+# (test_compare_against_a_deleted_source_reports_no_source).
+UNKNOWN_ID_REQUESTS: dict[str, Callable[[str], object]] = {
+    "branch": lambda unknown_id: BranchWorkflowRequest(workflow_id=unknown_id),
+    "merge": lambda unknown_id: MergeWorkflowBranchRequest(workflow_id=unknown_id),
+    "reset": lambda unknown_id: ResetWorkflowBranchRequest(workflow_id=unknown_id),
+    "compare": lambda unknown_id: CompareWorkflowsRequest(workflow_id=unknown_id, compare_workflow_id=unknown_id),
+    "set_metadata": lambda unknown_id: SetWorkflowMetadataRequest(
+        workflow_id=unknown_id,
+        workflow_metadata={"description": "never written"},  # type: ignore[arg-type]
+    ),
+    "publish_options": lambda unknown_id: GetPublishOptionsRequest(workflow_id=unknown_id, publisher_name="lib"),
+    "publish": lambda unknown_id: PublishWorkflowRequest(workflow_id=unknown_id, publisher_name="lib"),
+    "run_from_registry": lambda unknown_id: RunWorkflowFromRegistryRequest(workflow_id=unknown_id),
+    "run_command": lambda unknown_id: GetWorkflowRunCommandRequest(workflow_id=unknown_id),
+    "save_subflow": lambda unknown_id: SaveSubflowToWorkflowRequest(flow_name="Sub", workflow_id=unknown_id),
+    "set_workflow_context": lambda unknown_id: SetWorkflowContextRequest(workflow_id=unknown_id),
+}
+
+
+class TestRequestsForAnUnknownWorkflowIdFailAndLeaveTheOpenOneAlone:
+    @pytest.mark.parametrize("make_request", UNKNOWN_ID_REQUESTS.values(), ids=UNKNOWN_ID_REQUESTS.keys())
+    def test_unknown_id(self, project_engine: Engine, make_request: Callable[[str], object]) -> None:
+        setup = _open_a_and_save_b(project_engine)
+        open_file_content = setup.open_file.read_text(encoding="utf-8")
+        other_file_content = Path(setup.other.file_path).read_text(encoding="utf-8")
+        unknown_id = uuid.uuid4().hex
+
+        result = _run(project_engine, make_request(unknown_id))
+
+        assert result.failed(), result.result_details
+        assert unknown_id in str(result.result_details)
+        assert project_engine.workflow_registry.find_by_id(unknown_id) is None
+        assert Path(setup.other.file_path).read_text(encoding="utf-8") == other_file_content
+        _assert_open_workflow_untouched(project_engine, setup, open_file_content)
 
 
 class TestPublishingAddressesAWorkflowById:
@@ -1563,3 +1612,23 @@ class TestRenameOfAWorkflowThatIsNotOpen:
         assert entry.absolute_path is not None
         assert _header_id(entry.absolute_path) == saved.workflow_id
         assert "shot.py" in [path.name for path in entry.absolute_path.parent.iterdir()]
+
+    def test_a_failed_header_write_moves_the_file_back(self, project_engine: Engine) -> None:
+        saved = _saved_workflow(project_engine, "Before")
+        original_content = Path(saved.file_path).read_text(encoding="utf-8")
+        renamed_file = Path(saved.file_path).with_name("after.py")
+
+        with patch.object(
+            project_engine.workflow_manager.saver,
+            "write_workflow_file",
+            return_value=WriteWorkflowFileResult(success=False, error_details="disk full"),
+        ):
+            refused = _run(project_engine, RenameWorkflowRequest(workflow_id=saved.workflow_id, requested_name="after"))
+
+        assert isinstance(refused, RenameWorkflowResultFailure)
+        assert "disk full" in str(refused.result_details)
+        assert Path(saved.file_path).read_text(encoding="utf-8") == original_content
+        assert not renamed_file.exists()
+        entry = project_engine.workflow_registry.get(saved.workflow_id)  # type: ignore[arg-type]
+        assert entry.absolute_path == Path(saved.file_path)
+        assert entry.name == saved.workflow_name
