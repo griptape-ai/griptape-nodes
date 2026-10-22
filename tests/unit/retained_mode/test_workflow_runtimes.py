@@ -18,13 +18,25 @@ from griptape_nodes.retained_mode.events.object_events import (
     RenameObjectRequest,
     RenameObjectResultSuccess,
 )
-from griptape_nodes.retained_mode.events.workflow_events import DeleteWorkflowRequest
+from griptape_nodes.retained_mode.events.variable_events import (
+    CreateVariableRequest,
+    CreateVariableResultFailure,
+    CreateVariableResultSuccess,
+    GetVariableValueRequest,
+    GetVariableValueResultFailure,
+)
+from griptape_nodes.retained_mode.events.workflow_events import (
+    DeleteWorkflowRequest,
+    SetVariableSubstitutionEnabledRequest,
+    SetVariableSubstitutionEnabledResultFailure,
+)
 from griptape_nodes.retained_mode.runtime.open_workflow_set import (
     NoOpenWorkflowError,
     OpenWorkflowError,
     OpenWorkflowSet,
 )
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
+from griptape_nodes.retained_mode.variable_types import VariableScope
 from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
@@ -341,3 +353,85 @@ class TestObjectsOnTheRuntime:
         push_unsaved_workflow(engine)
 
         assert not engine.object_manager.has_object_with_name("canvas")
+
+
+class TestVariablesOnTheRuntime:
+    def test_a_global_variable_is_held_by_the_open_workflow(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+
+        result = engine.handle_request(CreateVariableRequest(name="greeting", type="str", is_global=True, value="hi"))
+
+        assert isinstance(result, CreateVariableResultSuccess)
+        assert engine.open_workflows.sole_workflow().variables.global_layer.has("greeting")
+
+    def test_a_flow_variable_is_held_by_the_open_workflow(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="canvas"))
+
+        result = engine.handle_request(
+            CreateVariableRequest(name="greeting", type="str", owning_flow="canvas", value="hi")
+        )
+
+        assert isinstance(result, CreateVariableResultSuccess)
+        layer = engine.open_workflows.sole_workflow().variables.flow_layer("canvas")
+        assert layer is not None
+        assert layer.has("greeting")
+
+    def test_lookups_find_no_global_variable_with_no_workflow_open(self, engine: Engine) -> None:
+        result = engine.handle_request(GetVariableValueRequest(name="greeting", lookup_scope=VariableScope.GLOBAL_ONLY))
+
+        assert isinstance(result, GetVariableValueResultFailure)
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+    def test_creating_a_global_variable_needs_an_open_workflow(self, engine: Engine) -> None:
+        result = engine.handle_request(CreateVariableRequest(name="greeting", type="str", is_global=True, value="hi"))
+
+        assert isinstance(result, CreateVariableResultFailure)
+        assert "no workflow is open" in str(result.result_details)
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+    def test_variables_do_not_survive_clearing_and_reopening(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        engine.handle_request(CreateVariableRequest(name="greeting", type="str", is_global=True, value="hi"))
+
+        engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+        push_unsaved_workflow(engine)
+
+        result = engine.handle_request(GetVariableValueRequest(name="greeting", lookup_scope=VariableScope.GLOBAL_ONLY))
+        assert isinstance(result, GetVariableValueResultFailure)
+
+    def test_popping_the_last_entry_drops_the_variables(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        engine.handle_request(CreateVariableRequest(name="greeting", type="str", is_global=True, value="hi"))
+
+        engine.context_manager.pop_workflow()
+        push_unsaved_workflow(engine)
+
+        assert not engine.open_workflows.sole_workflow().variables.global_layer.has("greeting")
+
+
+class TestSubstitutionFlagOnTheRuntime:
+    def test_substitution_is_enabled_with_no_workflow_open(self, engine: Engine) -> None:
+        assert engine.workflow_manager.variable_substitution.is_enabled() is True
+
+    def test_setting_the_flag_with_no_workflow_open_fails(self, engine: Engine) -> None:
+        result = engine.handle_request(SetVariableSubstitutionEnabledRequest(enabled=False))
+
+        assert isinstance(result, SetVariableSubstitutionEnabledResultFailure)
+
+    def test_the_flag_is_held_by_the_open_workflow(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+
+        engine.handle_request(SetVariableSubstitutionEnabledRequest(enabled=False))
+
+        assert engine.open_workflows.sole_workflow().variables.substitution_enabled is False
+        assert engine.workflow_manager.variable_substitution.is_enabled() is False
+
+    def test_the_flag_does_not_survive_clearing_and_reopening_the_same_workflow(self, engine: Engine) -> None:
+        workflow = push_unsaved_workflow(engine)
+        engine.handle_request(SetVariableSubstitutionEnabledRequest(enabled=False))
+
+        engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
+        engine.context_manager.push_workflow(workflow_id=workflow.workflow_id)
+
+        assert engine.workflow_manager.variable_substitution.is_enabled() is True

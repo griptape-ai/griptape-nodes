@@ -80,7 +80,6 @@ class WorkflowFileOperations(EngineScoped):
         # entry is the entire operation.
         workflow_file_path = workflow.file_path
         if workflow_file_path is None or workflow.absolute_path is None:
-            self.engine.workflow_manager.variable_substitution.drop(workflow.workflow_id)
             return DeleteWorkflowResultSuccess(
                 result_details=ResultDetails(
                     message=f"Successfully deleted unsaved workflow: {workflow.name}", level=logging.INFO
@@ -90,7 +89,6 @@ class WorkflowFileOperations(EngineScoped):
         if delete_failure is not None:
             details = f"Failed to delete workflow file with path '{workflow_file_path}'. {delete_failure}"
             return DeleteWorkflowResultFailure(result_details=details)
-        self.engine.workflow_manager.variable_substitution.drop(workflow.workflow_id)
         return DeleteWorkflowResultSuccess(
             result_details=ResultDetails(message=f"Successfully deleted workflow: {workflow.name}", level=logging.INFO)
         )

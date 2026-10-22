@@ -143,9 +143,6 @@ class ObjectManager(EngineScoped):
             details = f"Attempted to clear all object state, but {len(workflow.objects)} object(s) remained after workflow teardown."
             return ClearAllObjectStateResultFailure(result_details=details)
 
-        # Clear all local workflow variables
-        self.engine.variables_manager.clear_object_state()
-        self.engine.workflow_manager.clear_object_state()
         # Clear all event suppression
         self.engine.event_manager.clear_event_suppression()
 
