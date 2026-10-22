@@ -260,6 +260,15 @@ EXECUTION_EVENTS_TO_SUPPRESS = {
     ProgressEvent,
 }
 
+# What a loop's bookkeeping emits about the packaged copies in its transient flow: the request
+# results of deserializing, seeding and deleting it, and the element events of nodes whose element
+# ids exist nowhere on the canvas. The sequential path runs its body under EventTranslationContext
+# so progress and value events rename to the real node; AlterElementEvent cannot be renamed, since
+# the editor matches elements by id and a copy's ids are its own, so it is hidden here instead.
+LOOP_BOOKKEEPING_EVENTS_TO_SUPPRESS: frozenset[type] = frozenset(
+    LOOP_EVENTS_TO_SUPPRESS | {AlterElementEvent, RemoveElementEvent, ResultPayload}
+)
+
 # Everything a parallel loop's local execution emits about its iteration flows, from the first
 # deserialize to the last delete. ``ResultPayload`` matches by isinstance (see
 # EventManager.should_suppress_event), so every request result dispatched while the window is open
@@ -1434,7 +1443,7 @@ class NodeExecutor(EngineScoped):
         deserialized_flows: list[tuple[int, str, dict[str, str]]] = []
         self._silence_packaged_node_creation_broadcasts(package_result)
         try:
-            with EventSuppressionContext(event_manager, LOOP_EVENTS_TO_SUPPRESS):
+            with EventSuppressionContext(event_manager, LOOP_BOOKKEEPING_EVENTS_TO_SUPPRESS):
                 deserialize_request = DeserializeFlowFromCommandsRequest(
                     serialized_flow_commands=package_result.serialized_flow_commands
                 )
@@ -1513,6 +1522,7 @@ class NodeExecutor(EngineScoped):
                 with (
                     EventTranslationContext(event_manager, reverse_node_mapping),
                     entered_loop_body_scope(loop_body_scope),
+                    EventSuppressionContext(event_manager, LOOP_BOOKKEEPING_EVENTS_TO_SUPPRESS),
                 ):
                     start_subflow_request = StartLocalSubflowRequest(
                         flow_name=flow_name,
@@ -1989,7 +1999,7 @@ class NodeExecutor(EngineScoped):
 
         finally:
             # Clean up the deserialized flow
-            with EventSuppressionContext(event_manager, LOOP_EVENTS_TO_SUPPRESS):
+            with EventSuppressionContext(event_manager, LOOP_BOOKKEEPING_EVENTS_TO_SUPPRESS):
                 delete_request = DeleteFlowRequest(flow_name=flow_name)
                 delete_result = self.engine.handle_request(delete_request)
                 if isinstance(delete_result, DeleteFlowResultFailure):
@@ -2032,7 +2042,7 @@ class NodeExecutor(EngineScoped):
         context_manager = self.engine.context_manager
         event_manager = self.engine.event_manager
         self._silence_packaged_node_creation_broadcasts(package_result)
-        with EventSuppressionContext(event_manager, LOOP_EVENTS_TO_SUPPRESS):
+        with EventSuppressionContext(event_manager, LOOP_BOOKKEEPING_EVENTS_TO_SUPPRESS):
             deserialize_request = DeserializeFlowFromCommandsRequest(
                 serialized_flow_commands=package_result.serialized_flow_commands
             )
@@ -2097,6 +2107,7 @@ class NodeExecutor(EngineScoped):
             with (
                 EventTranslationContext(event_manager, reverse_node_mapping),
                 entered_loop_body_scope(loop_body_scope),
+                EventSuppressionContext(event_manager, LOOP_BOOKKEEPING_EVENTS_TO_SUPPRESS),
             ):
                 start_subflow_request = StartLocalSubflowRequest(
                     flow_name=flow_name,
@@ -3338,7 +3349,7 @@ class NodeExecutor(EngineScoped):
         an in-flight exception (including CancelledError).
         """
         # Suppress events during deletion to prevent sending them to websockets.
-        with EventSuppressionContext(event_manager, {DeleteFlowResultSuccess, DeleteFlowResultFailure}):
+        with EventSuppressionContext(event_manager, LOOP_BOOKKEEPING_EVENTS_TO_SUPPRESS):
             for iteration_index, flow_name, _ in deserialized_flows:
                 # Skip flows already torn down (e.g. a partially-run iteration cleaned itself up).
                 if self.engine.object_manager.attempt_get_object_by_name(flow_name) is None:
@@ -3418,7 +3429,7 @@ class NodeExecutor(EngineScoped):
         # Suppress events during deserialization to prevent sending them to websockets
         event_manager = self.engine.event_manager
         try:
-            with EventSuppressionContext(event_manager, LOOP_EVENTS_TO_SUPPRESS):
+            with EventSuppressionContext(event_manager, LOOP_BOOKKEEPING_EVENTS_TO_SUPPRESS):
                 for iteration_index in range(total_iterations):
                     # Restore context before each deserialization to ensure all iteration flows
                     # are created at the same level (not as children of each other)
