@@ -232,6 +232,21 @@ class TestLibraryManagerDelegation:
 
         assert engine.lifecycle.state is EngineLifecycleState.READY
 
+    @pytest.mark.asyncio
+    async def test_reload_announces_ready_as_not_initial_start(
+        self, engine: Engine, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        library_manager = engine.library_manager
+        announce_ready = MagicMock()
+        monkeypatch.setattr(library_manager, "load_all_libraries_from_config", AsyncMock(return_value=[]))
+        monkeypatch.setattr(library_manager.workers, "maybe_start_workers_for_existing_session", AsyncMock())
+        monkeypatch.setattr(engine.lifecycle, "announce_ready", announce_ready)
+
+        result = await library_manager._run_reload_libraries(ReloadAllLibrariesRequest())
+
+        assert isinstance(result, ReloadAllLibrariesResultSuccess)
+        announce_ready.assert_called_once_with(is_initial_start=False)
+
     @pytest.mark.parametrize("state", list(EngineLifecycleState))
     def test_library_manager_is_initializing_delegates(self, engine: Engine, state: EngineLifecycleState) -> None:
         engine.lifecycle._state = state
