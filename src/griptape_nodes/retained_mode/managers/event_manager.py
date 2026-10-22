@@ -185,8 +185,9 @@ class EventManager(EngineScoped):
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
-        # Libraries subscribe while they load, on a worker thread, while a broadcast may be
-        # iterating a set on the loop's thread, so guard the dict and snapshot a set before iterating.
+        # Libraries subscribe while they load, which runs in asyncio.to_thread, while a broadcast
+        # may be iterating a set on the loop's thread, so guard the dict and snapshot a set before
+        # iterating.
         self._app_event_listeners_lock = threading.Lock()
         # Dictionary to store ALL SUBSCRIBERS to execution events (the live feed of
         # ExecutionPayloads emitted during a run, e.g. AgentStreamEvent). Lets a node

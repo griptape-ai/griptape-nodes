@@ -3139,7 +3139,11 @@ class NodeExecutor(EngineScoped):
     def _loop_body_scope(
         self, package_result: PackageNodesAsSerializedFlowResultSuccess, node_name_mappings: dict[str, str]
     ) -> LoopBodyScope:
-        """The scope naming one deserialized copy of a loop body by the canvas nodes it stands for."""
+        """The scope naming one deserialized copy of a loop body by the canvas nodes it stands for.
+
+        Entered around each iteration, so the node events it sends name canvas nodes rather than
+        the copies, and leave out the Start and End nodes the engine adds to the body.
+        """
         engine_made_node_names = {
             self.get_node_parameter_mappings(package_result, "start").node_name,
             self.get_node_parameter_mappings(package_result, "end").node_name,
