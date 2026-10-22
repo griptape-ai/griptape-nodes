@@ -1,0 +1,42 @@
+{
+  "name": "Publish Library",
+  "library_schema_version": "0.10.0",
+  "advanced_library_path": "publish_library_advanced.py",
+  "metadata": {
+    "author": "Test Fixture",
+    "description": "Library with a workflow publisher that records the request it receives",
+    "library_version": "0.1.0",
+    "engine_version": "0.0.0",
+    "tags": ["test"],
+    "dependencies": {
+      "pip_dependencies": []
+    }
+  },
+  "categories": [
+    {
+      "test": {
+        "title": "test",
+        "description": "Test nodes",
+        "color": "border-gray-500",
+        "icon": "Folder"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "class_name": "PublishStartNode",
+      "file_path": "publish_nodes.py",
+      "metadata": {"category": "test", "description": "start of a published flow", "display_name": "Publish Start"}
+    },
+    {
+      "class_name": "PublishEndNode",
+      "file_path": "publish_nodes.py",
+      "metadata": {"category": "test", "description": "end of a published flow", "display_name": "Publish End"}
+    },
+    {
+      "class_name": "PublishEchoNode",
+      "file_path": "publish_nodes.py",
+      "metadata": {"category": "test", "description": "copies text to result", "display_name": "Publish Echo"}
+    }
+  ]
+}

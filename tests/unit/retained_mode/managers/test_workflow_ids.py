@@ -1452,8 +1452,8 @@ class TestPublishingAddressesAWorkflowById:
         assert received == []
 
     def test_the_local_publisher_publishes_the_workflow_it_loaded(self, project_engine: Engine, tmp_path: Path) -> None:
-        # A packaged node group is published in a subprocess that loads a copy of the file from a
-        # temporary folder, so the loaded workflow's name is not the name of the file it was copied from.
+        # A copy loaded from outside the workspace is registered under its absolute path, not the
+        # name of the file it was copied from, so the publisher addresses the loaded workflow by id.
         saved = _saved_workflow(project_engine, "packaged")
         saved_content = Path(saved.file_path).read_text(encoding="utf-8")
         copied_file = tmp_path / "subprocess" / "workflow.py"
