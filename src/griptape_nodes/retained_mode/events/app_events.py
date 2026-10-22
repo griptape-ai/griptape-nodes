@@ -56,6 +56,11 @@ class AppStartSessionRequest(RequestPayload):
     Results: AppStartSessionResultSuccess (with session ID) | AppStartSessionResultFailure (session creation error)
     """
 
+    # A client that names itself is listed on the session (see SessionClient) so engine
+    # discovery can show who is attached. Blank keeps today's anonymous join.
+    client_id: str = ""
+    client_type: str = ""
+
 
 @dataclass
 @PayloadRegistry.register
@@ -419,6 +424,26 @@ class AppEndSessionResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class AppEndSessionResultFailure(ResultPayloadFailure):
     """Session end failed. Common causes: session not found, cleanup error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class AppDetachSessionClientRequest(RequestPayload):
+    """Delist a client from the active session, e.g. a host displaced by another one."""
+
+    client_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class AppDetachSessionClientResultSuccess(ResultPayloadSuccess):
+    """The client is no longer listed; detaching an unknown client succeeds too."""
+
+
+@dataclass
+@PayloadRegistry.register
+class AppDetachSessionClientResultFailure(ResultPayloadFailure):
+    """Detach failed because no session is active."""
 
 
 @dataclass

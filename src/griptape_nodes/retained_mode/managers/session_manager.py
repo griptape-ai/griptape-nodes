@@ -17,6 +17,9 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from griptape_nodes.retained_mode.events.app_events import (
+    AppDetachSessionClientRequest,
+    AppDetachSessionClientResultFailure,
+    AppDetachSessionClientResultSuccess,
     AppEndSessionRequest,
     AppEndSessionResultFailure,
     AppEndSessionResultSuccess,
@@ -294,7 +297,7 @@ class SessionManager:
         self._sessions_data = sessions_data
 
     @handles(AppStartSessionRequest)
-    async def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:  # noqa: ARG002
+    async def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:
         current_session_id = self.active_session_id
         if current_session_id is None:
             # Client wants a new session
@@ -305,7 +308,19 @@ class SessionManager:
         else:
             details = f"Session '{current_session_id}' already active. Joining..."
 
+        if request.client_id:
+            self.attach_client(request.client_id, request.client_type)
+
         return AppStartSessionResultSuccess(current_session_id, result_details="Session started successfully.")
+
+    @handles(AppDetachSessionClientRequest)
+    async def handle_detach_session_client_request(self, request: AppDetachSessionClientRequest) -> ResultPayload:
+        if self.active_session_id is None:
+            return AppDetachSessionClientResultFailure(
+                result_details=f"Attempted to detach client '{request.client_id}'. Failed because no session is active."
+            )
+        self.detach_client(request.client_id)
+        return AppDetachSessionClientResultSuccess(result_details=f"Client '{request.client_id}' detached.")
 
     @handles(AppEndSessionRequest)
     async def handle_session_end_request(self, _: AppEndSessionRequest) -> ResultPayload:
