@@ -7,7 +7,17 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+from griptape_nodes.exe_types.flow import ControlFlow
+from griptape_nodes.retained_mode.events.flow_events import (
+    CreateFlowRequest,
+    CreateFlowResultFailure,
+    CreateFlowResultSuccess,
+)
+from griptape_nodes.retained_mode.events.object_events import (
+    ClearAllObjectStateRequest,
+    RenameObjectRequest,
+    RenameObjectResultSuccess,
+)
 from griptape_nodes.retained_mode.events.workflow_events import DeleteWorkflowRequest
 from griptape_nodes.retained_mode.runtime.open_workflow_set import (
     NoOpenWorkflowError,
@@ -262,3 +272,72 @@ class TestCloseWorkflowState:
         assert result.succeeded()
         close.assert_not_awaited()
         assert engine.open_workflows.sole_workflow() is runtime
+
+
+class TestObjectsOnTheRuntime:
+    def test_a_created_flow_is_held_by_the_open_workflow(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+
+        result = engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="canvas"))
+
+        assert isinstance(result, CreateFlowResultSuccess)
+        assert engine.open_workflows.sole_workflow().objects.has("canvas")
+        assert engine.object_manager.has_object_with_name("canvas")
+
+    def test_lookups_find_nothing_with_no_workflow_open(self, engine: Engine) -> None:
+        object_manager = engine.object_manager
+
+        assert object_manager.get_filtered_subset() == {}
+        assert object_manager.attempt_get_object_by_name("canvas") is None
+        assert object_manager.attempt_get_object_by_name_as_type("canvas", ControlFlow) is None
+        assert not object_manager.has_object_with_name("canvas")
+        assert object_manager.generate_name_for_object("ControlFlow") == "ControlFlow_1"
+        with pytest.raises(KeyError):
+            object_manager.get_object_by_name("canvas")
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+    def test_changes_need_an_open_workflow(self, engine: Engine) -> None:
+        object_manager = engine.object_manager
+
+        with pytest.raises(NoOpenWorkflowError):
+            object_manager.add_object_by_name("thing", object())
+        with pytest.raises(NoOpenWorkflowError):
+            object_manager.del_obj_by_name("thing")
+
+    def test_create_flow_with_no_workflow_open_is_refused_before_it_needs_one(self, engine: Engine) -> None:
+        result = engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="canvas"))
+
+        assert isinstance(result, CreateFlowResultFailure)
+        assert "no Workflow was active" in str(result.result_details)
+
+    def test_rename_moves_the_object_within_the_open_workflow(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="canvas"))
+
+        result = engine.handle_request(RenameObjectRequest(object_name="canvas", requested_name="renamed"))
+
+        assert isinstance(result, RenameObjectResultSuccess)
+        objects = engine.open_workflows.sole_workflow().objects
+        assert objects.has("renamed")
+        assert not objects.has("canvas")
+
+    @pytest.mark.asyncio
+    async def test_closing_drops_the_objects(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="canvas"))
+        runtime = engine.open_workflows.sole_workflow()
+
+        await engine.close_workflow_state(runtime)
+
+        assert len(runtime.objects) == 0
+        push_unsaved_workflow(engine)
+        assert not engine.object_manager.has_object_with_name("canvas")
+
+    def test_popping_the_last_entry_drops_objects_left_in_it(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="canvas"))
+
+        engine.context_manager.pop_workflow()
+        push_unsaved_workflow(engine)
+
+        assert not engine.object_manager.has_object_with_name("canvas")

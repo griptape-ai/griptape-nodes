@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
+from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowSet
 from tests.unit.exe_types.mocks import MockNode
 
 
@@ -13,9 +14,16 @@ def _node_with_parameter(name: str) -> tuple[MockNode, Parameter]:
     return node, parameter
 
 
+def _object_manager_with_an_open_workflow() -> ObjectManager:
+    engine = MagicMock()
+    engine.open_workflows = OpenWorkflowSet()
+    engine.open_workflows.open("wf")
+    return ObjectManager(MagicMock(), engine=engine)
+
+
 class TestQueuedChanges:
     def test_a_registered_node_is_queued_when_an_element_changes(self) -> None:
-        object_manager = ObjectManager(MagicMock(), engine=MagicMock())
+        object_manager = _object_manager_with_an_open_workflow()
         node, parameter = _node_with_parameter("A")
         object_manager.add_object_by_name("A", node)
 
@@ -25,7 +33,7 @@ class TestQueuedChanges:
         assert object_manager.take_nodes_with_queued_changes() == []
 
     def test_changes_queued_before_registration_are_queued_on_registration(self) -> None:
-        object_manager = ObjectManager(MagicMock(), engine=MagicMock())
+        object_manager = _object_manager_with_an_open_workflow()
         node, parameter = _node_with_parameter("A")
 
         parameter.track_change("tooltip", "Changed")
@@ -34,7 +42,7 @@ class TestQueuedChanges:
         assert object_manager.take_nodes_with_queued_changes() == [node]
 
     def test_a_deleted_node_is_not_queued(self) -> None:
-        object_manager = ObjectManager(MagicMock(), engine=MagicMock())
+        object_manager = _object_manager_with_an_open_workflow()
         node, parameter = _node_with_parameter("A")
         object_manager.add_object_by_name("A", node)
         parameter.track_change("tooltip", "Changed")
@@ -45,7 +53,7 @@ class TestQueuedChanges:
         assert object_manager.take_nodes_with_queued_changes() == []
 
     def test_a_node_is_queued_once_however_many_elements_change(self) -> None:
-        object_manager = ObjectManager(MagicMock(), engine=MagicMock())
+        object_manager = _object_manager_with_an_open_workflow()
         node, parameter = _node_with_parameter("A")
         other = Parameter(name="other", tooltip="Other", type="str")
         node.add_parameter(other)
@@ -58,7 +66,7 @@ class TestQueuedChanges:
         assert object_manager.take_nodes_with_queued_changes() == [node]
 
     def test_nodes_are_returned_in_the_order_they_queued(self) -> None:
-        object_manager = ObjectManager(MagicMock(), engine=MagicMock())
+        object_manager = _object_manager_with_an_open_workflow()
         first, first_parameter = _node_with_parameter("A")
         second, second_parameter = _node_with_parameter("B")
         object_manager.add_object_by_name("A", first)

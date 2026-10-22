@@ -43,6 +43,7 @@ from griptape_nodes.testing.offline_wheels import build_wheel, offline_install_f
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.utils.version_utils import engine_version
 from tests.e2e.fixtures.behavior_preservation_library.behavior_preservation_node import CLICK_ACKNOWLEDGEMENT
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -222,6 +223,7 @@ class TestParameterBehaviorsSurviveOnRealClasses:
         node = LibraryRegistry.create_node(
             node_type="BehaviorPreservationNode", name="behaviors", specific_library_name="Behavior Library"
         )
+        push_unsaved_workflow(current_engine())
         current_engine().object_manager.add_object_by_name("behaviors", node)
 
         parameter = node.get_parameter_by_name("model_manager")
@@ -360,6 +362,7 @@ class TestUnshippableOutputIsKept:
         node = LibraryRegistry.create_node(
             node_type="ProducerNode", name="Producer", specific_library_name="Guardrail Library"
         )
+        push_unsaved_workflow(current_engine())
         current_engine().object_manager.add_object_by_name("Producer", node)
 
         result = await current_engine().ahandle_request(

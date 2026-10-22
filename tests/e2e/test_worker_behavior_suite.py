@@ -67,6 +67,8 @@ def _make(node_type: str, name: str) -> BaseNode:
     node = LibraryRegistry.create_node(
         node_type=node_type, name=name, specific_library_name=WORKER_BEHAVIOR_LIBRARY_NAME
     )
+    if not current_engine().context_manager.has_current_workflow():
+        push_unsaved_workflow(current_engine(), f"wf_{name}")
     current_engine().object_manager.add_object_by_name(name, node)
     return node
 

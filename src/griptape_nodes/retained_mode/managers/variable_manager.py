@@ -1241,9 +1241,7 @@ class VariablesManager(EngineScoped):
 
         connections = flow_manager.get_connections()
 
-        for obj in list(self.engine.object_manager._name_to_objects.values()):
-            if not isinstance(obj, BaseNode):
-                continue
+        for obj in self.engine.object_manager.get_filtered_subset(type=BaseNode).values():
             if obj.state not in (NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING):
                 continue
             for param in obj.parameters:
