@@ -11,7 +11,7 @@ import pytest
 from griptape_nodes.common.directed_graph import DirectedGraph
 from griptape_nodes.common.node_executor import ExecuteNodeFailedError
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
-from griptape_nodes.exe_types.connections import Direction
+from griptape_nodes.exe_types.connections import Connections, Direction
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.machines.control_flow import ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder, DagNode, NodeState
@@ -303,14 +303,14 @@ class TestDagBuilderLifecycle:
 
     def test_dag_builder_initialization_state(self) -> None:
         """Test that DAG builder starts with clean state."""
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
 
         assert len(dag_builder.graphs) == 0
         assert dag_builder.node_to_reference == {}
 
     def test_dag_builder_clear_resets_to_initial_state(self) -> None:
         """Test that clear() resets DAG builder to initial state."""
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
 
         # Add some nodes
         mock_node1 = MagicMock(spec=BaseNode)
@@ -335,7 +335,7 @@ class TestDagBuilderLifecycle:
 
     def test_dag_builder_survives_multiple_clear_cycles(self) -> None:
         """Test that DAG builder can be used through multiple clear cycles."""
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
 
         for cycle in range(3):
             # Add nodes
@@ -452,7 +452,7 @@ class TestParallelResolutionNodeDoneWhenTaskCompletes:
         graph = DirectedGraph()
         graph.add_node("n")
 
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
         dag_builder.graphs["n"] = graph
         dag_builder.node_to_reference["n"] = DagNode(node_reference=node, node_state=NodeState.PROCESSING)
 
@@ -472,7 +472,7 @@ class TestParallelResolutionNodeDoneWhenTaskCompletes:
 
         graph = DirectedGraph()
         graph.add_node("n")
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
         dag_builder.graphs["n"] = graph
         dag_builder.node_to_reference["n"] = DagNode(node_reference=node, node_state=NodeState.ERRORED)
 
@@ -639,7 +639,7 @@ class TestParallelResolutionNodeDoneWhenTaskCompletes:
         node.state = NodeResolutionState.RESOLVING
         graph = DirectedGraph()
         graph.add_node("n")
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
         dag_builder.graphs["n"] = graph
         dag_builder.node_to_reference["n"] = DagNode(node_reference=node, node_state=NodeState.PROCESSING)
         engine = MagicMock()
@@ -693,7 +693,7 @@ class TestLockedNodeIsNeverQueuedOrExecuted:
         graph = DirectedGraph()
         graph.add_node("locked")
 
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
         dag_builder.graphs["locked"] = graph
         dag_builder.node_to_reference["locked"] = DagNode(node_reference=node, node_state=NodeState.WAITING)
 
@@ -747,7 +747,7 @@ class TestLockedNodeRecordsResolvingWithoutExecuting:
         graph = DirectedGraph()
         graph.add_node(node.name)
 
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
         dag_builder.graphs[node.name] = graph
         dag_builder.node_to_reference[node.name] = DagNode(node_reference=node, node_state=NodeState.DONE)
 

@@ -348,9 +348,10 @@ class FlowManager(EngineScoped):
         return self._flows_or_empty().connections
 
     def _flows_or_empty(self) -> WorkflowFlows:
-        """The open workflow's flows for a lookup, which finds none when no workflow is open.
+        """The open workflow's flows, or empty ones when no workflow is open.
 
-        Only lookups read through here. Recording a flow or a connection needs a workflow to hold it.
+        For lookups, and for clears and drains that do nothing when no workflow is open. Recording a
+        flow, a connection or a run needs a workflow to hold it and goes through `sole_workflow()`.
         """
         workflow = self.engine.open_workflows.sole_workflow_or_none()
         if workflow is None:

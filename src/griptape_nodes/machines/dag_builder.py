@@ -82,9 +82,7 @@ class DagBuilder:
     graph_to_nodes: dict[str, set[str]]  # Track which nodes belong to which graph
     start_node_candidates: dict[str, dict[str, set[str]]]  # {data_node: {graph: {boundary_nodes}}}
 
-    def __init__(self, connections: Connections | None = None) -> None:
-        if connections is None:
-            connections = Connections()
+    def __init__(self, connections: Connections) -> None:
         self.connections = connections
         self.graphs = {}
         self.node_to_reference: dict[str, DagNode] = {}

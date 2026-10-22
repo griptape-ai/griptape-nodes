@@ -5,6 +5,7 @@
 from typing import Any
 from unittest.mock import MagicMock
 
+from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.machines.dag_builder import DagBuilder, DagNode, DagNodeCategories, NodeState
 
@@ -36,14 +37,14 @@ class TestDagBuilder:
 
     def test_init_creates_empty_dag_builder(self) -> None:
         """Test that initialization creates an empty DAG builder."""
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
 
         assert len(dag_builder.graphs) == 0
         assert dag_builder.node_to_reference == {}
 
     def test_add_node_creates_dag_node(self) -> None:
         """Test that add_node creates a DagNode with correct initial state."""
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
         mock_node = MagicMock(spec=BaseNode)
         mock_node.name = "test_node"
 
@@ -56,7 +57,7 @@ class TestDagBuilder:
 
     def test_add_node_adds_to_graph(self) -> None:
         """Test that add_node adds node to the internal graph."""
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
         mock_node = MagicMock(spec=BaseNode)
         mock_node.name = "test_node"
 
@@ -69,7 +70,7 @@ class TestDagBuilder:
 
     def test_add_node_duplicate_returns_existing(self) -> None:
         """Test that adding the same node twice returns the existing DagNode."""
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
         mock_node = MagicMock(spec=BaseNode)
         mock_node.name = "test_node"
 
@@ -238,7 +239,7 @@ class TestDagBuilder:
 
     def test_clear_removes_all_nodes_and_references(self) -> None:
         """Test that clear() removes all nodes and references from the DAG builder."""
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
 
         # Add some nodes
         mock_node1 = MagicMock(spec=BaseNode)
@@ -264,7 +265,7 @@ class TestDagBuilder:
 
     def test_clear_on_empty_dag_builder(self) -> None:
         """Test that clear() works correctly on an empty DAG builder."""
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
 
         # Clear should not raise any errors
         dag_builder.clear()
@@ -315,7 +316,7 @@ class TestDagBuilder:
 
     def test_node_state_preservation(self) -> None:
         """Test that DagNode state is preserved correctly."""
-        dag_builder = DagBuilder()
+        dag_builder = DagBuilder(Connections())
         mock_node = MagicMock(spec=BaseNode)
         mock_node.name = "test_node"
 
