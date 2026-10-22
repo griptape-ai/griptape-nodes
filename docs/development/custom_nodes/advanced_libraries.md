@@ -28,9 +28,10 @@ list in the manifest. That is the common case and it needs no Python beyond the 
 - **React after the engine handles a request** it already owns, such as running your own
     step every time a workflow is saved. See
     [`get_post_dispatch_hooks`](#get_post_dispatch_hooks).
-- **Watch every node a workflow runs**, including the nodes inside groups, loops, and
-    nodes that execute in a worker: log when each one starts and how it ends, time it, or
-    send it to your own monitoring. See [Watching node runs](#watching-node-runs).
+- **Watch every node a workflow runs**, including the nodes inside groups and loops: log
+    when each one starts and how it ends, time it, or send it to your own monitoring. See
+    [`get_execution_event_listeners`](#get_execution_event_listeners) and the
+    [timing example](#example-a-library-that-times-every-node-run).
 - **React to what happens in the engine process**, such as a setting changing. See
     [`get_app_event_listeners`](#get_app_event_listeners).
 - **Register a competing provider** for an engine request type, such as a workflow
@@ -348,38 +349,30 @@ active, and are still removed when the library unloads.
 def get_execution_event_listeners(self) -> list[tuple[type[ExecutionPayload], Callable]]: ...
 ```
 
-Returns `(event_type, callback)` pairs the engine registers on your behalf, and
-deregisters when your library unloads. Execution events are what the engine reports while
-a workflow runs, and the callback is called with the event's payload every time one of
-that type is sent. `NodeStartProcessEvent` and `NodeFinishProcessEvent` are the pair to
-listen to for watching every node run; see [Watching node runs](#watching-node-runs).
+Returns `(event_type, callback)` pairs. While Griptape Nodes runs a workflow, it calls
+your callback with the event each time one of that type happens. The engine registers
+the pairs when your library loads and removes them when it unloads. For the events you
+can listen to, see the [Execution Events reference](../../reference/execution_events.md).
 
-|               | `get_post_dispatch_hooks`                  | `get_execution_event_listeners`      | `get_app_event_listeners`          |
-| ------------- | ------------------------------------------ | ------------------------------------ | ---------------------------------- |
-| Reacts to     | A request the engine handled               | Something that happened during a run | Something that happened to the app |
-| Called with   | `(request, result)`                        | The event's payload                  | The event's payload                |
-| Sync or async | Both                                       | Sync only                            | Both                               |
-| When it runs  | Usually detached, after the result is sent | Inline, as the event is sent         | When the event is broadcast        |
+|               | `get_post_dispatch_hooks`    | `get_execution_event_listeners`  | `get_app_event_listeners`          |
+| ------------- | ---------------------------- | -------------------------------- | ---------------------------------- |
+| Reacts to     | A request the engine handled | Something that happened in a run | Something that happened to the app |
+| Called with   | `(request, result)`          | The event                        | The event                          |
+| Sync or async | Both                         | Sync only                        | Both                               |
+| When it runs  | After the request is handled | As the event happens             | As the event happens               |
 
-Constraints on the mechanism:
+Rules for writing a listener:
 
-- **Synchronous only, and inline.** The callback runs on the thread that sent the event,
-    before the engine moves on. For node events that is the thread running the flow,
-    usually the engine's event loop, so a slow listener holds up every running node. Hand
-    slow work, such as network calls or file writes, to a thread of your own. An `async`
-    callback is reported as an `ExecutionEventListenerRegistrationProblem`.
-- **Notification only.** The return value is ignored. A callback that raises is logged
-    and otherwise ignored, and the run continues.
-- **Exact type matching.** A listener registered for an event type fires for that exact
-    type only, never for its subclasses.
-- **Read-only arguments.** Do not mutate the payload; the engine also sends it to the
-    editor.
-- **Registered per process.** Listeners are registered in whichever process loads the
-    library and hear only the events that process sends. See
-    [Where node events are sent](#where-node-events-are-sent).
-- **Needs a running engine.** Events are only delivered once the engine's event queue is
-    set up, as it is in the editor, in `gtn`, and in a saved workflow run as a script. A
-    script that drives the engine directly, without a workflow executor, delivers nothing.
+- **Keep it quick.** The workflow waits for your callback to return, so a slow one holds
+    it up. Hand slow work, such as network calls or writing files, to a background thread.
+    The [timing example](#example-a-library-that-times-every-node-run) shows how.
+- **Synchronous only.** An `async` callback is reported as an
+    `ExecutionEventListenerRegistrationProblem`.
+- **Notification only.** The return value is ignored. If your callback raises, the error
+    is logged and the workflow carries on.
+- **Don't modify the event.** Other listeners receive the same one.
+- **Exact type matching.** A listener for an event type hears that type only, never its
+    subclasses.
 
 A malformed pair — a callback that is not callable, or a key that is not an execution event
 type — is reported as an `ExecutionEventListenerRegistrationProblem` and stops the rest of
@@ -392,10 +385,11 @@ one stay active, and are still removed when the library unloads.
 def get_app_event_listeners(self) -> list[tuple[type[AppPayload], Callable]]: ...
 ```
 
-Returns `(event_type, callback)` pairs for app events: events about the engine process
-itself, such as `ConfigChanged` when a setting changes or `CurrentProjectChanged` when the
-artist switches projects. The engine registers them on your behalf and deregisters them
-when your library unloads.
+Returns `(event_type, callback)` pairs for app events: things that happen to Griptape
+Nodes itself, such as `ConfigChanged` when a setting changes or `CurrentProjectChanged`
+when the user switches projects. For example, a library that caches an API client built
+from one of its settings can drop the client when that setting changes, so the next node
+run builds a new one:
 
 ```python
 def get_app_event_listeners(self):
@@ -403,139 +397,17 @@ def get_app_event_listeners(self):
 
 
 def _on_config_changed(self, event: ConfigChanged) -> None:
-    if event.key == "my_library.endpoint":
-        self._reconnect(event.new_value)
+    # An empty key means the whole configuration was replaced.
+    if event.key in ("my_library.base_url", ""):
+        self._client = None
 ```
 
-Both sync and async callbacks work. A callback that raises is logged and otherwise
-ignored, and the other listeners still run. Matching is on the exact type, and listeners
-hear only their own process's app events. Libraries load while the engine is handling
-`AppInitializationComplete`, so a listener for that event does not hear the startup that
-loaded its library; do that work in `after_library_nodes_loaded` instead. A malformed pair
-is reported as an `AppEventListenerRegistrationProblem`, with the same consequences as
-above.
-
-## Watching node runs
-
-The engine sends `NodeStartProcessEvent` before every node it runs does any work, and
-`NodeFinishProcessEvent` once that node's run is over, whether it succeeded, failed, or
-was cancelled. Listen to both from `get_execution_event_listeners` to watch every node in
-every workflow, without wrapping or replacing any node:
-
-```python
-import logging
-import time
-from concurrent.futures import ThreadPoolExecutor
-
-from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
-from griptape_nodes.retained_mode.events.execution_events import (
-    NodeFinishProcessEvent,
-    NodeStartProcessEvent,
-)
-
-logger = logging.getLogger(__name__)
-
-
-class NodeTimingLibrary(AdvancedNodeLibrary):
-    def __init__(self) -> None:
-        self._started_at: dict[str, float] = {}
-        # One background thread does the slow part, so the listeners stay quick.
-        self._writer = ThreadPoolExecutor(max_workers=1)
-
-    def get_execution_event_listeners(self):
-        return [
-            (NodeStartProcessEvent, self._on_start),
-            (NodeFinishProcessEvent, self._on_finish),
-        ]
-
-    def before_library_unregistered(self, library_data, library) -> None:
-        self._writer.shutdown(wait=True)
-
-    def _on_start(self, event: NodeStartProcessEvent) -> None:
-        self._started_at[event.execution_id] = time.perf_counter()
-
-    def _on_finish(self, event: NodeFinishProcessEvent) -> None:
-        started_at = self._started_at.pop(event.execution_id, None)
-        if started_at is None:
-            return
-        seconds = time.perf_counter() - started_at
-        self._writer.submit(
-            logger.info, "%s (%s) %s in %.2fs", event.node_name, event.node_type, event.outcome, seconds
-        )
-```
-
-### What the events carry
-
-| Field                   | On     | Meaning                                                                                              |
-| ----------------------- | ------ | ---------------------------------------------------------------------------------------------------- |
-| `node_name`             | Both   | The node on the canvas. A loop's body nodes are named as on the canvas on every iteration.           |
-| `node_type`             | Both   | The node's class name.                                                                               |
-| `specific_library_name` | Both   | The library the node type came from.                                                                 |
-| `flow_name`             | Both   | The flow the node is in.                                                                             |
-| `execution_id`          | Both   | Identifies one run of one node. The start and finish of a run share it. Compare it; don't parse it.  |
-| `parent_execution_id`   | Both   | The `execution_id` of the nearest run this one is part of, or `None` at the top of a run. See below. |
-| `outcome`               | Finish | `succeeded`, `failed`, or `cancelled`.                                                               |
-| `error_message`         | Finish | When the run failed, the failure as one line of text, as on `NodeErrorEvent`.                        |
-| `error`                 | Finish | When the run failed, the same failure in parts, as on `NodeErrorEvent`.                              |
-
-The outcome is `cancelled` when the run was cancelled, or when the node returned early
-because the artist asked to stop it. A node that raised is `failed`, even if a cancel had
-been requested.
-
-Use `execution_id` rather than `node_name` to match a finish with its start. A loop set to
-**Run Group Items All at Once** runs its body nodes at the same time, so several runs of
-the same node can be in progress together.
-
-`parent_execution_id` links runs into a tree. The nodes in a group or loop's body name the
-group or loop node's run as their parent, and the group or loop names whatever it is part
-of in turn. It means "the nearest run this one is part of", so it stays correct if the
-engine starts reporting more levels, such as each iteration of a loop.
-
-### Which nodes are covered
-
-Every node the engine runs sends both events: regular nodes, nodes from a library that
-runs them in a worker, group nodes of every kind, loop nodes, and the nodes inside groups
-and loops, however deeply nested. A loop's body nodes send a pair for every iteration.
-
-Some nodes never start, and so send neither event:
-
-- **Locked nodes.** They keep their values without running.
-- **Start Loop nodes.** The loop runs as its End Loop node, which sends the events for
-    the whole loop.
-- **Nodes that fail before they start**, because an input could not be collected or the
-    node failed validation. They send a `NodeErrorEvent` instead.
-
-### Where node events are sent
-
-Listeners hear the events of the process they are registered in, so it matters which
-process runs the flow:
-
-- **The editor's engine** sends the events for every node in the flows it runs. That
-    includes nodes from a library whose nodes execute in a worker: the engine reports them
-    while it waits for the worker, so you need no listener in the worker.
-- **A group set to Isolated Execution, or to run in a library's environment**, runs its
-    nodes in a separate engine process, except in the beta case below. That process loads
-    your library too, so your listeners hear those nodes there, along with the Start and
-    End nodes the engine adds to pass values in and out. The editor's engine hears only the
-    group node itself, and the two runs aren't linked by `parent_execution_id`.
-- **A group or loop set to Isolated Execution, with the "Isolated Execution in a worker"
-    beta feature on**, runs its nodes in a worker, and the editor's engine reports them as
-    it does any node that runs in a worker. Your listeners in the editor's engine hear
-    every node, linked to the group's run by `parent_execution_id`, and the Start and End
-    nodes a loop adds send nothing.
-- **Workers** never send these events.
-
-The link to a parent run is also lost when a node in a worker starts a subflow, and when
-a node's synchronous `process()` starts one with `GriptapeNodes.handle_request`. The
-nodes of those subflows report `parent_execution_id` as `None`.
-
-### Limitations
-
-- **The events add traffic to the editor.** They are sent to the editor as well, two for
-    every node run, including every iteration of a loop.
-- **Exporting to observability tools.** Turning these events into traces for tools such as
-    MLflow or Datadog is tracked in
-    [#5902](https://github.com/griptape-ai/griptape-nodes-engine/issues/5902).
+Callbacks can be sync or `async`. Otherwise the rules are the same as for
+[execution event listeners](#get_execution_event_listeners), and a malformed pair is
+reported as an `AppEventListenerRegistrationProblem`. One thing to watch for: libraries
+load while Griptape Nodes starts up, so a listener for `AppInitializationComplete` doesn't
+hear the startup that loaded its library. Do that work in
+[`after_library_nodes_loaded`](#after_library_nodes_loaded) instead.
 
 ## Registering node types without listing them in the manifest
 
@@ -649,8 +521,9 @@ Prefer synthesizing definitions anyway, for two reasons:
 
 ## Examples
 
-Two complete, working libraries. Copy either folder into your workspace's `libraries`
-directory, register it through the editor's library settings, and restart the engine.
+Three complete, working libraries. Copy any of the folders into your workspace's
+`libraries` directory, register it through the editor's library settings, and restart the
+engine.
 
 ### Example: a library that serves a request type
 
@@ -687,3 +560,22 @@ manifest:
 You should see a **Dynamic** category with four nodes. Add an entry to `node_specs.json`
 reusing an existing `operator` value, restart, and a fifth node appears with no change to
 the manifest or the Python.
+
+### Example: a library that times every node run
+
+A library that logs how long every node in a workflow takes, including the nodes inside
+groups and loops, and how each run ended:
+
+- [`griptape_nodes_library.json`](example_node_timing_library/griptape_nodes_library.json):
+    manifest declaring one node and the advanced library
+- [`advanced_library.py`](example_node_timing_library/advanced_library.py): listens for
+    `NodeStartProcessEvent` and `NodeFinishProcessEvent`, and writes one log line per node
+    run from a background thread
+- [`nodes.py`](example_node_timing_library/nodes.py): a **Wait** node that waits a set
+    number of seconds, so there is something to time
+
+Add two **Wait** nodes, give them different `seconds`, connect them, and run the
+workflow. The engine log gets a line for each, such as
+`Wait_1 (WaitNode) succeeded in 2.00s`. Put a **Wait** node inside a **ForEach Group** and
+you get a line for every iteration, plus one for the group. To send the timings somewhere
+else, replace the logging call in `_on_finish`; the rest of the library stays the same.

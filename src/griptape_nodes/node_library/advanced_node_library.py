@@ -202,39 +202,27 @@ class AdvancedNodeLibrary:
     ) -> list[tuple[type[ExecutionPayload], Callable[[ExecutionPayload], None]]]:
         """Return execution event listeners to register with the engine.
 
-        Each entry is an (event_type, callback) pair. Execution events are what the engine
-        reports while a workflow runs. The callback is invoked with the event's payload each
-        time one of that type is sent. ``NodeStartProcessEvent`` and ``NodeFinishProcessEvent``
-        are sent before and after every node runs, including group and loop nodes and the nodes
-        inside them, so they are the way to watch every node a workflow runs.
-
-        Where get_post_dispatch_hooks() reacts to a request the engine handled, these react to
-        what happens during a run.
+        Each entry is an (event_type, callback) pair. While Griptape Nodes runs a workflow, it
+        calls the callback with the event each time one of that type happens. Where
+        get_post_dispatch_hooks() reacts to a request the engine handled, these react to what
+        happens during a run. ``NodeStartProcessEvent`` and ``NodeFinishProcessEvent`` report
+        every node a workflow runs; see the Execution Events reference in the docs.
 
         The engine registers all returned listeners after after_library_nodes_loaded()
         and deregisters them automatically when the library is unloaded.
 
-        **Synchronous only.** The callback runs inline on the thread that sent the event --
-        for node events, the thread running the flow, usually the engine's event loop. A
-        ``NodeStartProcessEvent`` listener therefore finishes before the node starts, and a slow
-        listener holds up every running node. Hand slow work (network calls, file writes) to
-        another thread. Async callbacks are rejected and reported as a library problem.
+        **Keep it quick.** The workflow waits for the callback to return, so a slow one holds
+        it up. Hand slow work (network calls, file writes) to a background thread.
+
+        **Synchronous only.** Async callbacks are rejected and reported as a library problem.
 
         **Notification only.** The return value is ignored. A callback that raises is logged
-        and otherwise ignored, and the run continues.
+        and otherwise ignored, and the workflow carries on.
 
         **Exact type matching.** A listener registered for an event type fires only for that
         exact type, not for its subclasses.
 
-        **Read-only arguments.** Do not mutate the payload: the engine sends the same object to
-        the editor.
-
-        **Registered per process.** Listeners are registered in whichever process loads the
-        library and hear only the events that process sends. Node events are sent by the
-        process that runs the flow, which reports nodes that execute in a worker too. A group
-        set to Isolated Execution or to a library's environment can run its nodes in a separate
-        process, so listeners in the editor's engine hear only the group node itself; see
-        "Where node events are sent" in the advanced libraries docs.
+        **Don't modify the event.** Other listeners receive the same one.
 
         Example:
             def get_execution_event_listeners(self):
@@ -255,23 +243,20 @@ class AdvancedNodeLibrary:
     ]:
         """Return app event listeners to register with the engine.
 
-        Each entry is an (event_type, callback) pair. App events describe the engine process
-        itself, such as a setting or the current project changing. The callback is invoked
-        with the event's payload each time one of that type is broadcast.
+        Each entry is an (event_type, callback) pair. App events are things that happen to
+        Griptape Nodes itself, such as a setting or the current project changing. The callback
+        is called with the event each time one of that type happens.
 
         The engine registers all returned listeners after after_library_nodes_loaded()
         and deregisters them automatically when the library is unloaded. Because libraries load
-        while the engine handles ``AppInitializationComplete``, a listener for that event does
-        not hear the startup that loaded the library.
+        while Griptape Nodes starts up, a listener for ``AppInitializationComplete`` does not
+        hear the startup that loaded the library.
 
         Both sync and async callbacks are supported. A callback that raises is logged and
         otherwise ignored, and the other listeners still run.
 
         **Exact type matching.** A listener registered for an event type fires only for that
         exact type, not for its subclasses.
-
-        **Registered per process.** A listener hears only the app events of the process that
-        loaded the library.
 
         Example:
             def get_app_event_listeners(self):
