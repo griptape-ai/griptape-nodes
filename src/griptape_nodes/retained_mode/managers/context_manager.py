@@ -14,6 +14,7 @@ from griptape_nodes.node_library.workflow_registry import (
     WorkflowMetadataError,
     WorkflowRegistryError,
     derive_workflow_id_for_path,
+    parse_workflow_id,
     read_workflow_metadata,
 )
 from griptape_nodes.retained_mode.engine import EngineScoped
@@ -390,11 +391,12 @@ class ContextManager(EngineScoped):
         )
 
         # An id names one workflow, so a different workflow in context is not an answer. A name
-        # keeps the older, lenient rule: the workflow in context is reused.
+        # keeps the older, lenient rule: the workflow in context is reused. The id is parsed first
+        # because a request may spell it as a dashed UUID.
         if (
             request.workflow_id is not None
             and self.has_current_workflow()
-            and self.get_current_workflow_id() != request.workflow_id
+            and self.get_current_workflow_id() != parse_workflow_id(request.workflow_id)
         ):
             return EnsureWorkflowAndFlowResultFailure(
                 result_details=(

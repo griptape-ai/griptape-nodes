@@ -1209,6 +1209,9 @@ class TestRequestsAddressAWorkflowById:
 
         refused = project_engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_id=setup.other.workflow_id))
         reused = project_engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_id=setup.open_id))
+        reused_by_dashed_id = project_engine.handle_request(
+            EnsureWorkflowAndFlowRequest(workflow_id=str(uuid.UUID(hex=setup.open_id)))
+        )
         by_name = project_engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_name=setup.other.workflow_name))
 
         assert isinstance(refused, EnsureWorkflowAndFlowResultFailure)
@@ -1219,6 +1222,8 @@ class TestRequestsAddressAWorkflowById:
         assert isinstance(reused, EnsureWorkflowAndFlowResultSuccess), reused.result_details
         assert reused.workflow_id == setup.open_id
         assert not reused.created_workflow
+        assert isinstance(reused_by_dashed_id, EnsureWorkflowAndFlowResultSuccess), reused_by_dashed_id.result_details
+        assert reused_by_dashed_id.workflow_id == setup.open_id
         # A name keeps the lenient rule: the workflow in context is reused.
         assert isinstance(by_name, EnsureWorkflowAndFlowResultSuccess), by_name.result_details
         assert by_name.workflow_id == setup.open_id
