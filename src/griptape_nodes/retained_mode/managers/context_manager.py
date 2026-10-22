@@ -581,6 +581,8 @@ class ContextManager(EngineScoped):
         Idempotent and never popped: this MIRRORS a peer's context rather than nesting under it, so
         one entry is replaced in place. There is no push/pop pair whose ordering could interleave
         while a worker runs nodes concurrently.
+
+        Never opens a workflow: the peer has it open, and a worker opens none of its own.
         """
         previous_id = None
         if self._workflow_stack:
@@ -875,6 +877,9 @@ class ContextManager(EngineScoped):
         The context holds only the workflow's id; its name, file and folder are read from its
         registry entry. Exactly one of the arguments names the workflow.
 
+        A push onto an empty stack opens the workflow's runtime. A push onto a non-empty stack
+        opens nothing.
+
         Args:
             workflow_name: The legacy registry name of a registered Workflow.
             file_path: Path to a workflow file. Saved workflow files push themselves this way
@@ -914,6 +919,10 @@ class ContextManager(EngineScoped):
 
         if working_directory is not None:
             workflow.working_directory = working_directory
+        if not self._workflow_stack:
+            # The workflow at the bottom of the stack is the open one. A push onto it opens
+            # nothing: its objects keep going to the workflow already open.
+            self.engine.open_workflows.open(workflow.workflow_id)
         self._workflow_stack.append(self.WorkflowContextState(workflow.workflow_id))
         return workflow.name
 
@@ -952,6 +961,9 @@ class ContextManager(EngineScoped):
     def pop_workflow(self) -> str:
         """Pop the top Workflow from the stack.
 
+        Popping the last entry closes the open workflow and drops its state, so a caller tearing
+        a workflow down deletes its flows first.
+
         Returns:
             The name of the Workflow that was popped. `get_current_workflow_id` gives its id
             beforehand.
@@ -965,6 +977,11 @@ class ContextManager(EngineScoped):
 
         name = self.get_current_workflow_name()
         self._workflow_stack.pop()
+        if not self._workflow_stack:
+            # None on a worker, whose stack holds only a mirror.
+            workflow = self.engine.open_workflows.sole_workflow_or_none()
+            if workflow is not None:
+                self.engine.open_workflows.close(workflow)
         return name
 
     def push_flow(self, flow: ControlFlow) -> ControlFlow:

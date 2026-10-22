@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from griptape_nodes.retained_mode.runtime.open_workflow_set import (
@@ -10,6 +12,10 @@ from griptape_nodes.retained_mode.runtime.open_workflow_set import (
     OpenWorkflowSet,
 )
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
+from tests.workflow_context import push_unsaved_workflow
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.engine import Engine
 
 
 class TestOpenWorkflowSet:
@@ -101,3 +107,49 @@ class TestOpenWorkflowSet:
             workflows.sole_workflow()
 
         assert workflows.sole_workflow_or_none() is None
+
+
+class TestRuntimeLifecycle:
+    """The runtime is open exactly while the context stack holds a workflow."""
+
+    def test_a_push_onto_an_empty_stack_opens_the_pushed_workflow(self, engine: Engine) -> None:
+        workflow = push_unsaved_workflow(engine)
+
+        assert engine.open_workflows.sole_workflow().workflow_id == workflow.workflow_id
+
+    def test_a_nested_push_opens_nothing(self, engine: Engine) -> None:
+        outer = push_unsaved_workflow(engine, "outer")
+        runtime = engine.open_workflows.sole_workflow()
+
+        inner = push_unsaved_workflow(engine, "inner")
+
+        assert engine.open_workflows.sole_workflow() is runtime
+        assert engine.open_workflows.find(outer.workflow_id) is runtime
+        assert engine.open_workflows.find(inner.workflow_id) is None
+
+    def test_popping_a_nested_entry_keeps_the_workflow_open(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine, "outer")
+        runtime = engine.open_workflows.sole_workflow()
+        push_unsaved_workflow(engine, "inner")
+
+        engine.context_manager.pop_workflow()
+
+        assert engine.open_workflows.sole_workflow() is runtime
+
+    def test_popping_the_last_entry_closes_the_workflow(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine, "outer")
+        push_unsaved_workflow(engine, "inner")
+
+        engine.context_manager.pop_workflow()
+        engine.context_manager.pop_workflow()
+
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+    def test_mirroring_a_peers_workflow_opens_nothing(self, engine: Engine) -> None:
+        engine.context_manager.mirror_workflow_context("00000000000000000000000000000abc", None, None, None)
+
+        assert engine.context_manager.has_current_workflow()
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+        engine.context_manager.mirror_workflow_context(None, None, None, None)
+        assert engine.open_workflows.sole_workflow_or_none() is None
