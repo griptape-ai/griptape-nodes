@@ -5,12 +5,13 @@ import inspect
 import logging
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from griptape_nodes.app.worker_routing import RemoteHandler
+from griptape_nodes.common.strict_mode import STRICT_MODE, StrictModeScopeKind
 from griptape_nodes.retained_mode.engine import Engine, current_engine
 from griptape_nodes.retained_mode.events.app_events import ConfigChanged
 from griptape_nodes.retained_mode.events.base_events import (
@@ -28,7 +29,9 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayloadSuccess,
     StrictModeViolationDetail,
 )
+from griptape_nodes.retained_mode.events.execution_events import NodeFinishProcessEvent, NodeProcessOutcome
 from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
+from griptape_nodes.retained_mode.events.node_error_details import NodeErrorDetails
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     AuthorizationCheckpoint,
@@ -38,7 +41,12 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointFailure,
     CheckpointSubjectType,
 )
-from griptape_nodes.retained_mode.managers.event_manager import EventManager, ResultContext
+from griptape_nodes.retained_mode.managers.event_manager import (
+    EventManager,
+    EventTranslationContext,
+    ResultContext,
+    current_request_type,
+)
 
 
 class TestEventManagerBroadcasting:
@@ -1630,6 +1638,122 @@ class TestPostDispatchHooks:
         assert hook_threads[0] != engine_loop_thread
 
 
+class TestPostDispatchHookContextIsolation:
+    """A post-dispatch hook must not inherit the dispatching task's strict-mode scope.
+
+    Hook tasks are created with a *fresh* ``contextvars.Context()`` rather than a copy of
+    the caller's. The scope stack holds mutable ``StrictModeScope`` objects, so a hook
+    that inherited a node's ``RUNTIME_EXECUTE`` scope could append to ``scope.violations``
+    after the node's own scope had already been evaluated, and on a worker an
+    ERROR-severity violation promotes ``ExecuteNodeResultSuccess`` to a failure. A
+    library's telemetry hook must not be able to fail a user's node.
+
+    The fresh context also clears the dispatching request type, so
+    ``current_request_type()`` does not lie inside the hook.
+    """
+
+    @staticmethod
+    def _manager_with_handler() -> EventManager:
+        event_manager = EventManager()
+
+        async def handler(_request: _ProbeRequest) -> _ProbeResult:
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
+        return event_manager
+
+    @pytest.mark.asyncio
+    async def test_detached_hook_cannot_report_into_the_dispatching_scope(self) -> None:
+        event_manager = self._manager_with_handler()
+        event_manager.initialize_queue(asyncio.Queue())
+
+        seen_request_types: list[type | None] = []
+
+        async def hook(_request: RequestPayload, _result: ResultPayload) -> None:
+            seen_request_types.append(current_request_type())
+            STRICT_MODE.report(rule_id="parameter-mutation-during-aprocess", message="from the hook")
+
+        event_manager.add_post_dispatch_hook(_ProbeRequest, hook)
+
+        with STRICT_MODE.open_scope(
+            kind=StrictModeScopeKind.RUNTIME_EXECUTE,
+            subject="MyNode",
+            library_name="libA",
+            is_worker=True,
+        ) as scope:
+            await event_manager.ahandle_request(_ProbeRequest())
+            await _drain_post_dispatch_hooks(event_manager)
+
+        assert seen_request_types == [None]
+        assert scope.violations == []
+
+    def test_inline_hook_cannot_report_into_the_dispatching_scope(self) -> None:
+        """Same guarantee on the fallback path, which blocks the caller until the hook returns.
+
+        The hook does not run *on* the caller's thread: a sync callback goes through
+        ``to_thread``, onto a worker of the transient loop ``asyncio.run`` creates here.
+        The isolation has to survive that hop, which is why the fresh context is entered
+        before the loop is started rather than inside the callback.
+        """
+        event_manager = self._manager_with_handler()
+
+        seen_request_types: list[type | None] = []
+
+        def hook(_request: RequestPayload, _result: ResultPayload) -> None:
+            seen_request_types.append(current_request_type())
+            STRICT_MODE.report(rule_id="parameter-mutation-during-aprocess", message="from the hook")
+
+        event_manager.add_post_dispatch_hook(_ProbeRequest, hook)
+
+        with STRICT_MODE.open_scope(
+            kind=StrictModeScopeKind.RUNTIME_EXECUTE,
+            subject="MyNode",
+            library_name="libA",
+            is_worker=True,
+        ) as scope:
+            event_manager.handle_request(_ProbeRequest())
+
+        assert seen_request_types == [None]
+        assert scope.violations == []
+
+    @pytest.mark.asyncio
+    async def test_inline_hook_on_the_side_loop_cannot_report_into_the_dispatching_scope(self) -> None:
+        """The inline fallback has two sub-branches; this covers the one taken inside a loop.
+
+        Running the hook on another thread is not isolation by itself. ``ThreadRunner.run``
+        hands the coroutine over with ``run_coroutine_threadsafe``, which has no
+        ``context=`` parameter, and the ``call_soon_threadsafe`` underneath it captures
+        ``copy_context()`` on the *submitting* thread, so without an explicit fresh
+        context the hook inherits this scope and a library hook can fail a user's node.
+        The sync-callback hop to a worker thread does not save it either, because
+        ``to_thread`` propagates the context it was called in.
+
+        A bare ``EventManager`` has no ``_event_loop``, so a sync dispatch from inside this
+        test's running loop takes the fallback and then its ThreadRunner sub-branch.
+        """
+        event_manager = self._manager_with_handler()
+        assert event_manager._event_loop is None
+
+        seen_request_types: list[type | None] = []
+
+        def hook(_request: RequestPayload, _result: ResultPayload) -> None:
+            seen_request_types.append(current_request_type())
+            STRICT_MODE.report(rule_id="parameter-mutation-during-aprocess", message="from the hook")
+
+        event_manager.add_post_dispatch_hook(_ProbeRequest, hook)
+
+        with STRICT_MODE.open_scope(
+            kind=StrictModeScopeKind.RUNTIME_EXECUTE,
+            subject="MyNode",
+            library_name="libA",
+            is_worker=True,
+        ) as scope:
+            event_manager.handle_request(_ProbeRequest())
+
+        assert seen_request_types == [None]
+        assert scope.violations == []
+
+
 class TestAuthorizationCheckpointHooks:
     """The engine-side hook mechanism the app registers a policy into."""
 
@@ -1980,3 +2104,71 @@ class TestPutEventReportsWhetherItEnqueued:
 
         assert await manager.aput_event(ProgressEvent(value="x", node_name="n", parameter_name="output")) is True
         assert queue.qsize() == 1
+
+
+class TestAppEventListenerRemoval:
+    """Removing app event listeners is safe to repeat, so a library always unloads cleanly."""
+
+    def test_removing_a_listener_that_is_not_subscribed_does_nothing(self) -> None:
+        event_manager = EventManager()
+        listener = AsyncMock()
+
+        event_manager.remove_listener_for_app_event(ConfigChanged, listener)
+
+        event_manager.add_listener_to_app_event(ConfigChanged, listener)
+        event_manager.remove_listener_for_app_event(ConfigChanged, listener)
+        event_manager.remove_listener_for_app_event(ConfigChanged, listener)
+
+        event_manager.broadcast_app_event(ConfigChanged(key="k", old_value="a", new_value="b"))
+        listener.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_listener_added_during_a_broadcast_does_not_disturb_it(self) -> None:
+        event_manager = EventManager()
+        late_listener = AsyncMock()
+        heard: list[str] = []
+
+        async def listener_that_subscribes_another(event: ConfigChanged) -> None:
+            heard.append(event.key)
+            event_manager.add_listener_to_app_event(ConfigChanged, late_listener)
+
+        event_manager.add_listener_to_app_event(ConfigChanged, listener_that_subscribes_another)
+
+        await event_manager.abroadcast_app_event(ConfigChanged(key="first", old_value="a", new_value="b"))
+
+        assert heard == ["first"]
+        late_listener.assert_not_called()
+        await event_manager.abroadcast_app_event(ConfigChanged(key="second", old_value="b", new_value="c"))
+        late_listener.assert_awaited_once()
+
+
+class TestNodeProcessEventTranslation:
+    """Loop-body event translation leaves the node events' canvas names and other fields alone."""
+
+    @pytest.mark.asyncio
+    async def test_translation_keeps_every_field_of_a_finish_event(self) -> None:
+        manager = EventManager()
+        manager.initialize_queue(asyncio.Queue())
+        received: list[NodeFinishProcessEvent] = []
+        manager.add_listener_to_execution_event(NodeFinishProcessEvent, received.append)
+        error = NodeErrorDetails(message="boom", exception_type="builtins.RuntimeError")
+        finish = NodeFinishProcessEvent(
+            node_name="Body",
+            node_type="LoopBodyControlNode",
+            specific_library_name="Library",
+            flow_name="Canvas Flow",
+            execution_id="run-1",
+            parent_execution_id="group-run",
+            outcome=NodeProcessOutcome.FAILED,
+            error_message="boom",
+            error=error,
+        )
+
+        with EventTranslationContext(manager, {"Body_1": "Body", "Start_Package_MultiNode_1": "Start"}):
+            manager.put_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=finish)))
+            # A copy's name is translated; everything else on the event survives the copy it makes.
+            manager.put_event(
+                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=replace(finish, node_name="Body_1")))
+            )
+
+        assert received == [finish, finish]

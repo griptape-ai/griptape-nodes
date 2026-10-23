@@ -7,7 +7,7 @@ These tests describe the observable contract of:
 * ``NodeExecutor._extract_parameter_output_values`` - merges per-node output
   dicts from a subprocess result.
 * ``NodeExecutor.execute`` - the remaining ``SubflowNodeGroup`` branches
-  (private execution, library-name execution) and the unexpected-result-type
+  (isolated execution, library-name execution) and the unexpected-result-type
   edge case.
 """
 
@@ -17,9 +17,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from griptape_nodes.common.isolated_execution_scope import IsolatedExecutionScope, current_isolated_execution_scope
 from griptape_nodes.common.node_executor import NodeExecutor
 from griptape_nodes.exe_types.node_groups import SubflowNodeGroup
-from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, PRIVATE_EXECUTION
+from griptape_nodes.exe_types.node_types import ISOLATED_EXECUTION, LOCAL_EXECUTION
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeResultSuccess
 from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest
 
@@ -31,6 +33,9 @@ def _make_executor() -> NodeExecutor:
 def _make_subflow_node(execution_type: str) -> MagicMock:
     node = MagicMock(spec=SubflowNodeGroup)
     node.name = "Subflow"
+    # Read by execute() to describe the node in its start and finish events.
+    node.metadata = {}
+    node.is_cancellation_requested = False
     node.execution_environment = MagicMock()
     node.execution_environment.name = "execution_environment"
     node.get_parameter_value = MagicMock(return_value=execution_type)
@@ -85,7 +90,7 @@ class TestExecuteSubflowNodeGroupBranches:
 
     @pytest.mark.asyncio
     async def test_private_execution_calls_private_workflow_path(self) -> None:
-        node = _make_subflow_node(PRIVATE_EXECUTION)
+        node = _make_subflow_node(ISOLATED_EXECUTION)
 
         executor = _make_executor()
         mock_engine = cast("MagicMock", executor.engine)
@@ -123,7 +128,7 @@ class TestExecuteSubflowNodeGroupBranches:
     @pytest.mark.asyncio
     async def test_subprocess_paths_clear_execution_state_first(self) -> None:
         """Both PRIVATE and library paths must clear execution state before running."""
-        node = _make_subflow_node(PRIVATE_EXECUTION)
+        node = _make_subflow_node(ISOLATED_EXECUTION)
 
         executor = _make_executor()
         with patch.object(NodeExecutor, "_execute_private_workflow", new_callable=AsyncMock):
@@ -139,6 +144,151 @@ class TestExecuteSubflowNodeGroupBranches:
         await _make_executor().execute(node)
 
         node.subflow_execution_component.clear_execution_state.assert_not_called()
+
+
+_IS_BETA_ENABLED_PATH = "griptape_nodes.common.node_executor.is_beta_enabled"
+
+
+class TestPrivateExecutionInWorker:
+    """With the beta feature on, an Isolated Execution group runs locally and names the worker for its nodes."""
+
+    @pytest.mark.asyncio
+    async def test_runs_the_group_locally_inside_the_scope(self) -> None:
+        node = _make_subflow_node(ISOLATED_EXECUTION)
+        seen: list[IsolatedExecutionScope | None] = []
+        node.aprocess = AsyncMock(side_effect=lambda: seen.append(current_isolated_execution_scope.get()))
+
+        with (
+            patch(_IS_BETA_ENABLED_PATH, return_value=True),
+            patch.object(NodeExecutor, "_execute_private_workflow", new_callable=AsyncMock) as mock_private,
+        ):
+            await _make_executor().execute(node)
+
+        assert seen == [IsolatedExecutionScope(owner_name="Subflow")]
+        mock_private.assert_not_awaited()
+        # Nothing is packaged for a subprocess, so there is no subprocess state to clear.
+        node.subflow_execution_component.clear_execution_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_scope_ends_with_the_group(self) -> None:
+        node = _make_subflow_node(ISOLATED_EXECUTION)
+
+        with patch(_IS_BETA_ENABLED_PATH, return_value=True):
+            await _make_executor().execute(node)
+
+        assert current_isolated_execution_scope.get() is None
+
+    @pytest.mark.asyncio
+    async def test_the_subprocess_path_is_kept_when_the_feature_is_off(self) -> None:
+        node = _make_subflow_node(ISOLATED_EXECUTION)
+
+        with (
+            patch(_IS_BETA_ENABLED_PATH, return_value=False),
+            patch.object(NodeExecutor, "_execute_private_workflow", new_callable=AsyncMock) as mock_private,
+        ):
+            await _make_executor().execute(node)
+
+        mock_private.assert_awaited_once_with(node)
+        node.aprocess.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("execution_type", [LOCAL_EXECUTION, "some_library_name"])
+    async def test_other_environments_set_no_scope(self, execution_type: str) -> None:
+        node = _make_subflow_node(execution_type)
+        seen: list[IsolatedExecutionScope | None] = []
+        node.aprocess = AsyncMock(side_effect=lambda: seen.append(current_isolated_execution_scope.get()))
+
+        with (
+            patch(_IS_BETA_ENABLED_PATH, return_value=True),
+            patch.object(NodeExecutor, "_execute_library_workflow", new_callable=AsyncMock),
+        ):
+            await _make_executor().execute(node)
+
+        assert all(scope is None for scope in seen)
+
+    @pytest.mark.parametrize(
+        ("execution_type", "beta_enabled", "runs_locally"),
+        [
+            (LOCAL_EXECUTION, False, True),
+            (ISOLATED_EXECUTION, True, True),
+            (ISOLATED_EXECUTION, False, False),
+            ("some_library_name", True, False),
+        ],
+    )
+    def test_which_loops_run_through_the_local_path(
+        self, execution_type: str, *, beta_enabled: bool, runs_locally: bool
+    ) -> None:
+        with patch(_IS_BETA_ENABLED_PATH, return_value=beta_enabled):
+            assert _make_executor()._runs_locally(execution_type) is runs_locally
+
+    def test_a_private_loop_runs_inside_the_scope_and_a_local_one_does_not(self) -> None:
+        executor = _make_executor()
+
+        with executor._local_execution_scope(ISOLATED_EXECUTION, "Loop End"):
+            assert current_isolated_execution_scope.get() == IsolatedExecutionScope(owner_name="Loop End")
+        with executor._local_execution_scope(LOCAL_EXECUTION, "Loop End"):
+            assert current_isolated_execution_scope.get() is None
+
+
+class _LoopBodyRan(Exception):  # noqa: N818 (a signal that the body ran, not an error)
+    """Stops a loop run once its body has been dispatched; what follows is not under test."""
+
+
+class TestPrivateExecutionStartEndLoop:
+    """A start/end loop whose body is one Isolated Execution group runs its iterations in that scope."""
+
+    def _end_node(self, *, run_in_order: bool) -> MagicMock:
+        start_node = MagicMock()
+        start_node.name = "Loop Start"
+        start_node._get_total_iterations.return_value = 3
+        start_node.get_parameter_value.return_value = run_in_order
+        end_node = MagicMock()
+        end_node.name = "Loop End"
+        end_node.start_node = start_node
+        return end_node
+
+    async def _run(self, *, run_in_order: bool, beta_enabled: bool) -> dict[str, list[IsolatedExecutionScope | None]]:
+        """Run the loop and return which body runner was called, with the scope each one saw."""
+        calls: dict[str, list[IsolatedExecutionScope | None]] = {}
+
+        def runner(name: str) -> AsyncMock:
+            def record(**_kwargs: Any) -> None:
+                calls.setdefault(name, []).append(current_isolated_execution_scope.get())
+                raise _LoopBodyRan
+
+            return AsyncMock(side_effect=record)
+
+        executor = _make_executor()
+        with (
+            patch(_IS_BETA_ENABLED_PATH, return_value=beta_enabled),
+            patch.object(NodeExecutor, "_package_loop_body", AsyncMock(return_value=(MagicMock(), ISOLATED_EXECUTION))),
+            patch.object(NodeExecutor, "_get_merged_parameter_values_for_iterations", return_value={}),
+            patch.object(NodeExecutor, "get_parameter_values_per_iteration", return_value={}),
+            patch.object(NodeExecutor, "get_resolved_upstream_values", return_value={}),
+            patch.object(NodeExecutor, "_execute_loop_iterations_locally", runner("locally")),
+            patch.object(NodeExecutor, "_execute_loop_iterations_sequentially", runner("sequentially")),
+            patch.object(NodeExecutor, "_execute_loop_iterations_privately", runner("privately")),
+            patch.object(NodeExecutor, "_execute_loop_iterations_sequentially_private", runner("sequentially_private")),
+            pytest.raises(_LoopBodyRan),
+        ):
+            await executor.handle_loop_execution(self._end_node(run_in_order=run_in_order))
+        return calls
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("run_in_order", "local_runner"), [(True, "sequentially"), (False, "locally")])
+    async def test_runs_the_local_loop_path_inside_the_scope(self, *, run_in_order: bool, local_runner: str) -> None:
+        calls = await self._run(run_in_order=run_in_order, beta_enabled=True)
+
+        assert calls == {local_runner: [IsolatedExecutionScope(owner_name="Loop End")]}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("run_in_order", "private_runner"), [(True, "sequentially_private"), (False, "privately")])
+    async def test_keeps_the_subprocess_path_when_the_feature_is_off(
+        self, *, run_in_order: bool, private_runner: str
+    ) -> None:
+        calls = await self._run(run_in_order=run_in_order, beta_enabled=False)
+
+        assert calls == {private_runner: [None]}
 
 
 class TestExecuteUnexpectedResultType:
@@ -234,13 +384,14 @@ class TestControlFlowResolvedEventWireForm:
 
     def test_values_keep_their_types_across_the_wire(self) -> None:
         from griptape_nodes.retained_mode.events.execution_events import ControlFlowResolvedEvent
-        from griptape_nodes.serialization.converter import converter
+
+        converter = converters.engine
 
         values = {"flag": True, "count": 1, "pair": (1, 2), "blob": b"\x00"}
         event = ControlFlowResolvedEvent(end_node_name="EndFlow", parameter_output_values=values)
 
-        wire = json.loads(json.dumps(converter.unstructure(event)))
-        received = converter.structure(wire, ControlFlowResolvedEvent)
+        sent = json.loads(json.dumps(converter.unstructure(event)))
+        received = converter.structure(sent, ControlFlowResolvedEvent)
 
         assert received.parameter_output_values == values
         assert type(received.parameter_output_values["flag"]) is bool

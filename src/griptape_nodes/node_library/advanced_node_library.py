@@ -6,7 +6,12 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from griptape_nodes.node_library.library_registry import Library, LibrarySchema
-    from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
+    from griptape_nodes.retained_mode.events.base_events import (
+        AppPayload,
+        ExecutionPayload,
+        RequestPayload,
+        ResultPayload,
+    )
 
 
 class AdvancedNodeLibrary:
@@ -91,11 +96,10 @@ class AdvancedNodeLibrary:
 
         Both sync and async handler callables are supported.
 
-        **Orchestrator process only.** Handlers registered via this method run in
-        the orchestrator process. Libraries loaded in worker processes will not have
-        their handlers forwarded to the orchestrator, so requests dispatched there
-        will result in "No manager found". Cross-worker handler support is tracked
-        in GH#4748.
+        **Registered per process.** Every library loads on the orchestrator, so its
+        handlers always serve requests dispatched there. A library whose nodes execute
+        in a worker also loads in that worker, which registers its own copy; the two
+        processes never forward handler requests to each other.
 
         **Singleton handlers only.** This mechanism is for services where exactly
         one library is the provider (e.g. colour conversion, ML inference). For
@@ -177,10 +181,10 @@ class AdvancedNodeLibrary:
         node-execution state is process-wide, so a request issued from a hook can
         perturb an in-flight operation. Do external work (HTTP, file writes) instead.
 
-        **Orchestrator process only.** Hooks are registered on the event manager of
-        whichever process loads the library, so a worker-mode library's hooks never
-        observe requests handled by the orchestrator. Cross-worker hook support is
-        tracked in GH#4748.
+        **Registered per process.** Hooks are registered on the event manager of
+        whichever process loads the library. A library whose nodes execute in a worker
+        loads in both processes, so each copy observes only the requests its own
+        process handles.
 
         **Not durable.** In-flight hooks are abandoned at process exit. Do not use
         them where delivery must be guaranteed.
@@ -189,6 +193,75 @@ class AdvancedNodeLibrary:
             def get_post_dispatch_hooks(self):
                 return [
                     (SaveWorkflowRequest, self._on_workflow_saved),
+                ]
+        """
+        return []
+
+    def get_execution_event_listeners(
+        self,
+    ) -> list[tuple[type[ExecutionPayload], Callable[[ExecutionPayload], None]]]:
+        """Return execution event listeners to register with the engine.
+
+        Each entry is an (event_type, callback) pair. While Griptape Nodes runs a workflow, it
+        calls the callback with the event each time one of that type happens. Where
+        get_post_dispatch_hooks() reacts to a request the engine handled, these react to what
+        happens during a run. ``NodeStartProcessEvent`` and ``NodeFinishProcessEvent`` report
+        every node a workflow runs.
+
+        The engine registers all returned listeners after after_library_nodes_loaded()
+        and deregisters them automatically when the library is unloaded.
+
+        **Keep it quick.** The workflow waits for the callback to return, so a slow one holds
+        it up. Hand slow work (network calls, file writes) to a background thread.
+
+        **Synchronous only.** Async callbacks are rejected and reported as a library problem.
+
+        **Notification only.** The return value is ignored. A callback that raises is logged
+        and otherwise ignored, and the workflow carries on.
+
+        **Exact type matching.** A listener registered for an event type fires only for that
+        exact type, not for its subclasses.
+
+        **Don't modify the event.** Other listeners receive the same one.
+
+        Example:
+            def get_execution_event_listeners(self):
+                return [
+                    (NodeStartProcessEvent, self._on_node_start),
+                    (NodeFinishProcessEvent, self._on_node_finish),
+                ]
+        """
+        return []
+
+    def get_app_event_listeners(
+        self,
+    ) -> list[
+        tuple[
+            type[AppPayload],
+            Callable[[AppPayload], None] | Callable[[AppPayload], Awaitable[None]],
+        ]
+    ]:
+        """Return app event listeners to register with the engine.
+
+        Each entry is an (event_type, callback) pair. App events are things that happen to
+        Griptape Nodes itself, such as a setting or the current project changing. The callback
+        is called with the event each time one of that type happens.
+
+        The engine registers all returned listeners after after_library_nodes_loaded()
+        and deregisters them automatically when the library is unloaded. Because libraries load
+        while Griptape Nodes starts up, a listener for ``AppInitializationComplete`` does not
+        hear the startup that loaded the library.
+
+        Both sync and async callbacks are supported. A callback that raises is logged and
+        otherwise ignored, and the other listeners still run.
+
+        **Exact type matching.** A listener registered for an event type fires only for that
+        exact type, not for its subclasses.
+
+        Example:
+            def get_app_event_listeners(self):
+                return [
+                    (ConfigChanged, self._on_config_changed),
                 ]
         """
         return []

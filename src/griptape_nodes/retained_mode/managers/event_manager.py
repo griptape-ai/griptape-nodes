@@ -14,11 +14,8 @@ from typing import TYPE_CHECKING, Any, cast
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
-from griptape_nodes.common.strict_mode import STRICT_MODE
-from griptape_nodes.common.strict_mode_checks import RULES
-from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.engine import EngineScoped, engine_scope
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     BaseEvent,
@@ -41,7 +38,6 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointFailure,
 )
 from griptape_nodes.retained_mode.request_handlers import handled_request_types
-from griptape_nodes.serialization.converter import converter
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 if TYPE_CHECKING:
@@ -64,6 +60,11 @@ EP = TypeVar("EP", bound=ExecutionPayload, default=ExecutionPayload)
 _active_request_type: ContextVar[type[RequestPayload] | None] = ContextVar(
     "_event_manager_active_request_type", default=None
 )
+
+# The node the current logical chain is rebuilding from the values it was sent, if any. Per chain rather
+# than process-wide, unlike the node-execution refcount: another node's aprocess can run in this
+# process at the same time, and its requests are not part of the rebuild.
+_hydrating_node_name: ContextVar[str | None] = ContextVar("_event_manager_hydrating_node_name", default=None)
 
 # (request_type, callback) pairs for the post-dispatch hooks running above this point
 # in the current logical chain. A hook task is created with this marker set, and every
@@ -157,38 +158,6 @@ def current_request_type() -> type[RequestPayload] | None:
     return _active_request_type.get()
 
 
-def reentrant_bus_in_init_would_report() -> bool:
-    """Whether a bus request issued right now would fire ``reentrant-bus-in-init``.
-
-    Both halves of the detector's condition (see
-    ``EventManager._report_reentrant_bus_in_init``), exposed so code that runs
-    inside a node ``__init__`` can ask BEFORE issuing a request and skip it
-    rather than commit the violation. The detector and every such caller read
-    this one predicate, so "we deferred" and "it would have been reported"
-    cannot drift apart as the scopes change.
-
-    Being inside a node ``__init__`` is not sufficient on its own. ``STRICT_MODE.report``
-    no-ops when no scope is active, and scopes open in exactly two places: around the
-    worker's schema probe (LOAD_PROBE, where a violation drops the class from the worker
-    schema) and around node execution (RUNTIME_EXECUTE, where a worker violation promotes
-    the result to a failure). An ordinary ``CreateNodeRequest`` -- an editor drop, a
-    workflow load, any single-process engine, where no probe runs at all -- opens neither,
-    so a read from ``__init__`` there is free and callers should just do it. Keying a
-    deferral off ``is_constructing_node()`` alone instead makes every node in every
-    deployment pay for a hazard only the worker's probe has.
-
-    When strict mode is disabled the scope is detached (``open_scope`` keeps it off the
-    stack), so this cannot tell a probe from an editor drop. It answers True while
-    constructing in that case: with the checker off, the conservative answer is the
-    safe one.
-    """
-    if not LibraryRegistry.is_constructing_node():
-        return False
-    if not STRICT_MODE.enabled:
-        return True
-    return STRICT_MODE.current_scope() is not None
-
-
 # Result types that should NOT trigger a flush request.
 #
 # Add result types to this set if they should never trigger a flush (typically because they ARE
@@ -216,6 +185,10 @@ class EventManager(EngineScoped):
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
+        # Libraries subscribe while they load, which runs in asyncio.to_thread, while a broadcast
+        # may be iterating a set on the loop's thread, so guard the dict and snapshot a set before
+        # iterating.
+        self._app_event_listeners_lock = threading.Lock()
         # Dictionary to store ALL SUBSCRIBERS to execution events (the live feed of
         # ExecutionPayloads emitted during a run, e.g. AgentStreamEvent). Lets a node
         # tap the feed while it runs and react (e.g. stream tokens to a parameter).
@@ -937,31 +910,23 @@ class EventManager(EngineScoped):
         with self._node_execution_lock:
             return self._node_execution_depth > 0
 
-    def _report_reentrant_bus_in_init(self, request: RequestPayload) -> None:
-        """Detect the reentrant-bus-in-init rule.
+    @contextmanager
+    def hydration_scope(self, node_name: str) -> Iterator[None]:
+        """Mark the current chain as rebuilding `node_name` from the values it was sent.
 
-        A node class that issues an event-bus request from its __init__
-        deadlocks the worker's schema probe, which calls __init__ on
-        the worker thread during library load. LibraryRegistry sets a
-        ContextVar around create_node so every __init__ body in the
-        hierarchy is covered.
-
-        The condition lives in ``reentrant_bus_in_init_would_report`` rather
-        than inline, because engine components that legitimately read state
-        from a node ``__init__`` consult the same predicate to decide whether
-        to defer. One owner, so the two answers cannot disagree.
+        Hydration replays each value through `set_parameter_value`, so a node's value hooks run as if a
+        user had edited it. On a worker the node is a copy, and the worker-side RemoteHandler reads this
+        to keep those hooks from repeating their edits on the orchestrator's node.
         """
-        if not reentrant_bus_in_init_would_report():
-            return
-        rule = RULES["reentrant-bus-in-init"]
-        # Subject attribution lives on the violation's ``subject`` field,
-        # set from the surrounding strict-mode scope (class name under
-        # LOAD_PROBE, instance name under RUNTIME_EXECUTE). The message
-        # only needs the request type.
-        STRICT_MODE.report(
-            rule_id=rule.rule_id,
-            message=rule.render(request_type=type(request).__name__),
-        )
+        token = _hydrating_node_name.set(node_name)
+        try:
+            yield
+        finally:
+            _hydrating_node_name.reset(token)
+
+    def hydrating_node_name(self) -> str | None:
+        """The node the current chain is rebuilding, or None outside a hydration scope."""
+        return _hydrating_node_name.get()
 
     def get_manager_for_request_type(self, request_type: type[RP]) -> Callable | None:
         """Return the currently-registered handler callback for a request type, or None."""
@@ -1028,7 +993,7 @@ class EventManager(EngineScoped):
             msg = f"Forwarded response 'result_type' is not registered: {result_type_name}"
             raise RuntimeError(msg)
 
-        result_payload = cast("ResultPayload", converter.structure(result_data, resolved_result_type))
+        result_payload = cast("ResultPayload", converters.engine.structure(result_data, resolved_result_type))
 
         event_cls: type[EventResultSuccess | EventResultFailure]
         event_cls = EventResultSuccess if event_type == "EventResultSuccess" else EventResultFailure
@@ -1198,8 +1163,6 @@ class EventManager(EngineScoped):
         if result_context is None:
             result_context = ResultContext()
 
-        self._report_reentrant_bus_in_init(request)
-
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -1255,8 +1218,6 @@ class EventManager(EngineScoped):
         if result_context is None:
             result_context = ResultContext()
 
-        self._report_reentrant_bus_in_init(request)
-
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -1297,10 +1258,11 @@ class EventManager(EngineScoped):
 
     def _invoke_handler_from_sync(self, callback: Callable, request: RequestPayload) -> ResultPayload:
         """Call a request handler from sync code, bridging async handlers onto a loop."""
-        # Worker-side RemoteHandler callbacks are async but safe to invoke from a
-        # running loop: forward_to_orchestrator dispatches onto the WS loop via
-        # run_coroutine_threadsafe, which runs on a different thread than the caller's
-        # loop, so no primitives are shared and the #4469 deadlock shape does not apply.
+        # Worker-side RemoteHandler callbacks are async but safe to invoke from any
+        # running loop except the WS loop itself: forward_to_orchestrator dispatches onto
+        # the WS loop via run_coroutine_threadsafe, which then runs on a different thread
+        # than the caller's loop, so no primitives are shared and the #4469 deadlock shape
+        # does not apply. A caller on the WS loop would block the loop it waits on.
         # Hop the callback onto the WS loop here and block the caller's thread on the
         # concurrent.futures.Future so RemoteHandler itself stays a plain async callable.
         #
@@ -1310,12 +1272,20 @@ class EventManager(EngineScoped):
         from griptape_nodes.app.worker_routing import RemoteHandler
 
         if isinstance(callback, RemoteHandler):
-            if _running_loop() is None:
+            running_loop = _running_loop()
+            if running_loop is None:
                 return asyncio.run(callback(request))
             if self._websocket_event_loop is None:
                 msg = (
                     f"Cannot forward '{type(request).__name__}' from a running event loop: "
                     "the websocket event loop is not configured. This indicates a bootstrap order bug."
+                )
+                raise RuntimeError(msg)
+            if running_loop is self._websocket_event_loop:
+                msg = (
+                    f"Cannot handle '{type(request).__name__}' synchronously on the websocket event loop: "
+                    "its handler is dispatched onto that same loop, so blocking on it here would never return. "
+                    "Use ahandle_request from code running on this loop."
                 )
                 raise RuntimeError(msg)
             future = asyncio.run_coroutine_threadsafe(callback(request), self._websocket_event_loop)
@@ -1346,12 +1316,13 @@ class EventManager(EngineScoped):
         lives in, and a peer's payload describes the peer, so acting on it would corrupt the
         receiver. A worker that has something to tell the orchestrator sends it a request.
         """
-        listener_set = self._app_event_listeners.get(app_event_type)
-        if listener_set is None:
-            listener_set = set()
-            self._app_event_listeners[app_event_type] = listener_set
+        with self._app_event_listeners_lock:
+            listener_set = self._app_event_listeners.get(app_event_type)
+            if listener_set is None:
+                listener_set = set()
+                self._app_event_listeners[app_event_type] = listener_set
 
-        listener_set.add(callback)
+            listener_set.add(callback)
 
     def add_listener_to_execution_event(self, execution_event_type: type[EP], callback: Callable[[EP], None]) -> None:
         """Subscribe to a type of execution event on the live event feed.
@@ -1380,6 +1351,12 @@ class EventManager(EngineScoped):
         ``remove_listener_for_execution_event``). The agent payloads are the exception:
         they carry the ``thread_id`` of their conversation, so a subscriber can filter
         on that instead.
+
+        A library should return its listeners from
+        ``AdvancedNodeLibrary.get_execution_event_listeners()`` instead of calling this, so the
+        engine removes them when the library unloads.
+
+        Nothing is delivered while the event queue has not been initialized.
         """
         callback_call = type(callback).__call__
         if inspect.iscoroutinefunction(callback) or inspect.iscoroutinefunction(callback_call):
@@ -1445,8 +1422,23 @@ class EventManager(EngineScoped):
     def remove_listener_for_app_event(
         self, app_event_type: type[AP], callback: Callable[[AP], None] | Callable[[AP], Awaitable[None]]
     ) -> None:
-        listener_set = self._app_event_listeners[app_event_type]
-        listener_set.remove(callback)
+        """Unsubscribe a callback previously registered with ``add_listener_to_app_event``.
+
+        Removing a callback that is not subscribed does nothing, so a library that listed the same
+        listener twice still unloads cleanly.
+        """
+        with self._app_event_listeners_lock:
+            listener_set = self._app_event_listeners.get(app_event_type)
+            if listener_set is None:
+                return
+            listener_set.discard(callback)
+            if not listener_set:
+                del self._app_event_listeners[app_event_type]
+
+    def _app_event_listeners_for(self, app_event_type: type[AppPayload]) -> list[Callable]:
+        """A snapshot of the listeners for an app event type, safe to iterate while others subscribe."""
+        with self._app_event_listeners_lock:
+            return list(self._app_event_listeners.get(app_event_type, ()))
 
     def broadcast_app_event(self, app_event: AP) -> None:
         """Broadcast an app event to all registered listeners (sync version).
@@ -1454,17 +1446,15 @@ class EventManager(EngineScoped):
         Args:
             app_event: The app event to broadcast
         """
-        app_event_type = type(app_event)
-        if app_event_type in self._app_event_listeners:
-            listener_set = self._app_event_listeners[app_event_type]
-
+        listeners = self._app_event_listeners_for(type(app_event))
+        if listeners:
             # Support async callbacks for sync method. See the matching comment
             # in handle_request for the ThreadRunner rationale: listeners here
             # are user-supplied callbacks that do not share primitives with the
             # caller's loop, so the side-loop path is safe.
             async def _broadcast_async() -> None:
                 async with asyncio.TaskGroup() as tg:
-                    for listener_callback in listener_set:
+                    for listener_callback in listeners:
                         tg.create_task(self._call_app_event_listener(listener_callback, app_event))
 
             if _running_loop() is not None:
@@ -1479,12 +1469,10 @@ class EventManager(EngineScoped):
         Args:
             app_event: The app event to broadcast
         """
-        app_event_type = type(app_event)
-        if app_event_type in self._app_event_listeners:
-            listener_set = self._app_event_listeners[app_event_type]
-
+        listeners = self._app_event_listeners_for(type(app_event))
+        if listeners:
             async with asyncio.TaskGroup() as tg:
-                for listener_callback in listener_set:
+                for listener_callback in listeners:
                     tg.create_task(self._call_app_event_listener(listener_callback, app_event))
 
     async def _call_app_event_listener(
@@ -1512,13 +1500,8 @@ class EventManager(EngineScoped):
             )
 
     def _flush_tracked_parameter_changes(self) -> None:
-        obj_manager = self.engine.object_manager
-        # Get all flows and their nodes
-        nodes = obj_manager.get_filtered_subset(type=BaseNode)
-        for node in nodes.values():
-            # Only flush if there are actually tracked parameters
-            if node._tracked_parameters:
-                node.emit_parameter_changes()
+        for node in self.engine.object_manager.take_nodes_with_queued_changes():
+            node.emit_parameter_changes()
 
 
 class EventSuppressionContext:

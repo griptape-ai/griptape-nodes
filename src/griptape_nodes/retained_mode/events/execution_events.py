@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Required, TypedDict
 
 from griptape_nodes.retained_mode.events.base_events import (
@@ -185,7 +186,8 @@ class CancelFlowRequest(RequestPayload):
     stopping execution due to errors or changes. Cleanly terminates execution.
 
     Args:
-        flow_name: Name of the flow to cancel (deprecated)
+        flow_name: Name of the flow to cancel. Required today: the request fails without
+            it. Planned for removal in griptape-ai/griptape-nodes#1663.
 
     Results: CancelFlowResultSuccess | CancelFlowResultFailure (cancellation error)
     """
@@ -209,6 +211,18 @@ class CancelFlowResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class UnresolveFlowRequest(RequestPayload):
+    """Reset every node in a flow back to unresolved.
+
+    Use when: Clearing cached results so the next run re-executes every node.
+    Does not stop a running flow; use CancelFlowRequest for that.
+
+    Args:
+        flow_name: Name of the flow to unresolve. Required today: the request fails without
+            it. Planned for removal in griptape-ai/griptape-nodes#1663.
+
+    Results: UnresolveFlowResultSuccess | UnresolveFlowResultFailure (unresolve error)
+    """
+
     # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
     flow_name: str | None = None
 
@@ -386,24 +400,50 @@ class ParameterSpotlightEvent(ExecutionPayload):
 @dataclass
 @PayloadRegistry.register
 class ControlFlowResolvedEvent(ExecutionPayload):
+    """A flow run finished.
+
+    Args:
+        end_node_name: The node the run ended on.
+        parameter_output_values: That node's output values.
+        run_seconds: Wall-clock seconds the whole run took, or None when the run was not timed.
+    """
+
     end_node_name: str
     parameter_output_values: dict[str, Value]
+    run_seconds: float | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class ControlFlowCancelledEvent(ExecutionPayload):
+    """A flow run was cancelled. run_seconds is how long it ran before that, or None when not timed."""
+
     result_details: ResultDetails | str | None = None
     exception: Exception | None = None
+    run_seconds: float | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class NodeResolvedEvent(ExecutionPayload):
+    """A node finished running.
+
+    Args:
+        node_name: The node that finished.
+        parameter_output_values: The node's output values, as displayed.
+        node_type: The node's class name.
+        specific_library_name: The library the node type came from, when only one provides it.
+        run_seconds: Wall-clock seconds the node took to run, or None when it did not run (a locked node,
+            or a Start Loop node). An End Loop node or a group node runs the nodes inside it, so its time
+            covers theirs, and they also report their own. Summing every node's time counts loop and
+            group bodies twice.
+    """
+
     node_name: str
     parameter_output_values: dict[str, DisplayValue]
     node_type: str
     specific_library_name: str | None = None
+    run_seconds: float | None = None
 
 
 @dataclass
@@ -421,16 +461,89 @@ class NodeUnresolvedEvent(ExecutionPayload):
     node_name: str
 
 
+class NodeProcessOutcome(StrEnum):
+    """How a node's run ended, as reported on `NodeFinishProcessEvent`.
+
+    SUCCEEDED: the node finished its work.
+    FAILED: the node ran into an error, described by the event's `error_message` and `error`. A
+        node that runs into an error after the user asked it to stop still counts as failed.
+    CANCELLED: the run was stopped, for example because the user cancelled the workflow, or the
+        node stopped early because it was asked to.
+    """
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 @dataclass
 @PayloadRegistry.register
 class NodeStartProcessEvent(ExecutionPayload):
+    """A node is about to run. Sent before the node does any work.
+
+    Sent once for every node the engine runs: regular nodes, nodes that run in a worker, group and
+    loop nodes, and the nodes inside them. A loop runs its body once per iteration, so a body node
+    sends one of these for each iteration.
+
+    Nodes that never start send neither this nor `NodeFinishProcessEvent`: locked nodes, which keep
+    their values without running; Start Loop nodes, since the loop is reported by its End Loop
+    node; and nodes that fail before they start, such as when an input can't be read or the node
+    fails validation, which send a `NodeErrorEvent` instead.
+
+    A group set to Isolated Execution, or to run in a library's environment, can run its nodes in a
+    separate Griptape Nodes process. Libraries load there too, so their listeners hear those nodes
+    there, and the main process hears only the group node itself.
+
+    Args:
+        node_name: The node on the canvas. A loop body node is named as it is on the canvas on
+            every iteration.
+        node_type: The node's class name.
+        specific_library_name: The library the node type came from.
+        flow_name: The flow the node is in.
+        execution_id: Identifies this run of the node. The `NodeFinishProcessEvent` for the same run
+            carries the same value. Opaque: compare it, but don't parse it. Match a finish to its
+            start by this rather than by `node_name`: a loop set to Run Group Items All at Once runs
+            the nodes inside it at the same time, so the same node can have several runs going.
+        parent_execution_id: The `execution_id` of the nearest run this one is part of, such as the
+            group or loop node whose body this node is in, or None at the top of a run.
+    """
+
     node_name: str
+    node_type: str | None = None
+    specific_library_name: str | None = None
+    flow_name: str | None = None
+    execution_id: str | None = None
+    parent_execution_id: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class NodeFinishProcessEvent(ExecutionPayload):
+    """A node stopped running, whether it succeeded, failed, or was cancelled.
+
+    Sent for every run that sent a `NodeStartProcessEvent`, after the node's work is over.
+
+    Args:
+        node_name: The node on the canvas, as on the matching `NodeStartProcessEvent`.
+        node_type: The node's class name.
+        specific_library_name: The library the node type came from.
+        flow_name: The flow the node is in.
+        execution_id: The same value as on the matching `NodeStartProcessEvent`.
+        parent_execution_id: The same value as on the matching `NodeStartProcessEvent`.
+        outcome: How the run ended. Optional so events from older engines still parse.
+        error_message: When the run failed, the failure as one flattened string.
+        error: When the run failed, the same failure in parts, as on `NodeErrorEvent`.
+    """
+
     node_name: str
+    node_type: str | None = None
+    specific_library_name: str | None = None
+    flow_name: str | None = None
+    execution_id: str | None = None
+    parent_execution_id: str | None = None
+    outcome: NodeProcessOutcome | None = None
+    error_message: str | None = None
+    error: NodeErrorDetails | None = None
 
 
 @dataclass
@@ -443,11 +556,15 @@ class NodeErrorEvent(ExecutionPayload):
         error_message: The failure as one flattened string, for logs and older editors.
         error: The same failure in parts, without engine preambles or the node name prefix.
             Optional so events from older engines still parse.
+        run_seconds: Wall-clock seconds the node ran before failing, or None when it failed before
+            it started running. For an End Loop node or a group node, this includes the nodes inside
+            it, as on `NodeResolvedEvent`.
     """
 
     node_name: str
     error_message: str
     error: NodeErrorDetails | None = None
+    run_seconds: float | None = None
 
 
 @dataclass

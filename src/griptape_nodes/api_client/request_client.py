@@ -11,6 +11,8 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Self
 
+from griptape_nodes.retained_mode.events import converters
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import TracebackType
@@ -164,13 +166,12 @@ class RequestClient:
             else:
                 result = await asyncio.wrap_future(response_future)
 
-        except TimeoutError:
-            logger.error("Request %s timed out", request_id)
+        except TimeoutError as e:
             self.discard_request(request_id)
-            raise
+            msg = f"Request {request_id} timed out"
+            raise TimeoutError(msg) from e
 
-        except Exception as e:
-            logger.error("Request %s failed: %s", request_id, e)
+        except Exception:
             self.discard_request(request_id)
             raise
         else:
@@ -208,7 +209,7 @@ class RequestClient:
         request_id = event_request.request_id
         event_request.response_topic = worker_response_topic
         # Before tracking, so a request that cannot be sent leaves no pending response behind.
-        payload_dict = json.loads(event_request.json())
+        payload_dict = json.loads(converters.engine.dumps(event_request))
 
         response_future = await self._track_request(request_id)
 
@@ -227,13 +228,12 @@ class RequestClient:
             else:
                 result = await asyncio.wrap_future(response_future)
 
-        except TimeoutError:
-            logger.error("Forwarded request %s timed out", request_id)
+        except TimeoutError as e:
             self.discard_request(request_id)
-            raise
+            msg = f"Forwarded request {request_id} timed out"
+            raise TimeoutError(msg) from e
 
-        except Exception as e:
-            logger.error("Forwarded request %s failed: %s", request_id, e)
+        except Exception:
             self.discard_request(request_id)
             raise
         else:
@@ -317,8 +317,7 @@ class RequestClient:
                 results = await asyncio.wait_for(gather, timeout=timeout_ms / 1000)
             else:
                 results = await gather
-        except (TimeoutError, Exception) as e:
-            logger.error("Batch request failed: %s", e)
+        except Exception:
             for request_id in request_ids:
                 self.discard_request(request_id)
             raise

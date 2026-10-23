@@ -11,7 +11,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.serialization.values import Value
 
 
 class InitializationPhase(StrEnum):
@@ -120,6 +119,13 @@ class AppInitializationComplete(AppPayload):
     # taken from the first entry in libraries_to_register. Multiple workers can run
     # simultaneously for different libraries.
     is_worker: bool = False
+    # Set by short-lived engines (workflow subprocesses and script runs) that can run beside a live
+    # orchestrator, which owns any library resets still waiting for a restart.
+    defer_pending_library_resets: bool = False
+    # When True, this worker serves no single library: it loads every enabled library and runs the
+    # nodes the orchestrator routes to it, such as the members of an Isolated Execution group. Only
+    # meaningful together with is_worker; libraries_to_register is ignored.
+    is_general_purpose_worker: bool = False
     # URL of the static file server the host process runs for this workspace. The engine serves
     # nothing itself, so when unset it assumes the host's default address (see StaticFilesManager).
     static_server_base_url: str | None = None
@@ -209,49 +215,13 @@ class EngineInitializationProgress(AppPayload):
 
 
 @dataclass
-class WorkerParameterSchema:
-    """Serialized parameter from a worker-loaded node.
-
-    Contains the fields needed to reconstruct a Parameter on the orchestrator
-    without importing the worker library's Python modules.
-    """
-
-    name: str
-    type: str
-    input_types: list[str]
-    output_type: str
-    default_value: Value
-    tooltip: Any
-    tooltip_as_input: Any
-    tooltip_as_property: Any
-    tooltip_as_output: Any
-    mode_allowed_input: bool
-    mode_allowed_property: bool
-    mode_allowed_output: bool
-    user_defined: bool
-    settable: bool
-    serializable: bool
-    private: bool
-    exclude_from_metadata: bool
-    ui_options: dict | None
-
-
-@dataclass
-class WorkerNodeSchema:
-    """Serialized node from a worker-loaded library."""
-
-    class_name: str
-    parameters: list[WorkerParameterSchema]
-
-
-@dataclass
 @PayloadRegistry.register
 class LibraryLoadedNotification(AppPayload):
     """Notification that a library has finished loading, including its fitness outcome.
 
     Raised by the process that owns the library's record, so listeners including the GUI can update
-    their view of library health. For a library hosted in a worker that process is the orchestrator,
-    once it has accepted the worker's ``ReportLibraryLoadedRequest``.
+    their view of library health. For a library whose nodes execute in a worker that process is the
+    orchestrator, once it has accepted the worker's ``ReportLibraryLoadedRequest``.
 
     Args:
         library_name: Name of the library that was loaded.
@@ -269,8 +239,7 @@ class LibraryLoadedNotification(AppPayload):
 class ReportLibraryLoadedRequest(RequestPayload, SkipTheLineMixin):
     """Sent by a worker to the orchestrator to report how a library loaded in the worker.
 
-    The orchestrator never imported a worker-hosted library, so the worker's account is the only one
-    there is, and it is what releases anything waiting to route execution to that worker.
+    It is what releases anything waiting to route execution to that worker.
 
     ``SkipTheLineMixin`` because the orchestrator may be executing a node when this arrives, and that
     node can itself be waiting on this very report through ``WorkerManager.wait_until_executable``.
@@ -280,15 +249,11 @@ class ReportLibraryLoadedRequest(RequestPayload, SkipTheLineMixin):
         library_name: Name of the library that finished loading in the worker.
         fitness: Final fitness value (LibraryManager.LibraryFitness string).
         problem_details: Human-readable summary of problems, or None if there are none.
-        node_schemas: Serialized node/parameter schemas, set only for a library the orchestrator
-            cannot import, which registers stub classes from them. None for an execution-dependency
-            library, whose real classes the orchestrator already registered itself.
     """
 
     library_name: str
     fitness: str
     problem_details: str | None = None
-    node_schemas: list[WorkerNodeSchema] | None = None
     broadcast_result: bool = field(default=False, kw_only=True)
 
 
@@ -302,6 +267,29 @@ class ReportLibraryLoadedResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
 @PayloadRegistry.register
 class ReportLibraryLoadedResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """The orchestrator had no record of the library the worker reported on."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ReportGeneralPurposeWorkerReadyRequest(RequestPayload, SkipTheLineMixin):
+    """Sent by a general-purpose worker to the orchestrator once it has loaded its libraries.
+
+    A worker registers before it loads anything, so registration alone does not mean it can create
+    the nodes routed to it. A library worker reports each library it serves through
+    ``ReportLibraryLoadedRequest``; a general-purpose worker serves none of them, so it reports
+    once, for itself.
+
+    ``SkipTheLineMixin`` for the same reason as ``ReportLibraryLoadedRequest``: a node already
+    executing on the orchestrator can be waiting on this report.
+    """
+
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class ReportGeneralPurposeWorkerReadyResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """The orchestrator recorded that its general-purpose worker is ready."""
 
 
 @dataclass

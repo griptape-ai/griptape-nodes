@@ -17,15 +17,30 @@ import anyio
 
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
 from griptape_nodes.retained_mode.engine import EngineScoped
-from griptape_nodes.retained_mode.events import worker_events
-from griptape_nodes.retained_mode.events.app_events import ConfigChanged, CurrentProjectChanged, SecretChanged
-from griptape_nodes.retained_mode.events.base_events import RESULT_EVENT_TYPES, EventRequest, EventSerializationError
+from griptape_nodes.retained_mode.events import converters, worker_events
+from griptape_nodes.retained_mode.events.app_events import (
+    ConfigChanged,
+    CurrentProjectChanged,
+    ReportGeneralPurposeWorkerReadyRequest,
+    ReportGeneralPurposeWorkerReadyResultSuccess,
+    SecretChanged,
+)
+from griptape_nodes.retained_mode.events.base_events import RESULT_EVENT_TYPES, EventRequest
+from griptape_nodes.retained_mode.events.converters import EventSerializationError
+from griptape_nodes.retained_mode.managers.external_environment import (
+    WorkerCommandRefusal,
+    provisioned_by_environment,
+    read_worker_command_prefix,
+    resolve_worker_command,
+    worker_requests_from_environment,
+)
 from griptape_nodes.retained_mode.managers.settings import (
     WORKER_HEARTBEAT_INTERVAL_KEY,
     WORKER_HEARTBEAT_TIMEOUT_KEY,
     WORKER_LIBRARY_LOAD_TIMEOUT_KEY,
 )
 from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.serialization.values import untag
 from griptape_nodes.servers.static import ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV
 from griptape_nodes.utils.version_utils import engine_version
 
@@ -100,9 +115,8 @@ class WorkerManager(EngineScoped):
     # heartbeat timeout; see `orchestrator_silence_allowed_s` for why the two sides differ.
     MINIMUM_ORCHESTRATOR_SILENCE_S: float = 30.0
     # How long a worker may take to load its library (venv creation, installs, imports): the ceiling
-    # on the boot wait for worker libraries, on `wait_until_executable`, and on each worker's reply to
-    # a project-switch fan-out. Not a heartbeat bound on either side: a worker keeps answering
-    # challenges while it loads.
+    # on `wait_until_executable` and on each worker's reply to a project-switch fan-out. Not a
+    # heartbeat bound on either side: a worker keeps answering challenges while it loads.
     DEFAULT_LIBRARY_LOAD_TIMEOUT_S: float = 600.0
     # How long to wait for a worker to exit after SIGTERM before escalating to
     # SIGKILL. Workers convert SIGTERM into a cooperative shutdown on their event
@@ -132,13 +146,19 @@ class WorkerManager(EngineScoped):
         # Orchestrator-side registry: worker_engine_id → WorkerRegistration
         self._workers: dict[str, WorkerRegistration] = {}
 
-        # Subprocesses spawned by this orchestrator (library_name → process)
-        self._managed_worker_processes: dict[str, asyncio.subprocess.Process] = {}
+        # Subprocesses spawned by this orchestrator (library_name → process; None for the general-purpose worker)
+        self._managed_worker_processes: dict[str | None, asyncio.subprocess.Process] = {}
 
         # Worker keys whose spawn has been claimed but has not yet reached the registry above,
         # each mapped to a token identifying the attempt that holds it. Keyed by attempt rather
-        # than by name alone so a spawn can only ever release its own claim.
-        self._spawns_in_flight: dict[str, object] = {}
+        # than by name alone so a spawn can only ever release its own claim. The claim is set once
+        # the attempt ends, so a caller that must not race the spawn can wait for it.
+        self._spawns_in_flight: dict[str | None, asyncio.Event] = {}
+
+        # The spawn task each accepted StartWorkerRequest scheduled, by library, until it finishes. A
+        # library's worker is requested when it finishes registering and again when a session starts,
+        # and the two can overlap; finding the first here is what makes the second start nothing.
+        self._requested_spawns: dict[str | None, asyncio.Task] = {}
 
         # The event loop that spawned the worker subprocesses. asyncio.subprocess.Process
         # binds its exit Future to its creating loop, so proc.wait() is only legal on this
@@ -146,11 +166,12 @@ class WorkerManager(EngineScoped):
         # why termination is hopped back here. Captured in spawn_worker.
         self._spawn_loop: asyncio.AbstractEventLoop | None = None
 
+        # One task per spawned process, waiting for it to exit; held here so the loop's weak-ref to
+        # tasks does not GC a watcher before its process ends.
+        self._exit_watchers: set[asyncio.Task] = set()
+
         # Worker-side: monotonic timestamp of last heartbeat received from the orchestrator
         self._worker_heartbeat_last_received_at: float = 0.0
-
-        # Callbacks invoked when a worker is evicted: (worker_engine_id, library_name | None)
-        self._worker_evicted_callbacks: list[Callable[[str, str | None], None]] = []
 
         # Fire-and-forget broadcast tasks scheduled from sync callers; held here so
         # the event loop's weak-ref to tasks does not GC them before completion.
@@ -159,11 +180,12 @@ class WorkerManager(EngineScoped):
         # Set when an active session becomes available; gates worker spawning.
         self._session_ready_event: asyncio.Event = asyncio.Event()
 
-        # Whether a library's execution is available yet, and why not, keyed by library name.
-        # Held here rather than on LibraryInfo because they answer questions about a PROCESS: is one
-        # coming, has it loaded the library, did it die. One owner, so one writer.
-        self._execution_ready: dict[str, asyncio.Event] = {}
-        self._worker_unavailable: dict[str, str] = {}
+        # Whether a library's execution is available yet, and why not, keyed by library name, with
+        # None for the general-purpose worker. Held here rather than on LibraryInfo because they
+        # answer questions about a PROCESS: is one coming, has it loaded the library, did it die.
+        # One owner, so one writer.
+        self._execution_ready: dict[str | None, asyncio.Event] = {}
+        self._worker_unavailable: dict[str | None, str] = {}
 
         config = engine.config_manager
         configured_interval_s: float = config.get_config_value(
@@ -271,7 +293,6 @@ class WorkerManager(EngineScoped):
                 "Workers and orchestrators must share an engine version because the "
                 "wire shape of every event is tied to the engine build."
             )
-            logger.error(details)
             return worker_events.RegisterWorkerResultFailure(result_details=details)
 
         session_id = self.engine.get_session_id()
@@ -279,9 +300,9 @@ class WorkerManager(EngineScoped):
         self._workers[wid] = WorkerRegistration(request_topic=request_topic, worker_key=request.library_name)
 
         if request.library_name:
-            logger.info("Worker registered: %s → library '%s'", wid, request.library_name)
+            logger.debug("Worker registered: %s → library '%s'", wid, request.library_name)
         else:
-            logger.info("Worker registered: %s (general-purpose)", wid)
+            logger.debug("Worker registered: %s (general-purpose)", wid)
 
         response_topic = f"sessions/{session_id}/workers/{wid}/response"
         await self._tx.subscribe_to_topic(response_topic)
@@ -342,7 +363,7 @@ class WorkerManager(EngineScoped):
         response_topic = f"sessions/{session_id}/workers/{wid}/response"
         await self._tx.unsubscribe_from_topic(response_topic)
         # Remove the managed process entry so a new worker can be spawned for this key.
-        if worker_key:
+        if registration is not None:
             removed = self._managed_worker_processes.pop(worker_key, None)
             if removed is not None:
                 logger.debug(
@@ -353,7 +374,7 @@ class WorkerManager(EngineScoped):
             # unregisters too, but with its gate already set, so has_settled keeps it out.
             if not self.has_settled(worker_key):
                 self.note_worker_unavailable(worker_key, "the worker process that runs it shut down before loading it.")
-        logger.info("Worker unregistered: %s", wid)
+        logger.debug("Worker unregistered: %s", wid)
         return worker_events.UnregisterWorkerResultSuccess(worker_engine_id=wid, result_details="Worker unregistered.")
 
     async def orchestrator_heartbeat_loop(self) -> None:
@@ -381,7 +402,7 @@ class WorkerManager(EngineScoped):
                 # and both charging that to the worker and leaving nothing to evict it are the
                 # orchestrator's problem becoming the worker's.
                 try:
-                    await self._tx.send_message("EventRequest", hb.json(), registration.request_topic)
+                    await self._tx.send_message("EventRequest", converters.engine.dumps(hb), registration.request_topic)
                 except Exception:
                     logger.warning(
                         "Could not challenge worker %s on '%s'; not counting it against the worker.",
@@ -424,8 +445,22 @@ class WorkerManager(EngineScoped):
                 logger.warning(msg)
                 raise RuntimeError(msg)
 
-    def get_worker_for_key(self, key: str) -> tuple[str, str] | None:
+    def is_worker_running_or_starting(self, worker_key: str | None) -> bool:
+        """Whether a worker for worker_key has been requested, is a process this orchestrator spawned, or is registered.
+
+        Read from the records that stopping a worker clears, not from its readiness gate: a reload
+        kills a worker that is still loading without settling the gate, and that worker is gone.
+        """
+        if worker_key in self._requested_spawns:
+            return True
+        if worker_key in self._managed_worker_processes:
+            return True
+        return self.get_worker_for_key(worker_key) is not None
+
+    def get_worker_for_key(self, key: str | None) -> tuple[str, str] | None:
         """Return (worker_engine_id, worker_request_topic) for a worker registered under key, or None.
+
+        A key of None finds a general-purpose worker, one not tied to any library.
 
         Today returns the first registered worker for the key. Future versions can
         load-balance across multiple workers for the same key.
@@ -435,11 +470,12 @@ class WorkerManager(EngineScoped):
                 return wid, registration.request_topic
         return None
 
-    async def spawn_worker(self, args: list[str], worker_key: str) -> None:
+    async def spawn_worker(self, args: list[str], worker_key: str | None) -> None:
         """Spawn a worker subprocess using the given command args.
 
         worker_key is an opaque identifier used to track the process and prevent
-        duplicate spawns. Callers are responsible for constructing the args list.
+        duplicate spawns, None for the general-purpose worker. Callers are responsible
+        for constructing the args list.
         """
         if worker_key in self._managed_worker_processes or worker_key in self._spawns_in_flight:
             logger.error("Worker for key '%s' already spawned; refusing duplicate spawn.", worker_key)
@@ -448,13 +484,19 @@ class WorkerManager(EngineScoped):
         # entry cannot serve as this guard: it is written only once the subprocess exists, and the
         # work in between suspends. A second fork for one library leaves one of the two processes
         # untracked, holding that library's dependencies until its own heartbeat lapses.
-        claim = object()
+        claim = asyncio.Event()
         self._spawns_in_flight[worker_key] = claim
         try:
             # Spawn with the orchestrator's PRE-project environ so the worker boots with the
             # same clean env baseline a fresh engine would have. Inheriting the live os.environ
             # would bake the orchestrator's current-project env vars into the worker's restore
             # baseline, leaving the worker unable to unset them on a later project switch.
+            #
+            # On top of that baseline the engine sets only the variables named below, one by one.
+            # Nothing is forwarded by pattern: a variable an environment tool set while preparing
+            # the orchestrator reaches the worker as part of the baseline every child process
+            # inherits, unchanged, and a configured worker.command_prefix -- which owns preparing
+            # the worker's environment -- decides what to do with it.
             base_environ = self.engine.project_manager.get_pre_project_environ()
             worker_environ = {**base_environ, "GTN_ENGINE_ID": str(uuid.uuid4())}
             # Stamp the spawning orchestrator's id so the worker can report it in its discovery
@@ -472,7 +514,11 @@ class WorkerManager(EngineScoped):
             # PYTHONPATH precedes site-packages, making this library-first with the engine's own
             # environment as the fallback. It must be the environment rather than a later sys.path
             # splice: sys.modules never reconsiders a module this process has already imported.
-            execution_site_packages = self.engine.library_manager.environment.execution_site_packages(worker_key)
+            # The general-purpose worker serves no single library, so it gets no library's environment
+            # and imports from the engine's own, as the orchestrator does.
+            execution_site_packages = None
+            if worker_key is not None:
+                execution_site_packages = self.engine.library_manager.environment.execution_site_packages(worker_key)
             if execution_site_packages is not None:
                 # Prepended, not assigned: a launcher-set PYTHONPATH (embedding hosts, source checkouts)
                 # is part of the environment the engine itself booted with, and dropping it only in
@@ -514,6 +560,10 @@ class WorkerManager(EngineScoped):
             # All spawns run on the engine event-queue loop, so this is idempotent.
             self._spawn_loop = asyncio.get_running_loop()
             self._managed_worker_processes[worker_key] = proc
+            # Started on this loop, the only one that may await proc.wait().
+            watcher = self._spawn_loop.create_task(self._settle_when_worker_exits_early(worker_key, proc))
+            self._exit_watchers.add(watcher)
+            watcher.add_done_callback(self._exit_watchers.discard)
         finally:
             # Released even when the fork raises, or the claim would silently refuse every later
             # attempt for this library -- but only while this attempt still holds it. A reset drops
@@ -521,7 +571,39 @@ class WorkerManager(EngineScoped):
             # find the key belonging to the reload's spawn, and freeing that admits a third fork.
             if self._spawns_in_flight.get(worker_key) is claim:
                 del self._spawns_in_flight[worker_key]
-        logger.info("Spawned worker for key '%s' (pid %s)", worker_key, proc.pid)
+            claim.set()
+        logger.debug("Spawned worker for key '%s' (pid %s)", worker_key, proc.pid)
+
+    async def _settle_when_worker_exits_early(self, worker_key: str | None, proc: asyncio.subprocess.Process) -> None:
+        """Release the runs waiting on `worker_key` if its process exits before it has loaded.
+
+        Every other way a worker ends is noticed through the registry: it unregisters, or it stops
+        answering heartbeats and is evicted. A worker that dies while starting up -- refused a
+        license session, a crash on import -- never registered, so neither happens, and the runs
+        waiting on it would wait out the whole load timeout before blaming a load that never began.
+        The process exiting is the fact itself, so it is read from the process.
+        """
+        returncode = await proc.wait()
+        # A process this manager stopped itself was dropped from the records first, and whoever
+        # stopped it records the reason.
+        if self._managed_worker_processes.get(worker_key) is not proc:
+            return
+        # Loaded, then exited: the heartbeat loop evicts it and says so.
+        if self.has_settled(worker_key):
+            return
+        del self._managed_worker_processes[worker_key]
+        logger.error(
+            "Worker for key '%s' (pid %s) exited with code %s before it finished loading. Its own log "
+            "lines above say why.",
+            worker_key,
+            proc.pid,
+            returncode,
+        )
+        self.note_worker_unavailable(
+            worker_key,
+            f"the worker process that runs it stopped while starting up (exit code {returncode}). "
+            "The engine log has the details.",
+        )
 
     async def reset_workers(self) -> None:
         """Terminate all managed worker processes, unsubscribe response topics, clear state.
@@ -536,41 +618,106 @@ class WorkerManager(EngineScoped):
             len(self._managed_worker_processes),
             list(self._managed_worker_processes.keys()),
         )
-        await asyncio.gather(
-            *(
-                self._terminate_via_spawn_loop(library_name, proc)
-                for library_name, proc in list(self._managed_worker_processes.items())
-            )
-        )
+        await self._stop_workers(library_names=None, action="reload")
+        # Cleared with the registry, not left behind: a spawn still inside its awaits holds this
+        # library's claim, and a claim surviving the reset refuses the reload's own spawn for it.
+        self._spawns_in_flight.clear()
+
+    async def stop_worker_for_library(self, library_name: str) -> None:
+        """Terminate the worker serving one library and forget it, leaving every other worker running.
+
+        A spawn already under way is waited out first and its process stopped with the rest, so once
+        this returns no worker for the library is running or about to start.
+        """
+        claim = self._spawns_in_flight.get(library_name)
+        if claim is not None:
+            await claim.wait()
+        await self._stop_workers(library_names={library_name}, action="reset")
+        self.note_worker_unavailable(library_name, "its worker process was stopped while the library is being reset.")
+
+    async def stop_general_purpose_worker(self, reason: str) -> None:
+        """Terminate the general-purpose worker and forget it, leaving every library worker running.
+
+        A spawn already under way is waited out first and its process stopped with the rest, so once
+        this returns no general-purpose worker is running or about to start. Anything waiting on it is
+        released with the reason.
+        """
+        claim = self._spawns_in_flight.get(None)
+        if claim is not None:
+            await claim.wait()
+        await self._stop_workers(library_names={None}, action="restart")
+        self.note_worker_unavailable(None, reason)
+
+    async def _stop_workers(self, *, library_names: set[str | None] | None, action: str) -> None:
+        """Terminate the named libraries' workers (every worker when None) and forget them.
+
+        Anything awaiting one of them is failed with the reason, and its response topic is
+        unsubscribed.
+        """
+        self._withdraw_spawn_requests(library_names=library_names, action=action)
+        processes = [
+            (library_name, proc)
+            for library_name, proc in self._managed_worker_processes.items()
+            if library_names is None or library_name in library_names
+        ]
+        # Dropped from the records before they are stopped, so the exit this causes reads as this
+        # manager's doing and not as a worker dying on its own.
+        for library_name, _proc in processes:
+            self._managed_worker_processes.pop(library_name, None)
+        await asyncio.gather(*(self._terminate_via_spawn_loop(library_name, proc) for library_name, proc in processes))
+        # Read after the termination, not before: a worker can register while its process is being
+        # stopped, and an id missed here stays routable to a dead process.
+        worker_ids = [
+            wid
+            for wid, registration in self._workers.items()
+            if library_names is None or registration.worker_key in library_names
+        ]
         # Settle anything still awaiting one of these workers, BEFORE the registry is cleared.
         # Clearing it is what makes this the last chance: the heartbeat loop can only evict ids it
         # can still see, so after this nothing reaches these requests at all. route_to_worker has no
         # wall-clock ceiling, so a node dispatched into a worker this call terminates would await a
         # future that never settles.
         if self._transport is not None:
-            for wid in list(self._workers):
+            for wid in worker_ids:
                 registration = self._workers[wid]
                 await self._tx.request_client.fail_requests_by_tag(
                     wid,
                     worker_events.WorkerGoneError(
-                        f"worker '{wid}' was shut down to reload library '{registration.worker_key}'"
+                        f"worker '{wid}' was shut down to {action} library '{registration.worker_key}'"
                         if registration.worker_key
-                        else f"worker '{wid}' was shut down to reload libraries"
+                        else f"worker '{wid}' was shut down to {action} libraries"
                     ),
                 )
         session_id = self.engine.get_session_id()
         if session_id and self._transport is not None:
-            for wid in list(self._workers):
+            for wid in worker_ids:
                 response_topic = f"sessions/{session_id}/workers/{wid}/response"
                 try:
                     await self._tx.unsubscribe_from_topic(response_topic)
                 except Exception as e:
-                    logger.debug("Failed to unsubscribe from '%s' during reset: %s", response_topic, e)
-        self._managed_worker_processes.clear()
-        # Cleared with the registry, not left behind: a spawn still inside its awaits holds this
-        # library's claim, and a claim surviving the reset refuses the reload's own spawn for it.
-        self._spawns_in_flight.clear()
-        self._workers.clear()
+                    logger.debug("Failed to unsubscribe from '%s' while stopping workers: %s", response_topic, e)
+        if library_names is None:
+            self._managed_worker_processes.clear()
+            self._workers.clear()
+            return
+        for wid in worker_ids:
+            self._workers.pop(wid, None)
+
+    def _withdraw_spawn_requests(self, *, library_names: set[str | None] | None, action: str) -> None:
+        """Forget the named libraries' spawn requests (every library's when None), so a later one is honored.
+
+        A spawn that has not begun is cancelled, or it would start a worker after the stop, and a run
+        waiting on it is told why. One already spawning is left to finish: cancelling it mid-way could
+        leave its process running untracked.
+        """
+        for library_name, task in list(self._requested_spawns.items()):
+            if library_names is not None and library_name not in library_names:
+                continue
+            del self._requested_spawns[library_name]
+            if library_name in self._spawns_in_flight or task.done():
+                continue
+            task.cancel()
+            self.note_worker_unavailable(library_name, f"its worker was stopped to {action} it before it started.")
 
     async def route_to_worker(
         self,
@@ -674,7 +821,7 @@ class WorkerManager(EngineScoped):
         await self._tx.unsubscribe_from_topic(topic)
         logger.warning("Worker evicted: %s", worker_engine_id)
         # Terminate the managed subprocess for this worker, if any.
-        if lib_name:
+        if registration is not None:
             proc = self._managed_worker_processes.pop(lib_name, None)
             if proc is not None:
                 await self._terminate_via_spawn_loop(lib_name, proc)
@@ -687,19 +834,12 @@ class WorkerManager(EngineScoped):
         # Eviction is terminal -- nothing respawns the worker -- so anything still waiting on this
         # library would wait forever, and the next run would report a worker that "may still be
         # starting up" for the rest of the session.
-        if lib_name:
+        if registration is not None:
             self.note_worker_unavailable(
                 lib_name, "the worker process that runs it stopped responding and was shut down."
             )
 
-        # Notify registered callbacks that this worker has been evicted.
-        for cb in self._worker_evicted_callbacks:
-            try:
-                cb(worker_engine_id, lib_name)
-            except Exception:
-                logger.warning("Worker-evicted callback raised an exception for worker '%s'", worker_engine_id)
-
-    async def _terminate_via_spawn_loop(self, library_name: str, proc: asyncio.subprocess.Process) -> None:
+    async def _terminate_via_spawn_loop(self, library_name: str | None, proc: asyncio.subprocess.Process) -> None:
         """Terminate a managed worker on the loop that owns its subprocess.
 
         asyncio.subprocess.Process binds its exit Future to the loop that created
@@ -765,7 +905,7 @@ class WorkerManager(EngineScoped):
             )
             self._terminate_without_wait(library_name, proc)
 
-    async def _terminate_managed_process(self, library_name: str, proc: asyncio.subprocess.Process) -> None:
+    async def _terminate_managed_process(self, library_name: str | None, proc: asyncio.subprocess.Process) -> None:
         """Terminate a managed worker, escalating to SIGKILL if it does not exit.
 
         SIGTERM is converted by the worker into a cooperative shutdown on its
@@ -781,7 +921,7 @@ class WorkerManager(EngineScoped):
         except ProcessLookupError:
             logger.debug("Worker for key '%s' already exited before termination", library_name)
             return
-        logger.info("Terminated worker for key '%s' (pid %s)", library_name, proc.pid)
+        logger.debug("Terminated worker for key '%s' (pid %s)", library_name, proc.pid)
         try:
             await asyncio.wait_for(proc.wait(), timeout=WorkerManager.DEFAULT_TERMINATE_GRACE_S)
         except TimeoutError:
@@ -797,7 +937,7 @@ class WorkerManager(EngineScoped):
                 return
             await proc.wait()
 
-    def _terminate_without_wait(self, library_name: str, proc: asyncio.subprocess.Process) -> None:
+    def _terminate_without_wait(self, library_name: str | None, proc: asyncio.subprocess.Process) -> None:
         """Signal a worker to die without awaiting its exit Future.
 
         Shutdown-only fallback for when the spawning loop is unavailable to run
@@ -815,16 +955,6 @@ class WorkerManager(EngineScoped):
         except ProcessLookupError:
             return
 
-    def register_worker_evicted_callback(self, callback: Callable[[str, str | None], None]) -> None:
-        """Register a callback invoked when a worker is evicted.
-
-        Callbacks are called synchronously in registration order. Exceptions are logged
-        but do not prevent other callbacks from running.
-
-        Callback signature: (worker_engine_id: str, library_name: str | None) -> None
-        """
-        self._worker_evicted_callbacks.append(callback)
-
     def set_session_ready(self) -> None:
         """Signal that a session is available, unblocking any pending worker spawns."""
         self._session_ready_event.set()
@@ -837,13 +967,43 @@ class WorkerManager(EngineScoped):
     async def handle_start_worker_request(
         self, request: worker_events.StartWorkerRequest
     ) -> worker_events.StartWorkerResultSuccess | worker_events.StartWorkerResultFailure:
-        """Schedule a worker subprocess spawn for the given library.
+        """Schedule a worker subprocess spawn for the given library, unless one is already coming.
 
         Returns immediately; the actual spawn runs once a session becomes available.
         """
-        task = asyncio.get_running_loop().create_task(self._spawn_when_session_ready(request.library_name))
-        task.add_done_callback(functools.partial(self._log_spawn_error, library_name=request.library_name))
+        library_name = request.library_name
+        # Checked, declared, and scheduled with no await between, so two requests cannot both pass.
+        # Declaring again would be worse than redundant: expect_worker replaces the readiness gate, and
+        # a run already waiting on the old one would wait out the whole load timeout.
+        if self.is_worker_running_or_starting(library_name):
+            logger.debug("Not starting another worker for library '%s': one is starting or running.", library_name)
+            return worker_events.StartWorkerResultSuccess(
+                result_details=f"A worker for library '{library_name}' is already starting or running."
+            )
+        self.expect_worker(library_name)
+        if library_name is None:
+            spawn = self._spawn_general_purpose_worker_when_session_ready()
+        else:
+            spawn = self._spawn_when_session_ready(library_name)
+        task = asyncio.get_running_loop().create_task(spawn)
+        self._requested_spawns[library_name] = task
+        task.add_done_callback(functools.partial(self._release_spawn_request, library_name=library_name))
+        task.add_done_callback(functools.partial(self._log_spawn_error, library_name=library_name))
         return worker_events.StartWorkerResultSuccess(result_details="Worker spawn scheduled.")
+
+    def _release_spawn_request(self, task: asyncio.Task, library_name: str | None) -> None:
+        """Forget a finished spawn request, unless stopping the library's workers already withdrew it."""
+        if self._requested_spawns.get(library_name) is task:
+            del self._requested_spawns[library_name]
+
+    @handles(ReportGeneralPurposeWorkerReadyRequest)
+    def handle_report_general_purpose_worker_ready_request(
+        self,
+        request: ReportGeneralPurposeWorkerReadyRequest,  # noqa: ARG002
+    ) -> ReportGeneralPurposeWorkerReadyResultSuccess:
+        """Release anything waiting to route to the general-purpose worker, now that it has loaded."""
+        self.note_library_loaded(None)
+        return ReportGeneralPurposeWorkerReadyResultSuccess(result_details="General-purpose worker is ready.")
 
     async def _spawn_when_session_ready(self, library_name: str) -> None:
         """Wait for an active session then spawn a worker subprocess for the given library."""
@@ -855,7 +1015,7 @@ class WorkerManager(EngineScoped):
                 library_name,
             )
             await self._session_ready_event.wait()
-            logger.info("Session started; spawning worker for library '%s'.", library_name)
+            logger.debug("Session started; spawning worker for library '%s'.", library_name)
         session_id = self.engine.get_session_id()
         if not session_id:
             logger.error("Session event set but no session ID available for library '%s'.", library_name)
@@ -863,9 +1023,9 @@ class WorkerManager(EngineScoped):
             return
         # The worker is handed its library's execution environment as PYTHONPATH, so that directory
         # has to exist before the process starts. It does: the orchestrator builds it while
-        # registering the library, and a library whose build failed is never asked for a worker --
-        # LibraryManager knows its own build result and does not request one.
-        args = [
+        # registering the library, and LibraryManager asks for no worker until that registration has
+        # finished, nor for one whose build failed.
+        command = [
             sys.executable,
             "-m",
             "griptape_nodes_app",
@@ -875,9 +1035,56 @@ class WorkerManager(EngineScoped):
             "--library-name",
             library_name,
         ]
-        await self.spawn_worker(args, library_name)
+        # A configured prefix starts the worker inside an environment another tool prepares for
+        # this library. Read per spawn, like the request list, so a reload picks up a change.
+        # The engine's startup environment, not a project's: a project template must not change
+        # which packages a library's worker resolves or how it is started.
+        startup_environ = self.engine.project_manager.get_pre_project_environ()
+        resolved = resolve_worker_command(
+            command=command,
+            prefix=read_worker_command_prefix(self.engine.config_manager, startup_environ),
+            library_name=library_name,
+            worker_requests=worker_requests_from_environment(startup_environ),
+            engine_version=engine_version,
+            python_version=f"{sys.version_info.major}.{sys.version_info.minor}",
+            environment_mode=provisioned_by_environment(self.engine.config_manager),
+        )
+        if isinstance(resolved, WorkerCommandRefusal):
+            logger.error("Not starting a worker for library '%s': %s", library_name, resolved.reason)
+            self.note_worker_unavailable(library_name, resolved.reason)
+            return
+        await self.spawn_worker(resolved.args, library_name)
 
-    def _log_spawn_error(self, task: asyncio.Task, library_name: str) -> None:
+    async def _spawn_general_purpose_worker_when_session_ready(self) -> None:
+        """Wait for an active session, then spawn the general-purpose worker.
+
+        It loads every library but builds none of their environments: the orchestrator built them
+        while loading the same libraries, before it asked for any worker.
+
+        Started with the engine's own interpreter and environment, and without
+        `worker.command_prefix`: the prefix prepares an environment for one library, and this
+        worker serves none. It runs where the engine runs, as Isolated Execution's separate process
+        always has.
+        """
+        if not self.engine.get_session_id():
+            logger.info("The general-purpose worker is waiting for a session to start before spawning.")
+            await self._session_ready_event.wait()
+        session_id = self.engine.get_session_id()
+        if not session_id:
+            logger.error("Session event set but no session ID available for the general-purpose worker.")
+            self.note_worker_unavailable(None, "no session was available to start it.")
+            return
+        command = [
+            sys.executable,
+            "-m",
+            "griptape_nodes_app",
+            "engine",
+            "--session-id",
+            session_id,
+        ]
+        await self.spawn_worker(command, None)
+
+    def _log_spawn_error(self, task: asyncio.Task, library_name: str | None) -> None:
         """Record a spawn that raised before producing a worker.
 
         `handle_start_worker_request` schedules the spawn and returns Success immediately, so its
@@ -892,13 +1099,13 @@ class WorkerManager(EngineScoped):
         exc = task.exception()
         if exc is None:
             return
-        logger.error("Failed to spawn worker for library '%s': %s", library_name, exc)
+        logger.error("Failed to spawn worker for key '%s': %s", library_name, exc)
         self.note_worker_unavailable(library_name, f"the worker process that runs it could not be started ({exc}).")
 
-    def expect_worker(self, library_name: str) -> None:
+    def expect_worker(self, library_name: str | None) -> None:
         """Declare that a worker is coming for `library_name`, so callers can wait for it.
 
-        Called before the spawn is requested. Installs a fresh readiness gate and drops any account
+        Called as the spawn is scheduled. Installs a fresh readiness gate and drops any account
         of a previous attempt, which no longer describes the situation. Every attempt gets one: a
         worker registers BEFORE it loads libraries, so execution routing has to wait for the load
         rather than for the registration.
@@ -906,13 +1113,13 @@ class WorkerManager(EngineScoped):
         self._execution_ready[library_name] = asyncio.Event()
         self._worker_unavailable.pop(library_name, None)
 
-    def note_library_loaded(self, library_name: str) -> None:
+    def note_library_loaded(self, library_name: str | None) -> None:
         """Release anything waiting on `library_name`, now that its worker has loaded it."""
         ready = self._execution_ready.get(library_name)
         if ready is not None:
             ready.set()
 
-    def note_worker_unavailable(self, library_name: str, reason: str) -> None:
+    def note_worker_unavailable(self, library_name: str | None, reason: str) -> None:
         """Record why no worker will run `library_name`, and release anything waiting on one.
 
         Recording without releasing leaves the next run waiting out the whole startup grace before
@@ -933,11 +1140,11 @@ class WorkerManager(EngineScoped):
         self._execution_ready.pop(library_name, None)
         self._worker_unavailable.pop(library_name, None)
 
-    def worker_unavailable_reason(self, library_name: str) -> str | None:
+    def worker_unavailable_reason(self, library_name: str | None) -> str | None:
         """Why no worker is available to run `library_name`, or None if that is not the problem."""
         return self._worker_unavailable.get(library_name)
 
-    def has_settled(self, library_name: str) -> bool:
+    def has_settled(self, library_name: str | None) -> bool:
         """Whether `library_name` has settled -- loaded, refused, or died -- rather than pending.
 
         Settled is not available: a refused spawn settles, and `worker_unavailable_reason` then
@@ -946,7 +1153,7 @@ class WorkerManager(EngineScoped):
         ready = self._execution_ready.get(library_name)
         return ready is None or ready.is_set()
 
-    async def wait_until_executable(self, library_name: str) -> None:
+    async def wait_until_executable(self, library_name: str | None) -> None:
         """Block until `library_name` can be executed, or until it is settled that it cannot.
 
         A worker registers BEFORE it loads libraries -- registration is what carries the
@@ -961,32 +1168,25 @@ class WorkerManager(EngineScoped):
         """
         if self.has_settled(library_name):
             return
-        logger.info("Waiting for library '%s''s worker to finish loading before executing", library_name)
+        if library_name is None:
+            logger.info("Waiting for the general-purpose worker to finish loading before executing")
+        else:
+            logger.info("Waiting for library '%s''s worker to finish loading before executing", library_name)
         try:
             with anyio.fail_after(self.library_load_timeout_s):
                 await self._execution_ready[library_name].wait()
         except TimeoutError:
-            msg = (
-                f"Attempted to run a node from library '{library_name}'. Failed because its worker "
-                f"process did not finish loading the library within {self.library_load_timeout_s:.0f} seconds."
-            )
+            if library_name is None:
+                msg = (
+                    "Attempted to run a node with Isolated Execution. Failed because the background process "
+                    f"that runs it did not finish loading libraries within {self.library_load_timeout_s:.0f} seconds."
+                )
+            else:
+                msg = (
+                    f"Attempted to run a node from library '{library_name}'. Failed because its worker "
+                    f"process did not finish loading the library within {self.library_load_timeout_s:.0f} seconds."
+                )
             raise RuntimeError(msg) from None
-
-    async def wait_for_libraries(self, library_names: list[str], timeout_s: float) -> list[str]:
-        """Wait for several libraries at once. Returns the names that did not settle in time.
-
-        Boot uses this rather than `wait_until_executable` per library: one collective ceiling, and
-        the caller decides what an unsettled library means for the rest of initialization.
-        """
-        pending = [name for name in library_names if not self.has_settled(name)]
-        if not pending:
-            return []
-        try:
-            with anyio.fail_after(timeout_s):
-                await asyncio.gather(*[self._execution_ready[name].wait() for name in pending])
-        except TimeoutError:
-            return [name for name in pending if not self.has_settled(name)]
-        return []
 
     def get_topics_to_subscribe(self, *, is_worker: bool) -> list[str]:
         """Build the list of topics to subscribe to at connection start.
@@ -1078,7 +1278,7 @@ class WorkerManager(EngineScoped):
         worker_response_topic = f"sessions/{session_id}/workers/{worker_engine_id}/response"
         forwarded = event.model_copy(update={"response_topic": worker_response_topic})
         logger.debug("Forwarding %s to worker %s", type(event.request).__name__, worker_engine_id)
-        await self._tx.send_message("EventRequest", forwarded.json(), worker_request_topic)
+        await self._tx.send_message("EventRequest", converters.engine.dumps(forwarded), worker_request_topic)
 
     async def _on_config_changed(self, _event: ConfigChanged) -> None:
         """Fan out a ReloadConfigRequest after the orchestrator's config mutation succeeded.
@@ -1359,7 +1559,6 @@ class WorkerManager(EngineScoped):
         publish directly to the session response topic.
         """
         # Heartbeat responses update the last-seen timestamp but are not forwarded to the GUI.
-        # BaseEvent.dict() adds result_type at the outer level (not inside the result dict).
         result_event_type = payload.get("result_type", "")
         if result_event_type == worker_events.WorkerHeartbeatResultSuccess.__name__:
             response_topic = payload.get("response_topic", "")
@@ -1382,7 +1581,10 @@ class WorkerManager(EngineScoped):
         dest_socket = "success_result" if payload.get("event_type") == "EventResultSuccess" else "failure_result"
         payload["response_topic"] = session_response_topic
         logger.debug("Relaying %s to %s", payload.get("event_type"), session_response_topic)
-        await self._tx.send_message(dest_socket, json.dumps(payload), session_response_topic)
+        # Untags the JSON rather than reading the result back, since its payload class may live in a
+        # library only the worker has loaded. Only values carry tags, but a plain field holding its own
+        # "$type" key would lose it here.
+        await self._tx.send_message(dest_socket, json.dumps(untag(payload)), session_response_topic)
 
     def _determine_response_topic(self) -> str:
         """Determine the response topic based on current session and engine IDs."""

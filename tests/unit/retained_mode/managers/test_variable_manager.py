@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from griptape_nodes.retained_mode.engine import Engine
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, CreateFlowResultSuccess
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.variable_events import (
@@ -178,17 +179,33 @@ class TestListSubstitutablesRequest:
         assert entries[0].value == "/workspace"
 
     def test_filters_out_non_substitutable_user_vars(self, engine: Engine, flow_name: str) -> None:
-        """User vars with non-str/int values are excluded, matching ResolveSubstitutionRequest behavior."""
+        """User vars that are not str/int/float/bool/dict/list (here None) are excluded."""
         _add_variable(engine, "SHOT", "sc001")
         _add_variable(engine, "META", None)
-        _add_variable(engine, "TAGS", ["a", "b"])
         with project_macros({}):
             result = engine.handle_request(ListSubstitutablesRequest(starting_flow=flow_name))
         assert isinstance(result, ListSubstitutablesResultSuccess)
         names = {s.name for s in result.substitutables}
         assert "SHOT" in names
         assert "META" not in names
-        assert "TAGS" not in names
+
+    def test_lists_list_variables_as_rendered_text(self, engine: Engine, flow_name: str) -> None:
+        _add_variable(engine, "TAGS", ["a", "b"])
+        with project_macros({}):
+            result = engine.handle_request(ListSubstitutablesRequest(starting_flow=flow_name))
+        assert isinstance(result, ListSubstitutablesResultSuccess)
+        entries = [s for s in result.substitutables if s.name == "TAGS"]
+        assert len(entries) == 1
+        assert entries[0].value == "a\nb"
+
+    def test_lists_float_and_bool_variables_as_rendered_text(self, engine: Engine, flow_name: str) -> None:
+        _add_variable(engine, "SCALE", 1.5, type_="float")
+        _add_variable(engine, "PROXY", True, type_="bool")
+        with project_macros({}):
+            result = engine.handle_request(ListSubstitutablesRequest(starting_flow=flow_name))
+        assert isinstance(result, ListSubstitutablesResultSuccess)
+        values = {s.name: s.value for s in result.substitutables}
+        assert values == {"SCALE": "1.5", "PROXY": "true"}
 
     def test_returns_empty_when_no_vars_and_no_macros(self, engine: Engine, flow_name: str) -> None:
         with project_macros({}):
@@ -861,7 +878,7 @@ class TestProjectVariableSerialization:
 
     def test_get_variable_from_project_serializes(self, engine: Engine, flow_name: str) -> None:
         """The Success payload must survive cattrs unstructure (the broadcast path)."""
-        from griptape_nodes.serialization.converter import converter
+        converter = converters.engine
 
         with project_macros({"workspace_dir": "/proj"}):
             result = engine.handle_request(GetVariableRequest(name="workspace_dir", starting_flow=flow_name))

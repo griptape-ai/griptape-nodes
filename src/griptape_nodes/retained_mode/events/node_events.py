@@ -23,8 +23,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.serialization.converter import ElementDocument
-from griptape_nodes.serialization.values import DisplayValue
+from griptape_nodes.serialization.values import DisplayValue, ElementDocument
 
 
 class NewPosition(NamedTuple):
@@ -106,6 +105,8 @@ class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
         specific_library_name: Library that provided this node type
         parent_flow_name: Name of the flow the node was created in
         parent_group_name: Name of the group this node belongs to (None if not in a group)
+        paired_node_name: Name of the node created and paired with this one, such as the End node a
+            loop Start node creates and connects to itself (None if no paired node was created)
     """
 
     node_name: str
@@ -113,6 +114,7 @@ class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     specific_library_name: str | None = None
     parent_flow_name: str | None = None
     parent_group_name: str | None = None
+    paired_node_name: str | None = None
 
 
 @dataclass
