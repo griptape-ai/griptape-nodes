@@ -304,8 +304,9 @@ are worth knowing:
 - A "shallow" switch (same workspace and library config, where only
     the environment, directories, or situations differ) does **not**
     restart the worker. The orchestrator broadcasts the switch and the
-    worker adopts the new project in place, ahead of any queued node
-    execution, so it never runs against a stale project.
+    worker adopts the new project in place. The switch completes only
+    after the worker has adopted it, so a node dispatched afterward never
+    runs against a stale project.
 
 You do not need to wire any of this up. A worker never persists the
 project choice back to the shared config; the orchestrator is the

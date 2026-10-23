@@ -165,6 +165,34 @@ class TestWholeListSetOnAnUnconnectedList:
         assert isinstance(result, SetParameterValueResultFailure)
         assert node.get_parameter_value("items") == ["a"]
 
+    def test_a_nested_list_adds_its_items(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+
+        result = _set_items(engine, [["a", "b"], "c"])
+
+        assert isinstance(result, SetParameterValueResultSuccess)
+        assert node.get_parameter_value("items") == ["a", "b", "c"]
+        assert [node.get_parameter_value(row.name) for row in _rows(node)] == [["a", "b"], "c"]
+
+    def test_more_items_than_max_items_after_nested_lists_is_rejected_and_keeps_the_rows(
+        self, engine: Engine, flow_name: str
+    ) -> None:
+        node = _add(engine, _ListNode(name="Lister", max_items=2), flow_name)
+        _set_items(engine, ["a"])
+
+        result = _set_items(engine, [["x", "y"], "z"])
+
+        assert isinstance(result, SetParameterValueResultFailure)
+        assert "Attempted to set list 'Lister.items' to 3 items" in str(result.result_details)
+        assert node.get_parameter_value("items") == ["a"]
+
+    def test_a_row_holding_a_list_validates_each_item(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        row = _add_row(engine, "a")
+
+        with pytest.raises(ValueError, match="bad item"):
+            node.set_parameter_value(row, ["ok", "bad"])
+
     def test_clearing_a_resolved_node_unresolves_it(self, engine: Engine, flow_name: str) -> None:
         """No row is set when the list is cleared, so the row path cannot be what unresolves the node."""
         node = _add(engine, _ListNode(name="Lister"), flow_name)
@@ -215,6 +243,61 @@ class TestWholeListSetOnAnUnconnectedList:
 
         assert isinstance(result, SetParameterValueResultFailure)
         assert _rows(node) == [row]
+
+
+class TestMaxItemsWhenARowChanges:
+    def test_a_row_set_over_max_items_is_rejected_and_keeps_its_value(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister", max_items=4), flow_name)
+        _set_items(engine, ["a", "b"])
+        row = _rows(node)[0]
+
+        result = engine.handle_request(
+            SetParameterValueRequest(node_name="Lister", parameter_name=row.name, value=["w", "x", "y", "z"])
+        )
+
+        assert isinstance(result, SetParameterValueResultFailure)
+        assert node.get_parameter_value("items") == ["a", "b"]
+
+    def test_a_row_set_up_to_max_items_is_accepted(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister", max_items=4), flow_name)
+        _set_items(engine, ["a", "b"])
+        row = _rows(node)[0]
+
+        result = engine.handle_request(
+            SetParameterValueRequest(node_name="Lister", parameter_name=row.name, value=["x", "y", "z"])
+        )
+
+        assert isinstance(result, SetParameterValueResultSuccess)
+        assert node.get_parameter_value("items") == ["x", "y", "z", "b"]
+
+    def test_a_value_over_a_connection_is_rejected_too(self, engine: Engine, flow_name: str) -> None:
+        _add(engine, _Source(name="Source"), flow_name)
+        node = _add(engine, _ListNode(name="Lister", max_items=2), flow_name)
+        _set_items(engine, ["a"])
+        row = _rows(node)[0]
+        engine.handle_request(
+            CreateConnectionRequest(
+                source_node_name="Source",
+                source_parameter_name="out",
+                target_node_name="Lister",
+                target_parameter_name=row.name,
+            )
+        )
+        before = node.get_parameter_value("items")
+
+        result = engine.handle_request(
+            SetParameterValueRequest(
+                node_name="Lister",
+                parameter_name=row.name,
+                value=["x", "y", "z"],
+                data_type="list[str]",
+                incoming_connection_source_node_name="Source",
+                incoming_connection_source_parameter_name="out",
+            )
+        )
+
+        assert isinstance(result, SetParameterValueResultFailure)
+        assert node.get_parameter_value("items") == before
 
 
 class TestValuesThatAreNotLists:
@@ -303,7 +386,7 @@ def _get_items(engine: Engine) -> object:
     return result.value
 
 
-def _add_row(engine: Engine, value: str) -> str:
+def _add_row(engine: Engine, value: str | list[str]) -> str:
     added = engine.handle_request(AddParameterToNodeRequest(node_name="Lister", parent_container_name="items"))
     assert isinstance(added, AddParameterToNodeResultSuccess)
     engine.handle_request(
@@ -408,6 +491,20 @@ class TestItemConverters:
 
         assert [node.get_parameter_value(row.name) for row in _rows(node)] == ["A", "B"]
         assert _get_items(engine) == ["A", "B"]
+
+    def test_a_row_holding_a_list_converts_each_item(self, engine: Engine, flow_name: str) -> None:
+        _add(engine, _ConvertingListNode(name="Lister"), flow_name)
+
+        _add_row(engine, ["a", "b"])
+
+        assert _get_items(engine) == ["A", "B"]
+
+    def test_a_whole_list_with_a_nested_list_converts_each_item(self, engine: Engine, flow_name: str) -> None:
+        _add(engine, _ConvertingListNode(name="Lister"), flow_name)
+
+        _set_items(engine, [["a", "b"], "c"])
+
+        assert _get_items(engine) == ["A", "B", "C"]
 
     def test_a_row_set_by_the_editor_converts(self, engine: Engine, flow_name: str) -> None:
         _add(engine, _ConvertingListNode(name="Lister"), flow_name)
@@ -578,6 +675,14 @@ class TestDispatch:
 
         assert values["items"] == ["a", "b"]
         assert not set(rows) & set(values)
+
+    def test_a_list_with_nested_lists_is_sent_concatenated(self, engine: Engine, flow_name: str) -> None:
+        node = _add(engine, _ListNode(name="Lister"), flow_name)
+        _set_items(engine, [["a", "b"], "c"])
+
+        values = node._list_rows.values_for_dispatch()
+
+        assert values["items"] == ["a", "b", "c"]
 
     def test_a_list_built_from_its_rows_is_sent(self, engine: Engine, flow_name: str) -> None:
         node = _add(engine, _ListNode(name="Lister"), flow_name)

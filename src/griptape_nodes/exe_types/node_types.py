@@ -1130,18 +1130,11 @@ class BaseNode(ABC):
             parameter, value, initial_setup=initial_setup, running=_running_node.get() is self
         ):
             return
-        # Perform any conversions to the value based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
         # cause a calling object to alter its assumptions/behavior. The value requested
         # to be assigned will NOT be set.
-        candidate_value = self._convert_value(parameter, value)
-
-        # Validate the values next, based on how the Parameter is configured.
-        # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
-        # cause a calling object to alter its assumptions/behavior. The value requested
-        # to be assigned will NOT be set.
-        for validator in parameter.validators:
-            validator(parameter, candidate_value)
+        candidate_value = self._list_rows.convert_and_validate(parameter, value)
+        self._list_rows.check_row_within_max_items(parameter, candidate_value, initial_setup=initial_setup)
 
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
@@ -1167,6 +1160,14 @@ class BaseNode(ABC):
             container = self.get_parameter_by_name(parameter.parent_container_name)
             if isinstance(container, ParameterContainer):
                 self._list_rows.rows_changed(container, initial_setup=initial_setup)
+
+    @staticmethod
+    def _convert_and_validate(parameter: Parameter, value: Any) -> Any:
+        """Run the parameter's converters on `value`, then its validators on the result."""
+        candidate_value = BaseNode._convert_value(parameter, value)
+        for validator in parameter.validators:
+            validator(parameter, candidate_value)
+        return candidate_value
 
     @staticmethod
     def _convert_value(parameter: Parameter, value: Any) -> Any:
@@ -1908,7 +1909,7 @@ class BaseNode(ABC):
         max_items = parameter_list.max_items
         if max_items is not None and len(value) > max_items:
             logger.warning(
-                "Node '%s' list '%s' received %d item(s) but accepts at most %d. The extra item(s) may be dropped.",
+                "Node '%s' list '%s' received %d item(s) but accepts at most %d. The node runs with all of them.",
                 self.name,
                 param_name,
                 len(value),
@@ -2304,10 +2305,8 @@ class TrackedParameterOutputValues(dict[str, Any]):
         # receive resolved values without the node needing to know about variables.
         # String values are already substituted in get_parameter_value(); this
         # handles structured types (JSON Input dicts, list outputs, etc.).
-        if _in_aprocess.get():
-            parameter = self._node.get_parameter_by_name(key)
-            if parameter is None or parameter.allow_variable_substitution:
-                value = self._node._resolve_variables_in_value(value)
+        if _in_aprocess.get() and self._substitutes_on_write(key, value):
+            value = self._node._resolve_variables_in_value(value)
         super().__setitem__(key, value)
 
         # Emit if the key is newly added, or if its value actually changed.
@@ -2317,6 +2316,28 @@ class TrackedParameterOutputValues(dict[str, Any]):
         # would keep showing the stale prior value.
         if not had_key or _values_differ(old_value, value):
             self._emit_parameter_change_event(key, value)
+
+    def _substitutes_on_write(self, key: str, value: Any) -> bool:
+        """Whether a value written to ``key`` during a run gets its variables resolved.
+
+        Mirrors the gate in ``get_parameter_value``: a parameter fed by a connection is not
+        substituted. Its value was resolved once already, by the node that produced it, or that
+        node opted out, which is a statement that the text is data rather than a template. A
+        node that copies a connected input onto its own output (the End node does this for
+        every parameter) would otherwise resolve it a second time, and a status such as
+        ``Saved to: {outputs}/a.mp4`` that the producer deliberately kept as a macro would be
+        written into the saved workflow as the absolute path.
+
+        Ordered cheap to expensive. The connection lookup is a request round trip, and this
+        runs on every output write, including each token a streaming node appends, so a value
+        with no macro in it must leave before reaching it.
+        """
+        if not VariableResolver.contains_variable_macro(value):
+            return False
+        parameter = self._node.get_parameter_by_name(key)
+        if parameter is not None and not parameter.allow_variable_substitution:
+            return False
+        return not self._node._param_has_incoming_connection(key)
 
     def __delitem__(self, key: str) -> None:
         if key in self:
@@ -2532,6 +2553,9 @@ class SuccessFailureNode(BaseNode):
             parameter_group_initially_collapsed=parameter_group_initially_collapsed,
             result_details_tooltip=result_details_tooltip,
             result_details_placeholder=result_details_placeholder,
+            # The node writes its own status, often naming a project path as a macro such as
+            # {outputs}/file.png. Substitution would expand it to the absolute path.
+            result_details_allow_variable_substitution=False,
         )
 
     def _clear_execution_status(self) -> None:

@@ -137,10 +137,11 @@ class LibraryManager(EngineScoped):
         self._library_event_handler_mappings: dict[type[Payload], dict[str, RegisteredEventHandler[Any]]] = {}
         self._libraries_loading_complete = asyncio.Event()
         self._libraries_loading_complete.set()  # Not loading initially; load_all_libraries_from_config will clear/set this
-        # True for the duration of the engine's initialization sequence (library + workflow
-        # loading) driven by on_app_initialization_complete. Reported on the engine heartbeat so
-        # a client connecting mid-startup can render a loading state instead of an empty list.
-        self._is_initializing: bool = False
+        # True until on_app_initialization_complete finishes its library and workflow loading,
+        # and again during a reload. Starts True because the engine publishes its heartbeat and
+        # registry record before AppInitializationComplete arrives, and a client that reads
+        # False then treats a request timeout as a dead engine instead of waiting.
+        self._is_initializing: bool = True
         self._pre_reload_callbacks: list[Callable[[], Awaitable[None]]] = []
         # True when this process is a dedicated worker
         self._is_worker: bool = False
@@ -176,7 +177,7 @@ class LibraryManager(EngineScoped):
         self._pre_reload_callbacks.append(worker_manager.reset_workers)
 
     def is_initializing(self) -> bool:
-        """Return True while the engine is running its initialization sequence.
+        """Return True until the engine finishes its initialization sequence, and during a reload.
 
         Covers the full on_app_initialization_complete / reload flow (library and workflow
         loading), not just the library phase. Reported on the engine heartbeat.
@@ -351,8 +352,8 @@ class LibraryManager(EngineScoped):
             self._libraries_loading_complete.set()
 
     async def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
-        # Bracket the whole init sequence so the heartbeat can report is_initializing to clients
-        # that connect mid-startup. finally guarantees the flag clears even if init raises.
+        # The flag already starts True; setting it again covers a repeated broadcast.
+        # finally guarantees the flag clears even if init raises.
         self._is_initializing = True
         try:
             await self._run_app_initialization(payload)
