@@ -4,10 +4,11 @@ import asyncio
 import contextvars
 import inspect
 import logging
+import sys
 import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, fields
+from dataclasses import MISSING, dataclass, fields
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from asyncio_thread_runner import ThreadRunner
@@ -27,6 +28,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultDetails,
     ResultPayload,
+    ResultPayloadFailure,
     StrictModeViolationDetail,
 )
 from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
@@ -1136,10 +1138,29 @@ class EventManager(EngineScoped):
     def _is_crash(result: ResultPayload) -> bool:
         """Whether `result` is a failure dispatch built from an exception a handler or hook raised.
 
-        A `GenericResultFailure` without an exception is not one: dispatch also builds those for a
-        request that names no workflow it can act on, which is the caller's routine miss.
+        A failure without an exception is not one: dispatch also builds those for a request that
+        names no workflow it can act on, which is the caller's routine miss.
         """
         return isinstance(result, GenericResultFailure) and result.exception is not None
+
+    @staticmethod
+    def _addressing_failure(request: RequestPayload, details: str) -> ResultPayloadFailure:
+        """The failure for a request that names no workflow it can act on.
+
+        The request's own `<Name>ResultFailure` when its module defines one that needs nothing but
+        `result_details`, since callers such as the editor undo an optimistic edit on that type.
+        Otherwise a `GenericResultFailure`.
+        """
+        request_type = type(request)
+        failure_name = request_type.__name__.removesuffix("Request") + "ResultFailure"
+        failure_type = getattr(sys.modules.get(request_type.__module__), failure_name, None)
+        if not isinstance(failure_type, type) or not issubclass(failure_type, ResultPayloadFailure):
+            return GenericResultFailure(result_details=details)
+        for field in fields(failure_type):
+            needs_value = field.init and field.default is MISSING and field.default_factory is MISSING
+            if needs_value and field.name != "result_details":
+                return GenericResultFailure(result_details=details)
+        return failure_type(result_details=details)
 
     @staticmethod
     def _exception_for_logging(result: ResultPayload) -> Exception | None:
@@ -1278,7 +1299,7 @@ class EventManager(EngineScoped):
             handler_call = self._handler_call(request, registered, result_context.get("workflow_id"))
         except _RequestWorkflowError as err:
             return self._handle_request_core(
-                request, GenericResultFailure(result_details=str(err)), context=result_context
+                request, self._addressing_failure(request, str(err)), context=result_context
             )
 
         # Expose the dispatching request type to detectors (see current_request_type).
@@ -1344,7 +1365,7 @@ class EventManager(EngineScoped):
             handler_call = self._handler_call(request, registered, result_context.get("workflow_id"))
         except _RequestWorkflowError as err:
             return self._handle_request_core(
-                request, GenericResultFailure(result_details=str(err)), context=result_context
+                request, self._addressing_failure(request, str(err)), context=result_context
             )
 
         # Expose the dispatching request type to detectors (see current_request_type).

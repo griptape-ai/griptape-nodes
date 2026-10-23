@@ -89,7 +89,7 @@ class ObjectManager(EngineScoped):
             # Let the object's manager know. TODO: https://github.com/griptape-ai/griptape-nodes/issues/869
         match source_obj:
             case ControlFlow():
-                self.engine.flow_manager.handle_flow_rename(old_name=request.object_name, new_name=final_name)
+                self.engine.flow_manager.handle_flow_rename(workflow, old_name=request.object_name, new_name=final_name)
             case BaseNode():
                 self.engine.node_manager.handle_node_rename(old_name=request.object_name, new_name=final_name)
             case _:
@@ -119,18 +119,6 @@ class ObjectManager(EngineScoped):
             details = "Attempted to clear all object state and delete everything. Failed because they didn't know what they were doing."
             return ClearAllObjectStateResultFailure(result_details=details)
 
-        # Cancel any in-flight run before tearing its bookkeeping down: the reset below makes the
-        # flow look idle, so a cancel after it would be skipped and the previous run's node tasks
-        # keep going.
-        await self.engine.flow_manager.cancel_running_flow_before_teardown()
-
-        try:
-            # Eliminate all execution references before deletion
-            self.engine.flow_manager.reset_global_execution_state()
-        except Exception as e:
-            details = f"Attempted to reset global execution state. Failed with exception: {e}"
-            return ClearAllObjectStateResultFailure(result_details=details)
-
         if workflow is None:
             try:
                 context_manager = self.engine.context_manager
@@ -148,6 +136,18 @@ class ObjectManager(EngineScoped):
                 # was never told keeps them for the life of the process.
                 await self.engine.worker_manager.broadcast_local_object_teardown()
         else:
+            # Cancel any in-flight run before tearing its bookkeeping down: the reset below makes the
+            # flow look idle, so a cancel after it would be skipped and the previous run's node tasks
+            # keep going.
+            await self.engine.flow_manager.cancel_running_flow_before_teardown(workflow)
+
+            try:
+                # Eliminate all execution references before deletion
+                self.engine.flow_manager.reset_global_execution_state(workflow)
+            except Exception as e:
+                details = f"Attempted to reset global execution state. Failed with exception: {e}"
+                return ClearAllObjectStateResultFailure(result_details=details)
+
             try:
                 await self.engine.close_workflow_state(workflow)
             except Exception as e:

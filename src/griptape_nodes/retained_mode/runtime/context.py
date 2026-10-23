@@ -155,6 +155,14 @@ class WorkflowContextStack:
     def __init__(self) -> None:
         self.flow_stack: list[FlowContextState] = []
 
+    def flow(self, flow: ControlFlow) -> FlowContext:
+        """Enter `flow` for the length of a `with` block."""
+        return FlowContext(self, flow)
+
+    def node(self, node: BaseNode) -> NodeContext:
+        """Enter `node` in the current Flow for the length of a `with` block."""
+        return NodeContext(self, node)
+
     def has_current_flow(self) -> bool:
         return len(self.flow_stack) > 0
 
