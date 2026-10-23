@@ -13467,6 +13467,7 @@ class TestAttemptMapAbsolutePathFromSourcePlatform:
         monkeypatch.setattr(
             "griptape_nodes.retained_mode.managers.project_manager.active_platform_key", lambda: "linux"
         )
+        monkeypatch.setattr("griptape_nodes.common.project_templates.directory.active_platform_key", lambda: "linux")
 
     def _project_manager(
         self,
@@ -13505,6 +13506,30 @@ class TestAttemptMapAbsolutePathFromSourcePlatform:
         )
 
         assert self._map(pm, "/Volumes/share/u/blur.py", "darwin") == "{workspace_dir}/u/blur.py"
+
+    def test_workspace_is_not_matched_when_the_effective_workspace_differs(self) -> None:
+        """`{workspace_dir}` would resolve to the override, not the folder the project names."""
+        pm = self._project_manager(
+            workspace_dir=PerPlatformProjectPath(darwin="/Volumes/share", linux="/mnt/share"),
+        )
+        cast("Mock", pm._config_manager).workspace_path = Path("/srv/override")
+
+        assert self._map(pm, "/Volumes/share/u/blur.py", "darwin") is None
+
+    def test_workspace_is_not_matched_for_a_project_that_is_not_current(self) -> None:
+        pm = self._project_manager(
+            workspace_dir=PerPlatformProjectPath(darwin="/Volumes/share", linux="/mnt/share"),
+        )
+        pm._current_project_id = "another-project"
+
+        result = pm.on_attempt_map_absolute_path_to_project_request(
+            AttemptMapAbsolutePathToProjectRequest(
+                absolute_path="/Volumes/share/u/blur.py", project_id=SYSTEM_DEFAULTS_KEY, source_platform="darwin"
+            )
+        )
+
+        assert isinstance(result, AttemptMapAbsolutePathToProjectResultSuccess)
+        assert result.mapped_path is None
 
     def test_windows_path_matches_case_insensitively_and_most_specific_folder_wins(self) -> None:
         pm = self._project_manager(

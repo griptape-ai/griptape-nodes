@@ -294,12 +294,15 @@ def _longest_macro_root_match(path: str | PurePath, roots: Iterable[_MacroRoot])
     return best_match
 
 
-def _platform_path_to_macro_path(path_str: str, platform_key: str, template: ProjectTemplate) -> str | None:
+def _platform_path_to_macro_path(
+    path_str: str, platform_key: str, template: ProjectTemplate, *, include_workspace: bool
+) -> str | None:
     """Map a path written on `platform_key` to macro form through the project's values for that OS."""
     roots: list[_MacroRoot] = []
-    workspace_root = _platform_root(BUILTIN_WORKSPACE_DIR, template.workspace_dir, platform_key)
-    if workspace_root is not None:
-        roots.append(workspace_root)
+    if include_workspace:
+        workspace_root = _platform_root(BUILTIN_WORKSPACE_DIR, template.workspace_dir, platform_key)
+        if workspace_root is not None:
+            roots.append(workspace_root)
     for name, directory in template.directories.items():
         directory_root = _platform_root(name, directory.path_macro, platform_key)
         if directory_root is not None:
@@ -4780,7 +4783,10 @@ class ProjectManager(EngineScoped):
             )
         if source_platform is not None and source_platform != active_platform_key():
             mapped_path = _platform_path_to_macro_path(
-                str(request.absolute_path), source_platform, project_info.template
+                str(request.absolute_path),
+                source_platform,
+                project_info.template,
+                include_workspace=self._workspace_dir_is_project_workspace(project_info),
             )
             return self._attempt_map_result(request, mapped_path)
 
@@ -5190,6 +5196,26 @@ class ProjectManager(EngineScoped):
             return workspace_root
 
         return str(result.absolute_path.parent)
+
+    def _workspace_dir_is_project_workspace(self, project_info: ProjectInfo) -> bool:
+        """Whether `{workspace_dir}` resolves to the folder the project's own `workspace_dir` names here.
+
+        `{workspace_dir}` resolves to the engine's effective workspace. An environment override, or
+        a project that isn't current, makes that a different folder, and a path matched against the
+        project's value would then name the wrong file.
+        """
+        if project_info.project_id != self.resolve_project_id(None):
+            return False
+        if project_info.project_file_path is None:
+            return False
+        resolution = self._resolve_template_path_field(
+            project_info.template.workspace_dir, project_info.project_file_path, "workspace_dir"
+        )
+        if resolution.path is None:
+            return False
+        return canonicalize_for_identity(resolution.path) == canonicalize_for_identity(
+            self._config_manager.workspace_path
+        )
 
     def _attempt_map_result(
         self, request: AttemptMapAbsolutePathToProjectRequest, mapped_path: str | None
