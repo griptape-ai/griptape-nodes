@@ -929,13 +929,16 @@ class FlowManager(EngineScoped):
         result = ListNodesInFlowResultSuccess(node_names=ret_list, result_details=details)
         return result
 
-    @handles(ListFlowsInFlowRequest, scope=RequestScope.WORKFLOW)
+    @handles(ListFlowsInFlowRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
     def on_list_flows_in_flow_request(
-        self, request: ListFlowsInFlowRequest, workflow: WorkflowRuntime
+        self, request: ListFlowsInFlowRequest, workflow: WorkflowRuntime | None = None
     ) -> ResultPayload:
+        """List the flows directly under a flow. With no workflow there are no top-level flows, which is not a failure."""
         if request.parent_flow_name is not None:
             # Does this Flow even exist?
-            flow = workflow.objects.get_as_type(request.parent_flow_name, ControlFlow)
+            flow = None
+            if workflow is not None:
+                flow = workflow.objects.get_as_type(request.parent_flow_name, ControlFlow)
             if flow is None:
                 details = f"Attempted to list Flows that are children of Flow '{request.parent_flow_name}', but no Flow with that name could be found."
                 result = ListFlowsInFlowResultFailure(result_details=details)
@@ -943,7 +946,10 @@ class FlowManager(EngineScoped):
 
         # Create a list of all child flow names that point DIRECTLY to us.
         ret_list = []
-        for flow_name, parent_name in workflow.flows.name_to_parent_name.items():
+        name_to_parent_name = {}
+        if workflow is not None:
+            name_to_parent_name = workflow.flows.name_to_parent_name
+        for flow_name, parent_name in name_to_parent_name.items():
             if parent_name == request.parent_flow_name:
                 ret_list.append(flow_name)
 

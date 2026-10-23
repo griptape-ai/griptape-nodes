@@ -29,6 +29,8 @@ from griptape_nodes.retained_mode.events.flow_events import (
     GetTopLevelFlowResultSuccess,
     ListFlowsInCurrentContextRequest,
     ListFlowsInFlowRequest,
+    ListFlowsInFlowResultFailure,
+    ListFlowsInFlowResultSuccess,
     ListNodesInFlowRequest,
     ListNodesInFlowResultFailure,
     ListNodesInFlowResultSuccess,
@@ -53,8 +55,12 @@ from tests.workflow_context import push_unsaved_workflow
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
 
-# A FlowManager request that works with no workflow open; every other one acts on a workflow.
-_OPTIONAL_WORKFLOW_REQUESTS = {GetTopLevelFlowRequest, ExtractFlowCommandsFromImageMetadataRequest}
+# FlowManager requests that work with no workflow open; every other one acts on a workflow.
+_OPTIONAL_WORKFLOW_REQUESTS = {
+    GetTopLevelFlowRequest,
+    ExtractFlowCommandsFromImageMetadataRequest,
+    ListFlowsInFlowRequest,
+}
 
 
 def _create_canvas(engine: Engine, **envelope: Any) -> str:
@@ -104,6 +110,17 @@ class TestHandlersActOnTheWorkflowTheyAreHanded:
         assert result.failed()
         assert "isn't open" in str(result.result_details)
         assert engine.open_workflows.sole_workflow().flows.name_to_parent_name == {}
+
+    def test_listing_top_level_flows_with_no_workflow_open_finds_none(self, engine: Engine) -> None:
+        result = engine.handle_request(ListFlowsInFlowRequest(parent_flow_name=None))
+
+        assert isinstance(result, ListFlowsInFlowResultSuccess)
+        assert result.flow_names == []
+
+    def test_listing_a_flows_children_with_no_workflow_open_fails(self, engine: Engine) -> None:
+        result = engine.handle_request(ListFlowsInFlowRequest(parent_flow_name="canvas"))
+
+        assert isinstance(result, ListFlowsInFlowResultFailure)
 
     def test_a_handler_uses_the_workflow_it_is_handed_rather_than_the_open_one(self, engine: Engine) -> None:
         push_unsaved_workflow(engine)
