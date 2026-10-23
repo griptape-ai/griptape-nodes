@@ -1482,6 +1482,14 @@ class BaseNode(ABC):
     """
 
     def validate_empty_parameter(self, param: str, additional_msg: str = "") -> Exception | None:
+        """Report a text parameter the user left blank, unless a connection will fill it.
+
+        Pre-run validation happens before any connection delivers its value, so a connected
+        parameter may hold nothing yet. That is not a blank: the upstream node provides the value when
+        it runs, and a missing one is reported there.
+        """
+        if self._param_has_incoming_connection(param):
+            return None
         param_value = self.parameter_values.get(param, None)
         node_name = self.name
         if not isinstance(param_value, str) or not param_value.strip():
