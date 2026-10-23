@@ -808,7 +808,7 @@ class TestNodesOnTheRuntime:
         nodes = engine.open_workflows.sole_workflow().nodes
         nodes.name_to_parent_flow_name["node"] = "canvas"
 
-        engine.node_manager.handle_flow_rename("canvas", "renamed")
+        engine.node_manager.handle_flow_rename(engine.open_workflows.sole_workflow(), "canvas", "renamed")
 
         assert nodes.name_to_parent_flow_name == {"node": "renamed"}
 
@@ -827,7 +827,7 @@ class TestNodesOnTheRuntime:
         worker_manager = MagicMock()
         worker_manager.route_to_worker = AsyncMock(side_effect=close_while_running)
         result = await engine.node_manager._execute_node_via_worker(
-            ExecuteNodeRequest(node_name="node", parameter_values={}), worker_manager, ("worker", "topic")
+            runtime, ExecuteNodeRequest(node_name="node", parameter_values={}), worker_manager, ("worker", "topic")
         )
 
         assert isinstance(result, ExecuteNodeResultFailure)

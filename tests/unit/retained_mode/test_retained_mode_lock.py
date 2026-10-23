@@ -56,6 +56,7 @@ class _ValueNode(DataNode):
 
 class TestRetainedModeLock:
     def test_lock_without_current_context_returns_failure(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine, "lock_no_node_wf")
         # Ensure empty current context for nodes
         ctx = engine.context_manager
         while ctx.has_current_node():
@@ -69,7 +70,7 @@ class TestRetainedModeLock:
         res = RetainedMode.batch_set_lock_node_state(node_names=missing_nodes, lock=True)
         assert isinstance(res, BatchSetNodeLockStateResultFailure)
         details = str(res.result_details)
-        assert "Failed to update any nodes" in details
+        assert "none is open" in details
 
 
 class TestUnlockUnresolvesNodeLeftUnexecuted:

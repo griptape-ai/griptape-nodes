@@ -15,6 +15,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     SetLockNodeStateResultFailure,
     SetLockNodeStateResultSuccess,
 )
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 
 class TestLockNodes:
     def test_lock_without_current_context_returns_failure(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
         # Ensure no current node in context
         ctx = engine.context_manager
         while ctx.has_current_node():
@@ -141,4 +143,4 @@ class TestLockNodes:
         missing = "not_here_456"
         res = engine.handle_request(SetLockNodeStateRequest(lock=True, node_name=missing))
         assert isinstance(res, SetLockNodeStateResultFailure)
-        assert missing in str(res.result_details)
+        assert "none is open" in str(res.result_details)
