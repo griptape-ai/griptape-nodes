@@ -186,12 +186,14 @@ that's never been saved to disk at all.
     name.
 - **Save As** (`Cmd/Ctrl` + `Shift` + `S`) opens the **Save Workflow As…**
     dialog and writes a new, separate copy under the name you give it.
-    Griptape-provided templates always go through Save As — you can't
-    overwrite the template itself.
 - **Save As New Version** (`Option/Alt` + `Shift` + `S`, on engines that
     support versioned saves) writes the current state as a new versioned
     file (`my_workflow_v002.py`, and so on) and switches you to that new
     version, leaving the previous version untouched on disk.
+
+Opening a Griptape-provided template, or any other workflow a library
+provides, opens an unsaved copy of it. You save the copy like a new
+workflow, and the library's own file is never changed.
 
 While a workflow is running, all three save actions are blocked. Trying to
 save shows a **Cannot Save While Flow is Running** dialog explaining that
@@ -208,10 +210,10 @@ while a save is in progress.
 Every workflow has a permanent id, saved in the header at the top of its
 file. It stays the same when you save, rename, or move the workflow, and
 when you reopen it later. **Save As**, **Save As New Version**, branching,
-and creating a workflow from a template make a new workflow, so the new file
-gets an id of its own. If you copy a workflow file yourself, outside the
-editor, the first time the engine finds both files one of them, usually
-the copy, gets a new id.
+creating a workflow from a template, and opening a workflow a library
+provides make a new workflow, so it gets an id of its own. If you copy a
+workflow file yourself, outside the editor, the first time the engine finds
+both files one of them, usually the copy, gets a new id.
 
 A workflow file saved by an earlier version of Griptape Nodes has no id
 yet. It gets one the next time you save it.

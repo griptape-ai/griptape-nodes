@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
 from griptape_nodes.bootstrap.workflow_publishers.local_workflow_publisher import LocalWorkflowPublisher
 from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
 from griptape_nodes.files.path_utils import canonicalize_for_identity_preserving_symlinks
@@ -78,6 +79,8 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowResultSuccess,
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultSuccess,
+    ListCallableWorkflowsRequest,
+    ListCallableWorkflowsResultSuccess,
     MergeWorkflowBranchRequest,
     MergeWorkflowBranchResultFailure,
     MergeWorkflowBranchResultSuccess,
@@ -96,18 +99,25 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ResetWorkflowBranchResultFailure,
     ResetWorkflowBranchResultSuccess,
     RunWorkflowFromRegistryRequest,
+    RunWorkflowFromRegistryResultFailure,
     RunWorkflowFromRegistryResultSuccess,
+    RunWorkflowFromScratchRequest,
+    RunWorkflowFromScratchResultFailure,
+    RunWorkflowFromScratchResultSuccess,
+    RunWorkflowWithCurrentStateRequest,
+    RunWorkflowWithCurrentStateResultSuccess,
     SaveSubflowToWorkflowRequest,
     SaveSubflowToWorkflowResultSuccess,
     SaveWorkflowFileFromSerializedFlowRequest,
     SaveWorkflowRequest,
     SaveWorkflowResultFailure,
     SaveWorkflowResultSuccess,
+    SetVariableSubstitutionEnabledRequest,
     SetWorkflowMetadataRequest,
     SetWorkflowMetadataResultFailure,
     SetWorkflowMetadataResultSuccess,
 )
-from griptape_nodes.retained_mode.managers.context_manager import read_metadata_for_open_file
+from griptape_nodes.retained_mode.managers.context_manager import ContextManager, read_metadata_for_open_file
 from griptape_nodes.retained_mode.managers.library.common import (
     LibraryFitness,
     LibraryInfo,
@@ -119,6 +129,7 @@ from griptape_nodes.retained_mode.managers.workflow.saving import WriteWorkflowF
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
+    from griptape_nodes.node_library.workflow_registry import Workflow
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
 
@@ -128,6 +139,7 @@ MOVER_ID = "00000000000000000000000000000001"
 STALE_ID = "00000000000000000000000000000002"
 LINEAGE_ID = "00000000000000000000000000000003"
 SHARED_ID = "00000000000000000000000000000004"
+LIBRARY_ID = "00000000000000000000000000000005"
 
 
 def _use_default_project(engine: Engine, workspace: Path) -> None:
@@ -356,18 +368,34 @@ class TestWritePathsStampAnId:
         assert all(workflow["workflow_id"] != other.workflow_id for workflow in _listed(project_engine).values())
         assert project_engine.context_manager.get_current_workflow_id() == workflow_id
 
-    def test_saving_a_library_workflow_writes_a_copy_with_a_new_id(self, project_engine: Engine) -> None:
-        library_id = _open_new_workflow(project_engine, "library_workflow")
-        library_saved = _save(project_engine)
-        project_engine.workflow_registry.get(library_id).metadata.is_griptape_provided = True
+    def test_saving_onto_a_library_workflow_writes_a_copy_with_a_new_id(self, project_engine: Engine) -> None:
+        library = _saved_workflow(project_engine, "library_workflow")
+        project_engine.workflow_registry.get(library.workflow_id).metadata.is_griptape_provided = True  # type: ignore[arg-type]
+        workflow_id = _open_new_workflow(project_engine, "mine")
+        _save(project_engine)
 
-        copy = _save(project_engine, SaveWorkflowRequest(file_name=library_saved.workflow_name))
+        copy = _save(project_engine, SaveWorkflowRequest(file_name=library.workflow_name))
 
-        assert copy.workflow_id != library_id
+        assert copy.workflow_id not in (workflow_id, library.workflow_id)
+        assert Path(copy.file_path) != Path(library.file_path)
         assert _header_id(copy.file_path) == copy.workflow_id
-        assert _header_id(library_saved.file_path) == library_id
-        # As on main, the open workflow moves onto the copy so the next save lands in it.
-        assert project_engine.context_manager.get_current_workflow_id() == copy.workflow_id
+        assert _header_id(library.file_path) == library.workflow_id
+        # The open workflow stays itself: its identity never changes while it is open.
+        assert project_engine.context_manager.get_current_workflow_id() == workflow_id
+
+    def test_first_save_onto_a_library_workflow_keeps_the_open_id(self, project_engine: Engine) -> None:
+        library = _saved_workflow(project_engine, "library_workflow")
+        project_engine.workflow_registry.get(library.workflow_id).metadata.is_griptape_provided = True  # type: ignore[arg-type]
+        library_content = Path(library.file_path).read_bytes()
+        workflow_id = _open_new_workflow(project_engine, "mine")
+
+        saved = _save(project_engine, SaveWorkflowRequest(file_name=library.workflow_name))
+
+        assert saved.workflow_id == workflow_id
+        assert Path(saved.file_path) != Path(library.file_path)
+        assert _header_id(saved.file_path) == workflow_id
+        assert Path(library.file_path).read_bytes() == library_content
+        assert project_engine.context_manager.get_current_workflow().absolute_path == Path(saved.file_path)
 
     def test_branch_merge_and_reset(self, project_engine: Engine) -> None:
         source = _saved_workflow(project_engine, "source")
@@ -483,22 +511,24 @@ class TestWritePathsStampAnId:
         assert project_engine.context_manager.get_current_workflow_name() == "after"
         assert project_engine.context_manager.get_current_flow().name == flow_name
 
-    def test_rename_of_an_open_library_workflow_is_refused(self, project_engine: Engine) -> None:
-        library_id = _open_new_workflow(project_engine, "library_workflow")
-        library_saved = _save(project_engine)
-        project_engine.workflow_registry.get(library_id).metadata.is_griptape_provided = True
+    def test_rename_of_an_open_library_workflow_copy_saves_the_copy(
+        self, project_engine: Engine, tmp_path: Path, workspace: Path
+    ) -> None:
+        library = _library_workflow(project_engine, tmp_path / "library")
+        library_file = library.absolute_path
+        assert library_file is not None
+        library_content = library_file.read_bytes()
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
 
-        renamed = _run(
-            project_engine, RenameWorkflowRequest(workflow_name=library_saved.workflow_name, requested_name="mine")
-        )
+        renamed = _run(project_engine, RenameWorkflowRequest(workflow_id=opened.workflow_id, requested_name="mine"))
 
-        assert isinstance(renamed, RenameWorkflowResultFailure)
-        assert "a library provides it" in str(renamed.result_details)
-        assert Path(library_saved.file_path).is_file()
-        assert _header_id(library_saved.file_path) == library_id
-        assert project_engine.workflow_registry.get(library_id).absolute_path == Path(library_saved.file_path)
-        assert project_engine.workflow_registry.find_by_name("mine") is None
-        assert project_engine.context_manager.get_current_workflow_id() == library_id
+        assert isinstance(renamed, RenameWorkflowResultSuccess), renamed.result_details
+        assert renamed.workflow_id == opened.workflow_id
+        assert _header_id(workspace / "mine.py") == opened.workflow_id
+        assert project_engine.context_manager.get_current_workflow_id() == opened.workflow_id
+        assert library_file.read_bytes() == library_content
+        assert project_engine.workflow_registry.get(LIBRARY_ID).absolute_path == library_file
 
     def test_renaming_only_the_letter_case_keeps_the_file(self, project_engine: Engine, workspace: Path) -> None:
         """On a case-insensitive filesystem the new name is the same file, which must not be deleted."""
@@ -1632,3 +1662,333 @@ class TestRenameOfAWorkflowThatIsNotOpen:
         entry = project_engine.workflow_registry.get(saved.workflow_id)  # type: ignore[arg-type]
         assert entry.absolute_path == Path(saved.file_path)
         assert entry.name == saved.workflow_name
+
+
+def _library_workflow(engine: Engine, library_dir: Path, *, substitution_enabled: bool = True) -> Workflow:
+    """Register a workflow a library provides, at `library_dir/collage_poster.py`, outside the workspace.
+
+    Its display name differs from its file's stem, so a test can tell which one a save is named from.
+    """
+    _open_new_workflow(engine, "collage")
+    if not substitution_enabled:
+        engine.handle_request(SetVariableSubstitutionEnabledRequest(enabled=False))
+    saved = _save(engine)
+    _close(engine)
+    source_file = Path(saved.file_path)
+    library_metadata = read_workflow_metadata(source_file).model_copy(
+        update={
+            "workflow_id": LIBRARY_ID,
+            "name": "Poster Collage",
+            "description": "Lays out a poster.",
+            "image": "thumbnail.webp",
+            "is_griptape_provided": True,
+            "is_template": True,
+            "workflow_shape": WorkflowShape(inputs={"Start Flow": {}}, outputs={"End Flow": {}}),
+        }
+    )
+    library_content = engine.workflow_manager.codegen.replace_workflow_metadata_header(
+        source_file.read_text(encoding="utf-8"), library_metadata
+    )
+    assert library_content is not None
+    library_file = library_dir / "collage_poster.py"
+    library_file.parent.mkdir(parents=True, exist_ok=True)
+    library_file.write_text(library_content, encoding="utf-8")
+    return engine.workflow_registry.register_file(library_file, library_metadata)
+
+
+class TestLibraryWorkflowsOpenAsUnsavedCopies:
+    """Opening a workflow a library provides opens a new unsaved copy; the library's entry is never open."""
+
+    def test_run_from_registry_opens_an_unsaved_copy(self, project_engine: Engine, tmp_path: Path) -> None:
+        library = _library_workflow(project_engine, tmp_path / "library")
+        library_file = library.absolute_path
+        assert library_file is not None
+        library_content = library_file.read_bytes()
+
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
+        assert opened.workflow_id not in (None, LIBRARY_ID)
+        assert opened.seeded_from_workflow_id == LIBRARY_ID
+        assert project_engine.context_manager.get_current_workflow_id() == opened.workflow_id
+        assert project_engine.context_manager.has_current_flow()
+        copy = project_engine.workflow_registry.get(opened.workflow_id)  # type: ignore[arg-type]
+        assert not copy.is_saved
+        assert copy.seeded_from_workflow_id == LIBRARY_ID
+        assert copy.metadata.name == "Poster Collage"
+        assert copy.metadata.description == "Lays out a poster."
+        assert copy.metadata.image == "thumbnail.webp"
+        assert copy.metadata.workflow_shape == library.metadata.workflow_shape
+        assert copy.metadata.is_griptape_provided is False
+        assert copy.metadata.is_template is False
+        # The library's entry and file are untouched, and it is not the open workflow.
+        assert not project_engine.workflow_registry.is_open(LIBRARY_ID)
+        assert project_engine.workflow_registry.get(LIBRARY_ID) is library
+        assert library.absolute_path == library_file
+        assert library.metadata.is_griptape_provided is True
+        assert library_file.read_bytes() == library_content
+
+    def test_each_open_is_a_new_copy(self, project_engine: Engine, tmp_path: Path) -> None:
+        _library_workflow(project_engine, tmp_path / "library")
+
+        first = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        second = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+
+        assert isinstance(first, RunWorkflowFromRegistryResultSuccess), first.result_details
+        assert isinstance(second, RunWorkflowFromRegistryResultSuccess), second.result_details
+        assert second.workflow_id not in (first.workflow_id, LIBRARY_ID)
+        assert second.seeded_from_workflow_id == LIBRARY_ID
+
+    def test_a_failed_open_leaves_no_copy_behind(self, project_engine: Engine, tmp_path: Path) -> None:
+        # A file with only a header builds no flow, so running it fails.
+        library_file = _write_workflow_file(tmp_path / "library" / "broken.py", workflow_id=LIBRARY_ID)
+        library = project_engine.workflow_registry.register_file(library_file, read_workflow_metadata(library_file))
+        library.metadata.is_griptape_provided = True
+        listed_before = set(_listed(project_engine))
+
+        failed = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+
+        assert isinstance(failed, RunWorkflowFromRegistryResultFailure)
+        assert not project_engine.context_manager.has_current_workflow()
+        assert set(_listed(project_engine)) == listed_before
+
+    def test_listing_and_reading_a_library_workflow_creates_no_copy(
+        self, project_engine: Engine, tmp_path: Path
+    ) -> None:
+        _library_workflow(project_engine, tmp_path / "library")
+        listed_before = set(_listed(project_engine))
+
+        metadata = _run(project_engine, GetWorkflowMetadataRequest(workflow_id=LIBRARY_ID))
+
+        assert isinstance(metadata, GetWorkflowMetadataResultSuccess), metadata.result_details
+        assert set(_listed(project_engine)) == listed_before
+        assert not project_engine.context_manager.has_current_workflow()
+
+    def test_an_open_copy_is_not_a_callable_workflow(self, project_engine: Engine, tmp_path: Path) -> None:
+        """The copy has the library's shape but no file to import, so a subflow cannot call it."""
+        _library_workflow(project_engine, tmp_path / "library")
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
+
+        callable_result = _run(project_engine, ListCallableWorkflowsRequest())
+
+        assert isinstance(callable_result, ListCallableWorkflowsResultSuccess), callable_result.result_details
+        callable_ids = {callable_workflow.workflow_id for callable_workflow in callable_result.callable_workflows}
+        assert LIBRARY_ID in callable_ids
+        assert opened.workflow_id not in callable_ids
+
+    def test_run_from_scratch_on_a_library_file_opens_a_copy(self, project_engine: Engine, tmp_path: Path) -> None:
+        library = _library_workflow(project_engine, tmp_path / "library")
+
+        opened = _run(project_engine, RunWorkflowFromScratchRequest(file_path=str(library.absolute_path)))
+
+        assert isinstance(opened, RunWorkflowFromScratchResultSuccess), opened.result_details
+        assert opened.workflow_id not in (None, LIBRARY_ID)
+        assert opened.seeded_from_workflow_id == LIBRARY_ID
+        assert project_engine.context_manager.get_current_workflow_id() == opened.workflow_id
+        assert not project_engine.workflow_registry.is_open(LIBRARY_ID)
+
+    def test_a_failed_run_from_scratch_on_a_library_file_leaves_no_copy_behind(
+        self, project_engine: Engine, tmp_path: Path
+    ) -> None:
+        library = _library_workflow(project_engine, tmp_path / "library")
+        library_file = library.absolute_path
+        assert library_file is not None
+        # The copy opens and the graph builds; then the file fails.
+        library_file.write_text(
+            library_file.read_text(encoding="utf-8")
+            + "\n_build_library_workflow = build_workflow\n\n"
+            + "async def build_workflow():\n"
+            + "    await _build_library_workflow()\n"
+            + "    raise RuntimeError('The library workflow is broken.')\n",
+            encoding="utf-8",
+        )
+        listed_before = set(_listed(project_engine))
+
+        failed = _run(project_engine, RunWorkflowFromScratchRequest(file_path=str(library_file)))
+
+        assert isinstance(failed, RunWorkflowFromScratchResultFailure)
+        assert "The library workflow is broken." in str(failed.result_details)
+        assert not project_engine.context_manager.has_current_workflow()
+        assert set(_listed(project_engine)) == listed_before
+
+    def test_a_failed_script_run_of_a_library_file_is_saved_under_the_library_file_name(
+        self, project_engine: Engine, tmp_path: Path, workspace: Path
+    ) -> None:
+        """The copy's registry name holds a colon, which no file name on Windows may."""
+        library = _library_workflow(project_engine, tmp_path / "library")
+        opened = _run(project_engine, RunWorkflowFromScratchRequest(file_path=str(library.absolute_path)))
+        assert isinstance(opened, RunWorkflowFromScratchResultSuccess), opened.result_details
+        executor = LocalWorkflowExecutor(save_on_failure_path="")
+
+        asyncio.run(executor._save_failed_workflow(RuntimeError("The run failed.")))
+
+        failure_files = list(workspace.rglob("*_failed_*.py"))
+        assert len(failure_files) == 1
+        assert failure_files[0].name.startswith("collage_poster_failed_")
+
+    def test_run_with_current_state_and_nothing_open_opens_a_copy(self, project_engine: Engine, tmp_path: Path) -> None:
+        library = _library_workflow(project_engine, tmp_path / "library")
+
+        opened = _run(project_engine, RunWorkflowWithCurrentStateRequest(file_path=str(library.absolute_path)))
+
+        assert isinstance(opened, RunWorkflowWithCurrentStateResultSuccess), opened.result_details
+        assert opened.workflow_id not in (None, LIBRARY_ID)
+        assert opened.seeded_from_workflow_id == LIBRARY_ID
+        assert not project_engine.workflow_registry.is_open(LIBRARY_ID)
+
+    def test_a_library_workflow_file_a_script_pushes_opens_as_a_copy(
+        self, project_engine: Engine, tmp_path: Path
+    ) -> None:
+        """Saved files push themselves with `push_workflow(file_path=__file__)` when run as a script."""
+        library = _library_workflow(project_engine, tmp_path / "library")
+        context_manager = project_engine.context_manager
+
+        entered_name = context_manager.push_workflow(file_path=str(library.absolute_path))
+
+        copy = context_manager.get_current_workflow()
+        assert copy.workflow_id != LIBRARY_ID
+        assert copy.name == entered_name
+        assert copy.seeded_from_workflow_id == LIBRARY_ID
+        assert not project_engine.workflow_registry.is_open(LIBRARY_ID)
+
+    @pytest.mark.parametrize("address", ["workflow_id", "workflow_name"])
+    def test_pushing_a_library_workflow_by_id_or_name_is_refused(
+        self, project_engine: Engine, tmp_path: Path, address: str
+    ) -> None:
+        library = _library_workflow(project_engine, tmp_path / "library")
+        push_arguments = {"workflow_id": LIBRARY_ID}
+        if address == "workflow_name":
+            push_arguments = {"workflow_name": library.name}
+
+        with pytest.raises(ContextManager.LibraryWorkflowOpenError, match="a library provides it"):
+            project_engine.context_manager.push_workflow(**push_arguments)
+
+        assert not project_engine.context_manager.has_current_workflow()
+        assert not project_engine.workflow_registry.is_open(LIBRARY_ID)
+
+    def test_set_workflow_context_and_ensure_refuse_a_library_workflow(
+        self, project_engine: Engine, tmp_path: Path
+    ) -> None:
+        library = _library_workflow(project_engine, tmp_path / "library")
+
+        by_id = project_engine.handle_request(SetWorkflowContextRequest(workflow_id=LIBRARY_ID))
+        by_name = project_engine.handle_request(SetWorkflowContextRequest(workflow_name=library.name))
+        ensured = project_engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_id=LIBRARY_ID))
+
+        assert isinstance(by_id, SetWorkflowContextFailure)
+        assert "a library provides it" in str(by_id.result_details)
+        assert isinstance(by_name, SetWorkflowContextFailure)
+        assert isinstance(ensured, EnsureWorkflowAndFlowResultFailure)
+        assert "a library provides it" in str(ensured.result_details)
+        assert not project_engine.context_manager.has_current_workflow()
+
+
+class TestFirstSaveOfALibraryWorkflowCopy:
+    """A copy's first save is an unsaved workflow's first save, named after the library's file."""
+
+    def test_first_save_writes_a_new_file_named_after_the_library_file(
+        self, project_engine: Engine, tmp_path: Path, workspace: Path
+    ) -> None:
+        library = _library_workflow(project_engine, tmp_path / "library")
+        library_file = library.absolute_path
+        assert library_file is not None
+        library_content = library_file.read_bytes()
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
+
+        saved = _save(project_engine)
+
+        assert Path(saved.file_path) == workspace / "collage_poster.py"
+        assert saved.workflow_id == opened.workflow_id
+        saved_metadata = read_workflow_metadata(Path(saved.file_path))
+        assert saved_metadata.workflow_id == opened.workflow_id
+        assert saved_metadata.is_griptape_provided is False
+        # The copy stays the open workflow, now saved; the library is untouched.
+        assert project_engine.context_manager.get_current_workflow_id() == opened.workflow_id
+        assert project_engine.context_manager.get_current_workflow().absolute_path == Path(saved.file_path)
+        assert library_file.read_bytes() == library_content
+        assert project_engine.workflow_registry.get(LIBRARY_ID).absolute_path == library_file
+
+    def test_the_context_reports_the_library_workflow_a_copy_came_from(
+        self, project_engine: Engine, tmp_path: Path
+    ) -> None:
+        _library_workflow(project_engine, tmp_path / "library")
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
+
+        context = _run(project_engine, GetWorkflowContextRequest())
+        assert isinstance(context, GetWorkflowContextSuccess)
+        assert context.workflow_id == opened.workflow_id
+        assert context.seeded_from_workflow_id == LIBRARY_ID
+
+        _save(project_engine)
+        saved_context = _run(project_engine, GetWorkflowContextRequest())
+        assert isinstance(saved_context, GetWorkflowContextSuccess)
+        assert saved_context.seeded_from_workflow_id is None
+
+    def test_a_saved_copy_is_no_longer_seeded_from_the_library(self, project_engine: Engine, tmp_path: Path) -> None:
+        _library_workflow(project_engine, tmp_path / "library")
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
+        saved = _save(project_engine)
+        assert project_engine.workflow_registry.get(saved.workflow_id).seeded_from_workflow_id is None  # type: ignore[arg-type]
+        _close(project_engine)
+
+        reopened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=saved.workflow_id))
+
+        assert isinstance(reopened, RunWorkflowFromRegistryResultSuccess), reopened.result_details
+        assert reopened.workflow_id == saved.workflow_id
+        assert reopened.seeded_from_workflow_id is None
+
+    def test_second_save_writes_the_same_file(self, project_engine: Engine, tmp_path: Path) -> None:
+        _library_workflow(project_engine, tmp_path / "library")
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
+        first = _save(project_engine)
+
+        second = _save(project_engine, SaveWorkflowRequest(file_name=first.workflow_name))
+
+        assert second.file_path == first.file_path
+        assert second.workflow_id == opened.workflow_id
+        assert _header_id(second.file_path) == opened.workflow_id
+
+    def test_the_first_save_of_a_second_copy_never_overwrites_the_first(
+        self, project_engine: Engine, tmp_path: Path, workspace: Path
+    ) -> None:
+        _library_workflow(project_engine, tmp_path / "library")
+        _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        first = _save(project_engine)
+        _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+
+        second = _save(project_engine)
+
+        assert Path(first.file_path) == workspace / "collage_poster.py"
+        assert Path(second.file_path) == workspace / "collage_poster_1.py"
+        assert _header_id(first.file_path) == first.workflow_id
+        assert second.workflow_id != first.workflow_id
+
+    def test_a_versioned_first_save_is_named_after_the_library_file(
+        self, project_engine: Engine, tmp_path: Path
+    ) -> None:
+        _library_workflow(project_engine, tmp_path / "library")
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
+
+        saved = _save(project_engine, SaveWorkflowRequest(create_versioned=True))
+
+        assert Path(saved.file_path).name.startswith("collage_poster")
+        assert saved.workflow_id == opened.workflow_id
+
+    def test_variable_substitution_stays_off_across_the_first_save(
+        self, project_engine: Engine, tmp_path: Path
+    ) -> None:
+        _library_workflow(project_engine, tmp_path / "library", substitution_enabled=False)
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
+        assert project_engine.workflow_manager.variable_substitution.is_enabled() is False
+
+        saved = _save(project_engine)
+
+        assert project_engine.workflow_manager.variable_substitution.is_enabled() is False
+        assert "SetVariableSubstitutionEnabledRequest" in Path(saved.file_path).read_text(encoding="utf-8")

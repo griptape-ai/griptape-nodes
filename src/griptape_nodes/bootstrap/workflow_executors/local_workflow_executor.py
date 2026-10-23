@@ -108,14 +108,22 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         if exc_val is not None and self._save_on_failure_path is not None:
             await self._save_failed_workflow(exc_val)
 
-    def _get_workflow_name(self) -> str:
+    def _get_failed_workflow_file_name_base(self) -> str:
+        """The name a failed workflow's file starts with.
+
+        A library workflow's unsaved copy is named after the library's file, as its first save
+        would be, since its registry name is not a valid file name.
+        """
         try:
-            context_manager = GriptapeNodes.ContextManager()
-            return context_manager.get_current_workflow_name()
+            workflow = GriptapeNodes.ContextManager().get_current_workflow()
+            library_file_stem = GriptapeNodes.get_instance().workflow_registry.library_file_stem(workflow)
         except Exception as e:
             msg = f"Failed to get current workflow from context manager: {e}"
             logger.exception(msg)
             raise LocalExecutorError(msg) from e
+        if library_file_stem is not None:
+            return library_file_stem
+        return workflow.name
 
     def _load_flow_for_workflow(self) -> str:
         try:
@@ -336,10 +344,10 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             return
 
         try:
-            # _get_workflow_name() can fail if the context manager is in a bad state at failure time;
-            # fall back to a generic name rather than letting that secondary failure surface.
+            # _get_failed_workflow_file_name_base() can fail if the context manager is in a bad state at
+            # failure time; fall back to a generic name rather than letting that secondary failure surface.
             try:
-                workflow_name = self._get_workflow_name()
+                workflow_name = self._get_failed_workflow_file_name_base()
             except Exception:
                 logger.warning("save_failed_workflow: could not retrieve workflow name; using 'workflow'.")
                 workflow_name = "workflow"

@@ -84,11 +84,12 @@ class WorkflowCatalog(EngineScoped):
     async def on_list_callable_workflows_request(self, _request: ListCallableWorkflowsRequest) -> ResultPayload:
         await self.engine.workflow_manager.wait_for_workflows_loaded()
 
+        # An unsaved workflow has no file to import, so it is never callable.
         try:
             callable_workflows = [
                 CallableWorkflow(workflow_id=wf["workflow_id"], workflow_name=key)
                 for key, wf in self.engine.workflow_registry.list_workflows().items()
-                if wf.get("workflow_shape") is not None
+                if wf["is_saved"] and wf.get("workflow_shape") is not None
             ]
         except Exception:
             details = "Failed to list callable workflows."

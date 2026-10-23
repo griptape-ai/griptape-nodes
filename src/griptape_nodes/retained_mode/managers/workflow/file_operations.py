@@ -143,16 +143,9 @@ class WorkflowFileOperations(EngineScoped):
     ) -> ResultPayload:
         """Rename the open workflow: save its live graph to the new file under its own id, then delete the old file.
 
-        The workflow stays open and keeps its id; only its file and name change.
+        The workflow stays open and keeps its id; only its file and name change. The open workflow
+        is never a library's: a library workflow opens as an unsaved copy, which a rename saves.
         """
-        # Saving a library workflow writes a copy, so a rename would give the library's id to that
-        # copy and then delete the library's file.
-        if source.metadata.is_griptape_provided:
-            details = (
-                f"Attempted to rename workflow '{source.name}'. Failed because a library provides it, "
-                "and a library's files are never changed. Create a workflow from it, then rename that."
-            )
-            return RenameWorkflowResultFailure(result_details=details)
         previous_absolute_path = source.absolute_path
         previous_file_path = source.file_path
         previous_name = source.name
