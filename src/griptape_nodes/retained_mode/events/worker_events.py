@@ -139,22 +139,18 @@ class StartWorkerRequest(RequestPayload):
     spawning the worker subprocess.
 
     Also sent by the artist's engine to the machine its distribution settings assign the library
-    to, with `session_id`, `engine_id`, and `worker_engine_id` set. That machine's engine then
-    starts the worker in the artist's session under that id, so the worker registers with the
-    artist's engine and serves it.
+    to, with `worker_engine_id` set. That machine's engine then starts the worker under that id in
+    the session of the engine that sent the request, so the worker registers with the artist's
+    engine and serves it.
 
     Args:
         library_name: The library the worker will serve, or None for the general-purpose worker,
             which serves no single library and runs the nodes of Isolated Execution groups.
-        session_id: The artist's session the worker serves, or None for a worker of this engine's
-            own session.
-        engine_id: The artist's engine, which owns `session_id`.
-        worker_engine_id: The engine ID the worker takes, chosen by the artist's engine.
+        worker_engine_id: The engine ID the worker takes, chosen by the artist's engine, or None for
+            a worker of this engine's own session.
     """
 
     library_name: str | None
-    session_id: str | None = None
-    engine_id: str | None = None
     worker_engine_id: str | None = None
     broadcast_result: bool = field(default=False, kw_only=True)
 
@@ -185,13 +181,12 @@ class RegisterSessionRequest(RequestPayload):
     """Sent by the artist's engine to another machine's engine before asking it to start any worker.
 
     Sent once per session for each machine the distribution settings assign a library to. The
-    machine refuses a session whose engine version differs from its own, because the wire shape of
+    machine registers the session of the engine that sent it, which its workers on that machine
+    join. It refuses a session whose engine version differs from its own, because the wire shape of
     every event is tied to the engine build, and refuses each library whose version differs or
     that it does not have.
 
     Args:
-        engine_id: The artist's engine.
-        session_id: The artist's session, which its workers on that machine join.
         schema_version: The version of the distributed execution contract the artist's engine speaks.
         engine_version: The artist's engine version.
         library_versions: The version of each library the artist's engine will send to that machine.
@@ -202,8 +197,6 @@ class RegisterSessionRequest(RequestPayload):
             for the session run on the artist's license and API key, never the machine's own.
     """
 
-    engine_id: str
-    session_id: str
     schema_version: str
     engine_version: str
     library_versions: dict[str, str]
@@ -243,14 +236,11 @@ class StopWorkerRequest(RequestPayload):
     machine has not answered yet. The machine reports the exit with `WorkerExitedRequest`.
 
     Args:
-        worker_engine_id: The worker to stop, as named in the `StartWorkerRequest`.
-        engine_id: The artist's engine.
-        session_id: The artist's session the worker serves.
+        worker_engine_id: The worker to stop, as named in the `StartWorkerRequest`. Only the engine
+            that started it may stop it.
     """
 
     worker_engine_id: str
-    engine_id: str
-    session_id: str
     broadcast_result: bool = field(default=False, kw_only=True)
 
 
@@ -275,9 +265,7 @@ class WorkerExitedRequest(RequestPayload):
     never registered and removes a registered worker at once rather than after heartbeat eviction.
 
     Args:
-        worker_engine_id: The worker that exited.
-        engine_id: The artist's engine, which the worker served.
-        session_id: The artist's session the worker served.
+        worker_engine_id: The worker that exited, as named in the `StartWorkerRequest`.
         exit_code: The worker process's exit code.
         reason: "stopped" when the machine stopped the worker on purpose, as when it shuts down or a
             new start replaces it, so the worker may be started again. "exited" when the worker
@@ -285,8 +273,6 @@ class WorkerExitedRequest(RequestPayload):
     """
 
     worker_engine_id: str
-    engine_id: str
-    session_id: str
     exit_code: int
     reason: Literal["stopped", "exited"]
     broadcast_result: bool = field(default=False, kw_only=True)
@@ -301,4 +287,4 @@ class WorkerExitedResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class WorkerExitedResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """The exit was reported for a session this engine does not own."""
+    """The exit was reported by a machine other than the one running the worker."""

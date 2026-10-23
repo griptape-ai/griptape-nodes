@@ -41,7 +41,9 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
 )
 from griptape_nodes.retained_mode.managers.event_manager import (
     EventManager,
+    RequestSender,
     ResultContext,
+    current_request_sender,
     current_request_type,
 )
 
@@ -1749,6 +1751,42 @@ class TestPostDispatchHookContextIsolation:
 
         assert seen_request_types == [None]
         assert scope.violations == []
+
+
+class TestTheRequestSender:
+    """A handler reads which engine, and which of its sessions, sent the request from its envelope."""
+
+    @staticmethod
+    def _manager_recording_senders(seen: list[RequestSender | None]) -> EventManager:
+        event_manager = EventManager()
+
+        async def handler(_request: _ProbeRequest) -> _ProbeResult:
+            seen.append(current_request_sender())
+            return _ProbeResult(result_details="ok")
+
+        event_manager.assign_manager_to_request_type(_ProbeRequest, handler)
+        return event_manager
+
+    @pytest.mark.asyncio
+    async def test_a_request_another_engine_sent_names_its_engine_and_session(self) -> None:
+        seen: list[RequestSender | None] = []
+        event_manager = self._manager_recording_senders(seen)
+
+        await event_manager.ahandle_request(
+            _ProbeRequest(), result_context={"sender_engine_id": "artist", "sender_session_id": "s1"}
+        )
+
+        assert seen == [RequestSender(engine_id="artist", session_id="s1")]
+        assert current_request_sender() is None
+
+    @pytest.mark.asyncio
+    async def test_a_request_no_engine_sent_has_no_sender(self) -> None:
+        seen: list[RequestSender | None] = []
+        event_manager = self._manager_recording_senders(seen)
+
+        await event_manager.ahandle_request(_ProbeRequest(), result_context=ResultContext(request_id="r1"))
+
+        assert seen == [None]
 
 
 class TestAuthorizationCheckpointHooks:

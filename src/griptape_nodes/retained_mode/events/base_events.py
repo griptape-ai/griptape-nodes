@@ -307,6 +307,10 @@ class EventRequest[P: Payload](BaseEvent):
     request: P
     request_id: str | None = None
     response_topic: str | None = None
+    # The engine, and its session, that sent the request, when another engine sent it. Handlers
+    # read them with `current_request_sender()`.
+    sender_engine_id: str | None = None
+    sender_session_id: str | None = None
 
     def __init__(self, **data) -> None:
         """Initialize an EventRequest, inferring the generic type if needed."""

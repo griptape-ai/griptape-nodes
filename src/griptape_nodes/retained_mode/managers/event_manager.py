@@ -9,7 +9,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import fields
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
@@ -59,6 +59,18 @@ EP = TypeVar("EP", bound=ExecutionPayload, default=ExecutionPayload)
 
 _active_request_type: ContextVar[type[RequestPayload] | None] = ContextVar(
     "_event_manager_active_request_type", default=None
+)
+
+
+class RequestSender(NamedTuple):
+    """The engine, and its session, that sent the request being handled."""
+
+    engine_id: str
+    session_id: str | None
+
+
+_active_request_sender: ContextVar[RequestSender | None] = ContextVar(
+    "_event_manager_active_request_sender", default=None
 )
 
 # The node the current logical chain is rebuilding from the values it was sent, if any. Per chain rather
@@ -158,6 +170,18 @@ def current_request_type() -> type[RequestPayload] | None:
     return _active_request_type.get()
 
 
+def current_request_sender() -> RequestSender | None:
+    """Return the engine that sent the request being dispatched on this task, or None if no other engine did."""
+    return _active_request_sender.get()
+
+
+def _sender_of(result_context: ResultContext) -> RequestSender | None:
+    engine_id = result_context.get("sender_engine_id")
+    if engine_id is None:
+        return None
+    return RequestSender(engine_id=engine_id, session_id=result_context.get("sender_session_id"))
+
+
 # Result types that should NOT trigger a flush request.
 #
 # Add result types to this set if they should never trigger a flush (typically because they ARE
@@ -176,6 +200,8 @@ def _running_loop() -> asyncio.AbstractEventLoop | None:
 class ResultContext(TypedDict, total=False):
     response_topic: str | None
     request_id: str | None
+    sender_engine_id: str | None
+    sender_session_id: str | None
 
 
 class EventManager(EngineScoped):
@@ -1165,6 +1191,7 @@ class EventManager(EngineScoped):
 
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
+        sender_token = _active_request_sender.set(_sender_of(result_context))
         try:
             try:
                 # Actually make the handler callback (support both sync and async):
@@ -1183,6 +1210,7 @@ class EventManager(EngineScoped):
                 context=result_context,
             )
         finally:
+            _active_request_sender.reset(sender_token)
             _active_request_type.reset(token)
 
     def handle_request(
@@ -1220,6 +1248,7 @@ class EventManager(EngineScoped):
 
         # Expose the dispatching request type to detectors (see current_request_type).
         token = _active_request_type.set(request_type)
+        sender_token = _active_request_sender.set(_sender_of(result_context))
         try:
             try:
                 result_payload = self._invoke_handler_from_sync(callback, request)
@@ -1237,6 +1266,7 @@ class EventManager(EngineScoped):
                 context=result_context,
             )
         finally:
+            _active_request_sender.reset(sender_token)
             _active_request_type.reset(token)
 
     def _invoke_handler_from_sync(self, callback: Callable, request: RequestPayload) -> ResultPayload:
