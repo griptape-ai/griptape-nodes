@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -11,6 +12,7 @@ import pytest
 import pytest_asyncio
 
 from griptape_nodes.app.worker_routing import RemoteHandler, register_remote_handlers
+from griptape_nodes.retained_mode.events import converters
 from griptape_nodes.retained_mode.events.access_events import QueryModelAccessForNodeRequest
 from griptape_nodes.retained_mode.events.app_events import EngineHeartbeatRequest
 from griptape_nodes.retained_mode.events.base_events import (
@@ -167,6 +169,22 @@ class TestWorkflowScopes:
 
         records = [record for record in caplog.records if "that workflow isn't open" in record.getMessage()]
         assert [record.levelno for record in records] == [logging.DEBUG]
+
+    def test_post_dispatch_hooks_see_an_addressing_failure(self, engine: Engine, calls: _Calls) -> None:
+        _register(engine, calls, RequestScope.WORKFLOW)
+        seen: list[ResultPayload] = []
+
+        def hook(request: RequestPayload, result: ResultPayload) -> None:  # noqa: ARG001
+            seen.append(result)
+
+        engine.event_manager.add_post_dispatch_hook(_ScopeProbeRequest, hook)
+        try:
+            result_event = engine.event_manager.handle_request(_ScopeProbeRequest(), workflow_id=NOT_OPEN_ID)
+        finally:
+            engine.event_manager.remove_post_dispatch_hook(_ScopeProbeRequest, hook)
+
+        assert seen == [result_event.result]
+        assert isinstance(result_event.result, GenericResultFailure)
 
     @pytest.mark.parametrize("scope", [RequestScope.WORKFLOW, RequestScope.OPTIONAL_WORKFLOW])
     @pytest.mark.asyncio
@@ -329,6 +347,22 @@ class TestForwardedRequests:
         )
 
         result_event = await event_manager.ahandle_request(_ScopeProbeRequest(), workflow_id=workflow.workflow_id)
+
+        assert result_event.succeeded()
+        assert calls.workflows == [engine.open_workflows.get(workflow.workflow_id)]
+
+    def test_on_its_sync_local_path_the_wrapper_passes_the_workflow_through(
+        self, engine: Engine, calls: _Calls
+    ) -> None:
+        event_manager = engine.event_manager
+        workflow = push_unsaved_workflow(engine)
+        _register(engine, calls, RequestScope.WORKFLOW)
+        original = event_manager.get_manager_for_request_type(_ScopeProbeRequest)
+        event_manager.replace_manager_for_request_type(
+            _ScopeProbeRequest, RemoteHandler(original=original, event_manager=event_manager)
+        )
+
+        result_event = event_manager.handle_request(_ScopeProbeRequest(), workflow_id=workflow.workflow_id)
 
         assert result_event.succeeded()
         assert calls.workflows == [engine.open_workflows.get(workflow.workflow_id)]
@@ -500,6 +534,29 @@ class TestWorkerForwarding:
             (_ScopeProbeRequest, self.PEER_ID)
         ]
         assert calls.workflows == []
+
+    @pytest.mark.asyncio
+    async def test_a_host_request_it_forwards_is_never_rejected_by_the_orchestrator(
+        self, engine: Engine, request_client: _RecordingRequestClient
+    ) -> None:
+        """The envelope names the mirrored workflow, which a host request ignores wherever it lands.
+
+        The same engine stands in for the orchestrator once it stops mirroring, with a workflow of its
+        own open that the mirrored id does not name.
+        """
+        engine.context_manager.mirror_workflow_context(self.PEER_ID, "peer", None, None)
+        await engine.event_manager.forward_to_orchestrator(GetWorkflowContextRequest(), ResultContext())
+        wire = converters.engine.dumps(request_client.sent[0])
+        received = converters.engine.structure(json.loads(wire), EventRequest)
+        engine.context_manager.mirror_workflow_context(None, None, None, None)
+        open_workflow = push_unsaved_workflow(engine)
+
+        result_event = await engine.event_manager.ahandle_request(received.request, workflow_id=received.workflow_id)
+
+        assert received.workflow_id == self.PEER_ID
+        assert isinstance(result_event.result, GetWorkflowContextSuccess)
+        assert result_event.result.workflow_id == open_workflow.workflow_id
+        assert result_event.workflow_id == self.PEER_ID
 
     @pytest.mark.asyncio
     async def test_with_no_mirrored_workflow_the_envelope_names_none(
