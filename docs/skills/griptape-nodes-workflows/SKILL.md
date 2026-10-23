@@ -236,10 +236,10 @@ usually kept out of the build batch so its long timeout does not gate the rest:
 
 ```
 1. EnsureWorkflowAndFlowRequest                        (1 call)
-2. EventRequestBatch([                                  (1 call, runs sequentially)
-     DescribeNodeTypeRequest("TextInput"),
-     DescribeNodeTypeRequest("Agent"),
-     DescribeNodeTypeRequest("DisplayText"),
+2. EventRequestBatch([                                  (1 call, compact specs, cached)
+     DescribeNodeTypeRequest("TextInput", compact=True),
+     DescribeNodeTypeRequest("Agent", compact=True),
+     DescribeNodeTypeRequest("DisplayText", compact=True),
    ])
 3. EventRequestBatch([                                  (1 call, runs sequentially)
      CreateNodeRequest(node_type="TextInput",   node_name="TextInput_1"),
@@ -255,6 +255,12 @@ usually kept out of the build batch so its long timeout does not gate the rest:
 4. StartFlowRequest()
    + GetParameterValueRequest("DisplayText_1", "text")            (2 calls)
 ```
+
+A compact result's `parameter_specs` lists only the fields that say something: a missing
+`input_types` means `[type]`, a missing `output_type` means `type`, and a missing `default`,
+`options`, `multi_input` or `note` means none. `exec_pins: true` means the node has the
+standard `exec_in` and `exec_out` control parameters, which the specs leave out but
+connections still name. Deprecated parameters are left out; their replacements are listed.
 
 Four round trips instead of thirteen. Walk the result arrays after each batch and
 verify every slot returned `ok: true` before moving on; per-slot failures don't
@@ -460,7 +466,7 @@ Total: 13 MCP calls from empty engine to rendered output.
 ### Same pipeline, batched (4 round trips)
 
 1. `EnsureWorkflowAndFlowRequest()`
-1. `EventRequestBatch([DescribeNodeTypeRequest × 3])`
+1. `EventRequestBatch([DescribeNodeTypeRequest(compact=True) × 3])`
 1. `EventRequestBatch([CreateNodeRequest × 3 (with explicit node_name), SetParameterValueRequest, CreateConnectionRequest × 2, AutoLayoutFlowRequest])`
 1. `StartFlowRequest()` then `GetParameterValueRequest("DisplayText_1", "text")`
 
