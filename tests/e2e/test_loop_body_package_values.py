@@ -132,6 +132,8 @@ def _build_loop(engine: Engine, flow_name: str) -> None:
     _connect(engine, GROUP, "current_item", SOURCE, "left")
     _connect(engine, SOURCE, "result", TARGET, "left")
     _connect(engine, TARGET, "result", GROUP, "new_item_to_add")
+    # The fixture node insists on `note` before a run. Source's is typed; Target's is set per test.
+    _set(engine, SOURCE, "note", "typed")
 
 
 def _leave_target_holding_a_stale_left(engine: Engine) -> None:
@@ -268,3 +270,53 @@ def test_restore_failure_says_why(engine: Engine, loop_flow: str) -> None:
     details = str(restored.result_details)
     assert f"'{TARGET}.left'" in details
     assert f"must be between 0 and {NARROW}" in details
+
+
+@pytest.fixture
+def loop_flow_with_connected_note(tmp_path: Path, engine: Engine, materialize_library: Callable[..., Path]) -> str:
+    """The loop, with Target.note wired from Source.result instead of typed, and no value stored on it."""
+    _register_library(tmp_path, engine, materialize_library)
+    engine.context_manager.push_workflow(workflow_name="loop_body_connected_note")
+    flow = engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="Parent", set_as_new_context=False))
+    assert isinstance(flow, CreateFlowResultSuccess), flow
+    _build_loop(engine, flow.flow_name)
+    _connect(engine, SOURCE, "result", TARGET, "note")
+    return flow.flow_name
+
+
+@pytest.mark.parametrize("execution_mode", [SEQUENTIAL, PARALLEL])
+@pytest.mark.asyncio
+async def test_pre_run_validation_treats_a_connected_input_as_provided(
+    engine: Engine, loop_flow_with_connected_note: str, execution_mode: str
+) -> None:
+    """The body copy is validated before its connections deliver. A connected input isn't blank then."""
+    _set(engine, GROUP, "execution_mode", execution_mode)
+    queue: asyncio.Queue = asyncio.Queue()
+    engine.event_manager.initialize_queue(queue)
+
+    with engine.context_manager.flow(loop_flow_with_connected_note):
+        run_result = await engine.ahandle_request(
+            StartFlowRequest(flow_name=loop_flow_with_connected_note, flow_node_name=GROUP)
+        )
+    assert isinstance(run_result, StartFlowResultSuccess), run_result
+    group = engine.node_manager.get_node_by_name(GROUP)
+    assert group.parameter_output_values.get("results") == ["10", "20"]
+
+
+@pytest.mark.asyncio
+async def test_pre_run_validation_still_reports_a_blank_unconnected_input(
+    tmp_path: Path, engine: Engine, materialize_library: Callable[..., Path]
+) -> None:
+    """Nothing is wired into Target.note and nothing is typed, so the run is refused before it starts."""
+    _register_library(tmp_path, engine, materialize_library)
+    engine.context_manager.push_workflow(workflow_name="loop_body_blank_note")
+    flow = engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="Parent", set_as_new_context=False))
+    assert isinstance(flow, CreateFlowResultSuccess), flow
+    _build_loop(engine, flow.flow_name)
+    queue: asyncio.Queue = asyncio.Queue()
+    engine.event_manager.initialize_queue(queue)
+
+    with engine.context_manager.flow(flow.flow_name):
+        run_result = await engine.ahandle_request(StartFlowRequest(flow_name=flow.flow_name, flow_node_name=GROUP))
+    assert not isinstance(run_result, StartFlowResultSuccess), run_result
+    assert 'Parameter "note" was left blank' in str(run_result.result_details)

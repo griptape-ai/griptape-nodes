@@ -78,6 +78,13 @@ class NarrowingSliderNode(ControlNode):
             )
         )
 
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        """Insist on ``note`` the way the BaseNode docstring shows, with the engine's own helper."""
+        note_error = self.validate_empty_parameter(param="note")
+        if note_error is None:
+            return None
+        return [note_error]
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "image_width" and value:
             left_param = self.get_parameter_by_name("left")

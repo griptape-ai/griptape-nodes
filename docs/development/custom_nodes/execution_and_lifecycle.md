@@ -11,7 +11,9 @@ All callbacks are overridable:
 - **after_incoming_connection_removed**, **after_outgoing_connection_removed**: Handle disconnection
 - **before_value_set**: Return modified value before setting
 - **after_value_set**: React to parameter value changes
-- **validate_before_workflow_run**, **validate_before_node_run**: Return list[Exception]|None
+- **validate_before_workflow_run**, **validate_before_node_run**: Return list[Exception]|None. Both run
+    before any connection has delivered a value, so a connected input may still hold its default. Check
+    whether a parameter is connected before reporting it as missing; `validate_empty_parameter()` does.
 - **on_griptape_event**: Handle workflow events
 - **initialize_spotlight**: Setup spotlight functionality
 - **get_next_control_output**: Return Parameter|None for control flow
