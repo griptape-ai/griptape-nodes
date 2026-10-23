@@ -5,6 +5,10 @@
 passes -- the model, the cost and its own class name -- so every other tag on the report, the run
 id among them, is the engine's to add.
 
+It also asks for the attribution header a call through Griptape Cloud's proxy would carry, the way
+the library's ``build_griptape_cloud_headers_async`` does, and puts the decoded header on its
+``attribution`` output, so a test can compare it with the direct report.
+
 Given a ``gate_file``, it then waits for that file to appear before finishing, so a test can cancel
 the run while the node is still running.
 """
@@ -12,13 +16,19 @@ the run while the node is still running.
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import time
 from pathlib import Path
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.retained_mode.events.budget_events import ReportUsageRequest
+from griptape_nodes.retained_mode.events.budget_events import (
+    GetAttributionContextRequest,
+    GetAttributionContextResultSuccess,
+    ReportUsageRequest,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 COST_MICRO_USD = 400_000
@@ -40,8 +50,20 @@ class SpendingNode(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
+        self.add_parameter(
+            Parameter(
+                name="attribution",
+                tooltip="The decoded attribution header a proxied call from this node would carry.",
+                type="dict",
+                default_value={},
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
 
     async def aprocess(self) -> None:
+        header = await GriptapeNodes.ahandle_request(GetAttributionContextRequest())
+        if isinstance(header, GetAttributionContextResultSuccess):
+            self.parameter_output_values["attribution"] = json.loads(base64.urlsafe_b64decode(header.header_value))
         await GriptapeNodes.ahandle_request(
             ReportUsageRequest(
                 declared_cost_micro_usd=COST_MICRO_USD,

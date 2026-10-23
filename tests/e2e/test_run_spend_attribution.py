@@ -370,3 +370,19 @@ async def test_a_cancelled_run_names_itself_on_its_cancelled_event_only(
     assert ends_with_id == ["ControlFlowCancelledEvent"], ends_with_id
     cancelled_ids = [payload.run_id for payload in payloads if isinstance(payload, ControlFlowCancelledEvent)]
     assert announced[0] in cancelled_ids, cancelled_ids
+
+
+@pytest.mark.asyncio
+async def test_a_proxied_call_carries_the_same_run_and_tags_as_a_direct_one(
+    engine: Engine, stub_cloud: _StubSpendServer, three_node_flow: str
+) -> None:
+    """A run's proxy spend is attributed like its direct spend, so the two total together (#5872)."""
+    result = await engine.ahandle_request(StartFlowRequest(flow_name=three_node_flow))
+    assert isinstance(result, StartFlowResultSuccess), result
+
+    reports = await stub_cloud.wait_for_reports(len(NODE_NAMES))
+    headers = [engine.node_manager.get_node_by_name(name).parameter_output_values["attribution"] for name in NODE_NAMES]
+    assert [header["tags"] for header in headers] == [report["tags"] for report in reports], (
+        "A proxied call's header should carry exactly the tags the same node's direct report carries."
+    )
+    assert {header["tags"]["run_id"] for header in headers} == {reports[0]["tags"]["run_id"]}
