@@ -20,13 +20,21 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventResultSuccess,
     RequestPayload,
     ResultPayload,
+    ResultPayloadFailure,
     ResultPayloadSuccess,
+)
+from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionRequest,
+    CreateConnectionResultFailure,
+    DeleteConnectionRequest,
+    DeleteConnectionResultFailure,
 )
 from griptape_nodes.retained_mode.events.context_events import (
     GetWorkflowContextRequest,
     GetWorkflowContextSuccess,
     SetWorkflowContextRequest,
 )
+from griptape_nodes.retained_mode.events.execution_events import StartFlowRequest
 from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
 from griptape_nodes.retained_mode.events.object_events import (
     ClearAllObjectStateRequest,
@@ -79,6 +87,18 @@ class _ScopeProbeRequest(RequestPayload):
 @dataclass(kw_only=True)
 class _ScopeProbeResult(ResultPayloadSuccess):
     workflow: WorkflowRuntime | None = None
+
+
+@dataclass(kw_only=True)
+class _DetailedProbeRequest(RequestPayload):
+    pass
+
+
+@dataclass(kw_only=True)
+class _DetailedProbeResultFailure(ResultPayloadFailure):
+    """A request's own failure type that needs more than `result_details`."""
+
+    reason_code: int
 
 
 class _Calls:
@@ -236,6 +256,80 @@ class TestWorkflowScopes:
 
         assert isinstance(result_event.result, GenericResultFailure)
         assert calls.workflows == []
+
+
+class TestAddressingFailureType:
+    """A request that names no workflow it can act on fails with its own failure type where it can."""
+
+    @staticmethod
+    def _connection_request(**kwargs: Any) -> CreateConnectionRequest:
+        return CreateConnectionRequest(
+            source_node_name="a",
+            source_parameter_name="out",
+            target_node_name="b",
+            target_parameter_name="in",
+            **kwargs,
+        )
+
+    @pytest.mark.parametrize(
+        ("request_type", "failure_type"),
+        [
+            (CreateConnectionRequest, CreateConnectionResultFailure),
+            (DeleteConnectionRequest, DeleteConnectionResultFailure),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_a_connection_request_fails_with_its_own_failure_type(
+        self, engine: Engine, request_type: type, failure_type: type
+    ) -> None:
+        push_unsaved_workflow(engine)
+        request = request_type(
+            source_node_name="a", source_parameter_name="out", target_node_name="b", target_parameter_name="in"
+        )
+
+        result_event = await engine.event_manager.ahandle_request(request, workflow_id=NOT_OPEN_ID)
+
+        assert type(result_event.result) is failure_type
+        assert "that workflow isn't open" in str(result_event.result.result_details)
+        assert result_event.workflow_id == NOT_OPEN_ID
+
+    def test_the_sync_path_uses_the_request_s_own_failure_type_too(self, engine: Engine) -> None:
+        result_event = engine.event_manager.handle_request(self._connection_request())
+
+        assert type(result_event.result) is CreateConnectionResultFailure
+        assert "names no workflow and none is open" in str(result_event.result.result_details)
+
+    def test_its_own_failure_type_logs_at_the_request_s_failure_log_level(
+        self, engine: Engine, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.DEBUG, logger="griptape_nodes"):
+            engine.event_manager.handle_request(
+                self._connection_request(failure_log_level=logging.DEBUG), workflow_id=NOT_OPEN_ID
+            )
+
+        records = [record for record in caplog.records if "that workflow isn't open" in record.getMessage()]
+        assert [record.levelno for record in records] == [logging.DEBUG]
+
+    def test_a_failure_type_that_needs_more_than_details_falls_back_to_generic(
+        self, engine: Engine, calls: _Calls
+    ) -> None:
+        engine.event_manager.assign_manager_to_request_type(
+            _DetailedProbeRequest, calls.workflow_handler, scope=RequestScope.WORKFLOW
+        )
+
+        result_event = engine.event_manager.handle_request(_DetailedProbeRequest(), workflow_id=NOT_OPEN_ID)
+
+        assert type(result_event.result) is GenericResultFailure
+        assert "that workflow isn't open" in str(result_event.result.result_details)
+
+    def test_start_flow_whose_failure_type_needs_validation_exceptions_falls_back_to_generic(
+        self, engine: Engine
+    ) -> None:
+        result_event = engine.event_manager.handle_request(
+            StartFlowRequest(flow_name="canvas"), workflow_id=NOT_OPEN_ID
+        )
+
+        assert type(result_event.result) is GenericResultFailure
 
 
 class TestHostAndUndeclaredScopes:
