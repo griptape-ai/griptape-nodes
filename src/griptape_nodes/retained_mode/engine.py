@@ -24,7 +24,9 @@ import semver
 
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.node_library.workflow_registry import _WorkflowRegistry
+from griptape_nodes.retained_mode.engine_lifecycle import EngineLifecycle
 from griptape_nodes.retained_mode.events.app_events import (
+    AppInitializationComplete,
     EngineHeartbeatRequest,
     EngineHeartbeatResultFailure,
     EngineHeartbeatResultSuccess,
@@ -177,6 +179,7 @@ class Engine:
     _budget_manager: BudgetManager
     _diagnostics_manager: DiagnosticsManager
     _worker_manager: WorkerManager
+    _lifecycle: EngineLifecycle
     _workflow_registry: _WorkflowRegistry
 
     def __init__(self) -> None:  # noqa: PLR0915
@@ -260,6 +263,10 @@ class Engine:
         self._diagnostics_manager = DiagnosticsManager(self._event_manager, engine=self)
         # Attached by the app; None while this engine cannot reach engines on other machines.
         self._engine_links: EngineLinks | None = None
+        self._lifecycle = EngineLifecycle(self)
+        self._event_manager.add_listener_to_app_event(
+            AppInitializationComplete, self._lifecycle.on_app_initialization_complete
+        )
 
         # Assign handlers now that these are created.
         self._event_manager.register_request_handlers(self)
@@ -383,6 +390,10 @@ class Engine:
     @property
     def worker_manager(self) -> WorkerManager:
         return self._worker_manager
+
+    @property
+    def lifecycle(self) -> EngineLifecycle:
+        return self._lifecycle
 
     @property
     def workflow_registry(self) -> _WorkflowRegistry:
@@ -686,7 +697,7 @@ class Engine:
                 timestamp=datetime.now(tz=UTC).isoformat(),
                 user=user,
                 user_organization=user_organization,
-                is_initializing=self._library_manager.is_initializing(),
+                is_initializing=self._lifecycle.is_initializing(),
                 # Set on worker processes (injected at spawn by WorkerManager), unset on the
                 # orchestrator. Lets a discovery client tell workers apart and nest them.
                 orchestrator_engine_id=os.getenv("GTN_ORCHESTRATOR_ENGINE_ID"),
