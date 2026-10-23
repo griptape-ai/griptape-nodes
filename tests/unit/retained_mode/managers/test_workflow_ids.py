@@ -364,18 +364,34 @@ class TestWritePathsStampAnId:
         assert all(workflow["workflow_id"] != other.workflow_id for workflow in _listed(project_engine).values())
         assert project_engine.context_manager.get_current_workflow_id() == workflow_id
 
-    def test_saving_a_library_workflow_writes_a_copy_with_a_new_id(self, project_engine: Engine) -> None:
-        library_id = _open_new_workflow(project_engine, "library_workflow")
-        library_saved = _save(project_engine)
-        project_engine.workflow_registry.get(library_id).metadata.is_griptape_provided = True
+    def test_saving_onto_a_library_workflow_writes_a_copy_with_a_new_id(self, project_engine: Engine) -> None:
+        library = _saved_workflow(project_engine, "library_workflow")
+        project_engine.workflow_registry.get(library.workflow_id).metadata.is_griptape_provided = True  # type: ignore[arg-type]
+        workflow_id = _open_new_workflow(project_engine, "mine")
+        _save(project_engine)
 
-        copy = _save(project_engine, SaveWorkflowRequest(file_name=library_saved.workflow_name))
+        copy = _save(project_engine, SaveWorkflowRequest(file_name=library.workflow_name))
 
-        assert copy.workflow_id != library_id
+        assert copy.workflow_id not in (workflow_id, library.workflow_id)
+        assert Path(copy.file_path) != Path(library.file_path)
         assert _header_id(copy.file_path) == copy.workflow_id
-        assert _header_id(library_saved.file_path) == library_id
-        # As on main, the open workflow moves onto the copy so the next save lands in it.
-        assert project_engine.context_manager.get_current_workflow_id() == copy.workflow_id
+        assert _header_id(library.file_path) == library.workflow_id
+        # The open workflow stays itself: its identity never changes while it is open.
+        assert project_engine.context_manager.get_current_workflow_id() == workflow_id
+
+    def test_first_save_onto_a_library_workflow_keeps_the_open_id(self, project_engine: Engine) -> None:
+        library = _saved_workflow(project_engine, "library_workflow")
+        project_engine.workflow_registry.get(library.workflow_id).metadata.is_griptape_provided = True  # type: ignore[arg-type]
+        library_content = Path(library.file_path).read_bytes()
+        workflow_id = _open_new_workflow(project_engine, "mine")
+
+        saved = _save(project_engine, SaveWorkflowRequest(file_name=library.workflow_name))
+
+        assert saved.workflow_id == workflow_id
+        assert Path(saved.file_path) != Path(library.file_path)
+        assert _header_id(saved.file_path) == workflow_id
+        assert Path(library.file_path).read_bytes() == library_content
+        assert project_engine.context_manager.get_current_workflow().absolute_path == Path(saved.file_path)
 
     def test_branch_merge_and_reset(self, project_engine: Engine) -> None:
         source = _saved_workflow(project_engine, "source")

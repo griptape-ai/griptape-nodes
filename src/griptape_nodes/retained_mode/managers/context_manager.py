@@ -798,21 +798,6 @@ class ContextManager(EngineScoped):
         """
         return self.get_current_workflow().working_directory
 
-    def move_current_workflow_onto(self, workflow_id: str) -> None:
-        """Make the registry entry `workflow_id` the current Workflow, keeping the open flows.
-
-        For the one case where an open workflow becomes a different registry entry: saving an
-        open library workflow writes a copy, and the editor keeps working in the copy.
-
-        Raises:
-            NoActiveWorkflowError: If no Workflow context is active.
-        """
-        if not self.has_current_workflow():
-            msg = "No active Workflow context"
-            raise self.NoActiveWorkflowError(msg)
-
-        self._workflow_stack[-1].workflow_id = workflow_id
-
     def get_current_flow(self) -> ControlFlow:
         """Get the current Flow object.
 

@@ -65,7 +65,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowFileFromSerializedFlowResultSuccess,
 )
-from griptape_nodes.retained_mode.managers.workflow.saving import SaveWorkflowScenario
 from griptape_nodes.utils.version_utils import engine_version
 from tests.workflow_context import push_unsaved_workflow
 
@@ -279,7 +278,6 @@ def _save_flow_to_disk(engine: Engine, flow_name: str, tmp_path: Path, file_stem
         written_path=save_result.file_path,
         workflow_metadata=save_result.workflow_metadata,
         current_workflow=engine.context_manager.get_current_workflow(),
-        scenario=SaveWorkflowScenario.FIRST_SAVE,
     )
     return save_result.file_path
 
