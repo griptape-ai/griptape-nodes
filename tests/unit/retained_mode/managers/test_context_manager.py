@@ -5,7 +5,6 @@ import logging
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -21,6 +20,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroRequest,
     GetPathForMacroResultSuccess,
 )
+from tests.workflow_context import empty_workflow_registry
 
 
 class TestPushWorkflow:
@@ -146,7 +146,7 @@ class TestPushWorkflow:
             original = config_manager.workspace_path
             config_manager.workspace_path = workspace
             try:
-                with patch.dict(engine.workflow_registry._workflows, {}, clear=True):
+                with empty_workflow_registry(engine):
                     # Registered workspace-RELATIVE, so resolving the key genuinely depends on
                     # which workspace is active.
                     engine.workflow_registry.generate_new_workflow(

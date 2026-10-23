@@ -12,6 +12,7 @@ from griptape_nodes.retained_mode.events.node_events import (
 )
 from griptape_nodes.retained_mode.managers.node_manager import SerializedGroupResult
 from tests.unit.exe_types.mocks import MockNode
+from tests.workflow_context import push_unsaved_workflow
 
 
 class _ConcreteGroup(BaseNodeGroup):
@@ -204,7 +205,7 @@ class TestCreateNodeWithUnresolvableParentGroup:
     def _bootstrap(self, engine: Engine) -> None:
         from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, CreateFlowResultSuccess
 
-        engine.context_manager.push_workflow("parent_group_wf")
+        push_unsaved_workflow(engine, "parent_group_wf")
         result = engine.handle_request(
             CreateFlowRequest(parent_flow_name=None, flow_name="parent_group_flow", set_as_new_context=True)
         )

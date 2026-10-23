@@ -55,6 +55,7 @@ from griptape_nodes.retained_mode.variable_types import (
     VariablePermission,
     VariableScope,
 )
+from tests.workflow_context import push_unsaved_workflow
 
 _GET_PROJECT_VAR_PATCH = "griptape_nodes.retained_mode.managers.variable_manager.VariablesManager._get_project_variable"
 _LIST_PROJECT_VAR_NAMES_PATCH = (
@@ -103,7 +104,7 @@ def project_macros(macros: dict[str, Any]) -> Iterator[None]:
 def flow_name(engine: Engine) -> str:
     """Bootstrap a clean workflow + flow and return the flow name."""
     engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
-    engine.context_manager.push_workflow("test_wf")
+    push_unsaved_workflow(engine, "test_wf")
     result = engine.handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name="test_flow", set_as_new_context=True)
     )

@@ -146,6 +146,9 @@ class LibraryManager(EngineScoped):
         self._pre_reload_callbacks: list[Callable[[], Awaitable[None]]] = []
         # True when this process is a dedicated worker
         self._is_worker: bool = False
+        # False for engines that run beside a live orchestrator (workers, workflow subprocesses,
+        # script runs), which leave writes to the shared workspace to it. Set at app initialization.
+        self._owns_workspace: bool = True
         # True when this process is a worker that serves no single library (see AppInitializationComplete)
         self._is_general_purpose_worker: bool = False
         # The libraries this process is restricted to loading (set on workers).
@@ -206,6 +209,16 @@ class LibraryManager(EngineScoped):
         reaching into ``_is_worker``.
         """
         return self._is_worker
+
+    @property
+    def owns_workspace(self) -> bool:
+        """True when this engine is the one that may write the workspace's files on its own initiative.
+
+        False for workers and for engines initialized with `defer_pending_library_resets` (workflow
+        subprocesses, publishers and script runs), which can run beside a live orchestrator that
+        owns the workspace. They scan the same files, so a write from them would race its writes.
+        """
+        return self._owns_workspace
 
     @property
     def is_general_purpose_worker(self) -> bool:
@@ -486,6 +499,8 @@ class LibraryManager(EngineScoped):
         self._libraries_loading_complete = asyncio.Event()
 
     async def _run_app_initialization(self, payload: AppInitializationComplete) -> None:
+        # Ahead of either branch's registry refresh, which may write duplicate settlements.
+        self._owns_workspace = not payload.is_worker and not payload.defer_pending_library_resets
         if payload.skip_library_loading:
             # Register all secrets even in headless mode
             self.engine.secrets_manager.register_all_secrets()

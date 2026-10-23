@@ -379,7 +379,7 @@ class TestListWorkflowOnRegistryRefresh:
         other_workspace = tmp_path / "other_workspace"
         other_workspace.mkdir()
         engine.config_manager.workspace_path = other_workspace
-        engine.workflow_registry.clear_all_workflows()
+        engine.workflow_registry.clear_saved_workflows()
 
         engine.library_manager.register_library_workflow_node_workflows()
 
@@ -401,7 +401,7 @@ class TestListWorkflowOnRegistryRefresh:
         other_workspace = tmp_path / "other_workspace"
         other_workspace.mkdir()
         engine.config_manager.workspace_path = other_workspace
-        engine.workflow_registry.clear_all_workflows()
+        engine.workflow_registry.clear_saved_workflows()
 
         engine.library_manager.register_library_workflow_node_workflows()
 
@@ -421,7 +421,7 @@ class TestListWorkflowOnRegistryRefresh:
             _library_info(str(library_dir / "griptape_nodes_library.json"), is_sandbox=True),
         )
         monkeypatch.setitem(engine.library_manager._library_file_path_to_info, library_info.library_path, library_info)
-        engine.workflow_registry.clear_all_workflows()
+        engine.workflow_registry.clear_saved_workflows()
 
         engine.library_manager.register_library_workflow_node_workflows()
 

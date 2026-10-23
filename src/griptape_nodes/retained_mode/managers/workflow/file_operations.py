@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from griptape_nodes.files.path_utils import (
     derive_registry_key,
 )
+from griptape_nodes.node_library.workflow_registry import WorkflowPathTakenError
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.base_events import ResultDetail, ResultDetails
 from griptape_nodes.retained_mode.events.os_events import (
@@ -216,15 +217,14 @@ class WorkflowFileOperations(EngineScoped):
             # Move the file
             Path(current_file_path).rename(new_absolute_path)
 
-            # Update workflow registry with new file path
-            workflow.file_path = new_relative_path
+            # Update workflow registry with new file path, and with it the registry key
+            self.engine.workflow_registry.set_file_path(workflow, new_relative_path)
 
             # Remove old config entry if it existed (e.g. workflow was externally imported)
             config_manager.delete_user_workflow(old_relative_path)
 
-            # Update registry key if directory changed
+            # Update the rest of the bookkeeping if the registry key changed
             if old_registry_key != new_registry_key:
-                self.engine.workflow_registry.rekey_workflow(old_registry_key, new_registry_key)
                 self.engine.workflow_manager.variable_substitution.rekey(old_registry_key, new_registry_key)
                 context_manager = self.engine.context_manager
                 if (
@@ -238,7 +238,9 @@ class WorkflowFileOperations(EngineScoped):
                     # file just left.
                     context_manager.set_current_workflow_file_path(str(new_absolute_path))
 
-        except OSError as e:
+        # The registry can refuse the new path only once the file is there (a stale entry may
+        # still hold it), so its refusal rolls the file back like a failed move.
+        except (OSError, WorkflowPathTakenError) as e:
             error_messages = []
             main_error = f"Failed to move workflow file '{current_file_path}' to '{new_absolute_path}': {e!s}"
             error_messages.append(ResultDetail(message=main_error, level=logging.ERROR))

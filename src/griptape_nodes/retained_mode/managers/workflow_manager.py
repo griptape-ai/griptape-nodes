@@ -84,6 +84,7 @@ from griptape_nodes.retained_mode.managers.workflow.branching import WorkflowBra
 from griptape_nodes.retained_mode.managers.workflow.catalog import WorkflowCatalog
 from griptape_nodes.retained_mode.managers.workflow.codegen import WORKFLOW_METADATA_HEADER, WorkflowCodeGenerator
 from griptape_nodes.retained_mode.managers.workflow.file_operations import WorkflowFileOperations
+from griptape_nodes.retained_mode.managers.workflow.identity import WorkflowIdentity
 from griptape_nodes.retained_mode.managers.workflow.loading import EPOCH_START
 from griptape_nodes.retained_mode.managers.workflow.publishing import WorkflowPublishing
 from griptape_nodes.retained_mode.managers.workflow.referenced_import import ReferencedWorkflowImport
@@ -210,6 +211,10 @@ class WorkflowManager(EngineScoped):
         self._workflows_loading_complete.set()
 
         self.codegen = WorkflowCodeGenerator(engine)
+        self.identity = WorkflowIdentity(engine)
+        # While a refresh runs: where each saved workflow was registered before it, so the rescan
+        # can keep an id on the file that had it when two files claim one.
+        self._previous_paths_by_id: dict[str, Path] = {}
         self.variable_substitution = VariableSubstitution(event_manager, engine=engine)
         self.runner = WorkflowRunner(event_manager, engine=engine)
         self.saver = WorkflowSaver(event_manager, engine=engine)
@@ -233,10 +238,11 @@ class WorkflowManager(EngineScoped):
         return self._referenced_workflow_stack[-1]
 
     async def refresh_workflow_registry(self, workflows_to_register: list[str] | None = None) -> None:
-        # Clear everything, library-provided workflows included, before re-registering. Workflows
-        # under the workspace are keyed workspace-relative, so after a workspace change (e.g. a
-        # project switch) an entry kept from before would resolve against the wrong directory.
-        self.engine.workflow_registry.clear_all_workflows()
+        # Drop every saved workflow, library-provided ones included, before re-registering: their
+        # names are derived workspace-relative, so after a workspace change (e.g. a project
+        # switch) a name kept from before would be wrong. Ids come back from the files' headers or
+        # are derived again, so they do not change. Unsaved workflows stay.
+        self._previous_paths_by_id = self.engine.workflow_registry.clear_saved_workflows()
 
         # Discover workflows from libraries, config, and workspace.
         self._workflows_loading_complete.clear()
@@ -280,6 +286,7 @@ class WorkflowManager(EngineScoped):
                     ]
                     config_mgr.set_config_value(default_workflow_section, workflows_to_register)
         finally:
+            self._previous_paths_by_id = {}
             self._workflows_loading_complete.set()
 
     def print_workflow_load_status(self, min_status: WorkflowStatus = WorkflowStatus.FLAWED) -> None:
@@ -446,7 +453,7 @@ class WorkflowManager(EngineScoped):
 
     @handles(RegisterWorkflowRequest)
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
-        # The registry key is derived from the file path (minus extension), independent of the display name.
+        # The registry name is derived from the file path (minus extension), independent of the display name.
         registry_key = derive_registry_key(request.file_name)
         try:
             if isinstance(request.metadata, dict):
@@ -456,16 +463,14 @@ class WorkflowManager(EngineScoped):
                 display_name=request.metadata.name, registry_key=registry_key
             )
 
-            self.engine.workflow_registry.generate_new_workflow(
-                registry_key=registry_key, metadata=request.metadata, file_path=request.file_name
-            )
+            workflow = self.identity.register_file(request.file_name, request.metadata)
         except Exception as e:
             details = f"Failed to register workflow with name '{request.metadata.name}'. Error: {e}"
             return RegisterWorkflowResultFailure(result_details=details)
         return RegisterWorkflowResultSuccess(
-            workflow_name=registry_key,
+            workflow_name=workflow.name,
             result_details=ResultDetails(
-                message=f"Successfully registered workflow: {registry_key}",
+                message=f"Successfully registered workflow: {workflow.name}",
                 level=logging.DEBUG,
             ),
         )
@@ -1007,6 +1012,10 @@ class WorkflowManager(EngineScoped):
         for workflow_to_register in workflows_to_register:
             await collect_workflow_files(Path(workflow_to_register))
 
+        # Before any file registers, so the file that keeps a shared id is chosen once for the
+        # whole scan rather than by whichever file the scan happens to reach first.
+        self.identity.settle_duplicates_in_scan(parsed_metadata_by_file, self._previous_paths_by_id)
+
         # Track progress
         total_workflows = len(all_workflow_files)
 
@@ -1117,17 +1126,18 @@ class WorkflowManager(EngineScoped):
         else:
             file_path_to_register = str(workflow_file)
 
-        registry_key = derive_registry_key(file_path_to_register)
-
-        # Check if workflow is already registered using the path-based registry key
-        if self.engine.workflow_registry.has_workflow_with_name(registry_key):
+        # Check if the file is already registered, under this path or another one to the same file.
+        existing = self.engine.workflow_registry.find_by_path(file_path_to_register)
+        if existing is not None:
             logger.debug("Skipping already registered workflow: %s", workflow_file)
+            # A file registered only because it was opened is listed once a scan finds it.
+            existing.listed = True
             return None
 
         # Hand the already-parsed metadata to the registrar so the file's TOML header is
         # read once per workflow rather than twice.
         if self._register_workflow(file_path_to_register, load_metadata_result.metadata):
-            return registry_key
+            return derive_registry_key(file_path_to_register)
         return None
 
     def _classify_workflow_candidate(self, workflow_file: Path) -> WorkflowCandidate:

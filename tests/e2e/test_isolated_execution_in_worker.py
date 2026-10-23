@@ -40,6 +40,7 @@ from griptape_nodes.retained_mode.events.library_events import (
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, CreateNodeResultSuccess
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.managers.worker_manager import WorkerRegistration
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -121,7 +122,7 @@ def general_purpose_worker(engine: Engine) -> Iterator[_StandInWorker]:
 def _build_group(engine: Engine, library_json: Path, *, execution_environment: str) -> tuple[str, str, list[str]]:
     register_result = engine.handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
     assert isinstance(register_result, RegisterLibraryFromFileResultSuccess), register_result
-    engine.context_manager.push_workflow(workflow_name="isolated_execution_in_worker_wf")
+    push_unsaved_workflow(engine, "isolated_execution_in_worker_wf")
 
     parent_result = engine.handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name="ParentFlow", set_as_new_context=False)
@@ -223,7 +224,7 @@ async def test_with_the_feature_off_the_group_still_starts_its_own_process(
     register_name = f"{LIBRARY_NAME} Off"
     register_result = engine.handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
     assert isinstance(register_result, RegisterLibraryFromFileResultSuccess), register_result
-    engine.context_manager.push_workflow(workflow_name="private_execution_off_wf")
+    push_unsaved_workflow(engine, "private_execution_off_wf")
     parent_result = engine.handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name="ParentFlow", set_as_new_context=False)
     )
@@ -283,7 +284,7 @@ async def test_a_private_loop_sends_its_iterations_to_the_worker(
     )
     register_result = engine.handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
     assert isinstance(register_result, RegisterLibraryFromFileResultSuccess), register_result
-    engine.context_manager.push_workflow(workflow_name="private_loop_in_worker_wf")
+    push_unsaved_workflow(engine, "private_loop_in_worker_wf")
     parent_result = engine.handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name="ParentFlow", set_as_new_context=False)
     )

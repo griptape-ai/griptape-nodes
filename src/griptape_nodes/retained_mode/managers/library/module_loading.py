@@ -28,7 +28,11 @@ from griptape_nodes.node_library.library_registry import (
     NodeDefinition,
     WorkflowNodeDefinition,
 )
-from griptape_nodes.node_library.workflow_registry import WorkflowMetadataError, read_workflow_metadata
+from griptape_nodes.node_library.workflow_registry import (
+    WorkflowMetadataError,
+    derive_library_workflow_id_for_file,
+    read_workflow_metadata,
+)
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.base_events import AppPayload, ExecutionPayload
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
@@ -1066,6 +1070,13 @@ class LibraryModuleLoading(EngineScoped):
         if self._is_users_workflow(node_class.workflow_file_path, workspace_path, library_info):
             return
         node_class.workflow_metadata.is_griptape_provided = True
+        # Library workflows are never written, so one without an id in its header gets the id
+        # derived from its library. Set on the node type, so the registrations its nodes make
+        # after a registry refresh carry the same id.
+        if node_class.workflow_metadata.workflow_id is None and library_info.library_name is not None:
+            node_class.workflow_metadata.workflow_id = derive_library_workflow_id_for_file(
+                library_info.library_name, Path(library_info.library_path).parent, node_class.workflow_file_path
+            )
         try:
             ensure_workflow_registered(
                 workspace_path,

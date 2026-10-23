@@ -55,6 +55,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
 from griptape_nodes.retained_mode.managers.library.sandbox import SUBFLOW_NODE_ICON
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY, Settings
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -107,7 +108,7 @@ def _list_sandbox_node_types(engine: Engine) -> list[str]:
 
 
 def _create_parent_flow(engine: Engine, workflow_name: str) -> str:
-    engine.context_manager.push_workflow(workflow_name=workflow_name)
+    push_unsaved_workflow(engine, workflow_name)
     flow_result = engine.handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name="ControlFlow_1", set_as_new_context=False)
     )

@@ -47,6 +47,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.retained_mode.events.project_events import ActivateWorkspaceProjectRequest
 from griptape_nodes.servers.static import ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV
 from griptape_nodes.testing.libraries import WORKER_BEHAVIOR_LIBRARY_NAME, materialize_worker_behavior_library
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -76,7 +77,7 @@ def _make_in_flow(node_type: str, name: str) -> BaseNode:
     Editing a parameter unresolves downstream nodes, which needs a parent flow, so anything
     exercising value hooks has to go through the normal creation path.
     """
-    current_engine().context_manager.push_workflow(workflow_name=f"wf_{name}")
+    push_unsaved_workflow(current_engine(), f"wf_{name}")
     flow_result = current_engine().handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name=f"flow_{name}", set_as_new_context=False)
     )

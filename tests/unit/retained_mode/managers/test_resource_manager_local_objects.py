@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.events.library_events import (
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.workflow_events import DeleteWorkflowRequest
 from griptape_nodes.retained_mode.managers.resource_manager import LocalObjectEntry
+from tests.workflow_context import push_unsaved_workflow
 
 _SECOND_READ_TIMEOUT_SECONDS = 0.25
 
@@ -433,7 +434,7 @@ class TestWorkflowStateClearReleasesObjects:
                 on_drop=lambda value: released.append(value.label),
             )
 
-        engine.context_manager.push_workflow("wf")
+        push_unsaved_workflow(engine, "wf")
         engine.clear_current_workflow_data()
 
         assert sorted(released) == ["a", "b"]
@@ -441,7 +442,7 @@ class TestWorkflowStateClearReleasesObjects:
 
     def test_clearing_object_state_broadcasts_to_workers(self, engine: Engine) -> None:
         """Teardown runs on the orchestrator, so without the broadcast the worker keeps its objects."""
-        engine.context_manager.push_workflow("wf")
+        push_unsaved_workflow(engine, "wf")
 
         with patch.object(engine.worker_manager, "broadcast_local_object_teardown", AsyncMock()) as broadcast:
             engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
@@ -450,7 +451,7 @@ class TestWorkflowStateClearReleasesObjects:
 
     def test_a_failed_teardown_still_tells_the_workers(self, engine: Engine) -> None:
         """Nothing retries this, so a worker that was never told keeps its objects for the process's life."""
-        engine.context_manager.push_workflow("wf")
+        push_unsaved_workflow(engine, "wf")
 
         with (
             patch.object(engine, "clear_current_workflow_data", side_effect=RuntimeError("teardown blew up")),
@@ -468,7 +469,7 @@ class TestWorkflowStateClearReleasesObjects:
         propagate would replace the real result with a transport error, skip the clearing that follows,
         and in `on_delete_workflows_request` leave a registered workflow with no contents.
         """
-        engine.context_manager.push_workflow("wf")
+        push_unsaved_workflow(engine, "wf")
         worker_manager = engine.worker_manager
 
         with (
@@ -486,10 +487,10 @@ class TestWorkflowStateClearReleasesObjects:
         Deleting the open workflow reaches teardown without going through that handler, and without this
         every worker keeps its objects.
         """
-        engine.context_manager.push_workflow("wf")
+        workflow = push_unsaved_workflow(engine, "wf")
 
         with patch.object(engine.worker_manager, "broadcast_local_object_teardown", AsyncMock()) as broadcast:
-            engine.handle_request(DeleteWorkflowRequest(name="wf"))
+            engine.handle_request(DeleteWorkflowRequest(name=workflow.name))
 
         assert broadcast.await_count == 1
 
@@ -520,7 +521,7 @@ class TestWorkflowStateClearReleasesObjects:
             key="N-slot",
             on_drop=lambda value: released.append(value.label),
         )
-        engine.context_manager.push_workflow("wf")
+        push_unsaved_workflow(engine, "wf")
 
         engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
 
