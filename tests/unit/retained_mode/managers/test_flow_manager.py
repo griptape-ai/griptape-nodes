@@ -381,14 +381,13 @@ class TestStartFlowFailureMessage:
         assert str(result.result_details) == "Attempted to run flow 'f'. Failed due to: boom"
 
     @pytest.mark.asyncio
-    async def test_start_flow_reports_resolution_error(self, ready_flow_manager: Any) -> None:
+    async def test_start_flow_reports_resolution_error(self, ready_flow_manager: Any, engine: Engine) -> None:
         machine = MagicMock()
         machine.resolution_machine.is_errored.return_value = True
         machine.resolution_machine.get_error_message.return_value = "Node 'n' encountered a problem: boom"
-        with (
-            patch.object(ready_flow_manager, "start_flow"),
-            patch.object(ready_flow_manager, "_global_control_flow_machine", machine),
-        ):
+        push_unsaved_workflow(engine)
+        engine.open_workflows.sole_workflow().flows.global_control_flow_machine = machine
+        with patch.object(ready_flow_manager, "start_flow"):
             result = await ready_flow_manager.on_start_flow_request(StartFlowRequest(flow_name="f"))
 
         assert isinstance(result, StartFlowResultFailure)

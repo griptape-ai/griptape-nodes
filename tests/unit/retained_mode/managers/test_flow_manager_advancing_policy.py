@@ -17,6 +17,7 @@ import pytest
 
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
+from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowSet
 
 
 class _AdvancingRun(NamedTuple):
@@ -26,19 +27,26 @@ class _AdvancingRun(NamedTuple):
 
 def _flow_manager_with_advancing_machine() -> _AdvancingRun:
     """A FlowManager whose committed run is mid-drive."""
-    flow_manager = FlowManager(MagicMock(spec=EventManager), engine=MagicMock())
+    flow_manager = _flow_manager_with_open_workflow()
 
     machine = MagicMock()
     machine.is_advancing = True
     machine.resolution_machine.is_advancing = True
-    flow_manager._global_control_flow_machine = machine
+    flow_manager.engine.open_workflows.sole_workflow().flows.global_control_flow_machine = machine
 
     return _AdvancingRun(flow_manager=flow_manager, machine=machine)
 
 
+def _flow_manager_with_open_workflow() -> FlowManager:
+    engine = MagicMock()
+    engine.open_workflows = OpenWorkflowSet()
+    engine.open_workflows.open("workflow")
+    return FlowManager(MagicMock(spec=EventManager), engine=engine)
+
+
 class TestExecutionIsAdvancing:
     def test_reports_false_with_no_machine(self) -> None:
-        flow_manager = FlowManager(MagicMock(spec=EventManager), engine=MagicMock())
+        flow_manager = _flow_manager_with_open_workflow()
         assert flow_manager.execution_is_advancing() is False
 
     def test_reports_true_when_only_the_resolution_machine_is_advancing(self) -> None:

@@ -70,7 +70,7 @@ class ControlFlowContext(EngineScoped):
 
         # Create isolated DagBuilder for independent subflows
         if is_isolated:
-            dag_builder = DagBuilder(self.engine)
+            dag_builder = DagBuilder(self.engine.flow_manager.get_connections())
             logger.debug("Created isolated DagBuilder for flow '%s'", flow_name)
         else:
             dag_builder = self.engine.flow_manager.global_dag_builder
