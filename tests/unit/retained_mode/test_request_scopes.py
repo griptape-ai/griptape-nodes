@@ -59,6 +59,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.managers.event_manager import ResultContext
 from griptape_nodes.retained_mode.request_handlers import RequestScope
+from griptape_nodes.utils.async_utils import call_function
 from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
@@ -316,6 +317,87 @@ class TestForwardedRequests:
 
         assert result_event.succeeded()
         assert calls.workflows == [engine.open_workflows.get(workflow.workflow_id)]
+
+
+class _FlippingForwardingHandler:
+    """Answers `forwards_now` differently on each call, as a process-wide flag read twice can.
+
+    Dispatch must ask once and act on that answer, so it never calls `__call__`, which would ask again.
+    """
+
+    def __init__(self, original: Any, *, forwards_first: bool) -> None:
+        self.original = original
+        self.forwards_first = forwards_first
+        self.forwards_now_calls = 0
+        self.forwarded: list[RequestPayload] = []
+
+    async def __call__(self, request: RequestPayload, **kwargs: Any) -> ResultPayload:  # noqa: ARG002
+        msg = "Dispatch decides once whether to forward, so it calls forward or handle_locally."
+        raise AssertionError(msg)
+
+    def forwards_now(self) -> bool:
+        self.forwards_now_calls += 1
+        if self.forwards_now_calls == 1:
+            return self.forwards_first
+        return not self.forwards_first
+
+    async def forward(self, request: RequestPayload) -> ResultPayload:
+        self.forwarded.append(request)
+        return _ScopeProbeResult(result_details="forwarded")
+
+    async def handle_locally(self, request: RequestPayload, **kwargs: Any) -> ResultPayload:
+        return await call_function(self.original, request, **kwargs)
+
+
+class TestForwardingDecidedOnce:
+    """Dispatch asks a forwarding handler once whether it forwards, then acts on that answer alone."""
+
+    def _install(self, engine: Engine, calls: _Calls, *, forwards_first: bool) -> _FlippingForwardingHandler:
+        event_manager = engine.event_manager
+        _register(engine, calls, RequestScope.WORKFLOW)
+        original = event_manager.get_manager_for_request_type(_ScopeProbeRequest)
+        handler = _FlippingForwardingHandler(original, forwards_first=forwards_first)
+        event_manager.replace_manager_for_request_type(_ScopeProbeRequest, handler)
+        return handler
+
+    @pytest.mark.asyncio
+    async def test_a_forwarded_request_is_forwarded_even_if_the_answer_flips(
+        self, engine: Engine, calls: _Calls
+    ) -> None:
+        handler = self._install(engine, calls, forwards_first=True)
+
+        result_event = await engine.event_manager.ahandle_request(_ScopeProbeRequest())
+
+        assert result_event.succeeded()
+        assert len(handler.forwarded) == 1
+        assert handler.forwards_now_calls == 1
+        assert calls.workflows == []
+
+    @pytest.mark.asyncio
+    async def test_a_local_request_gets_its_workflow_even_if_the_answer_flips(
+        self, engine: Engine, calls: _Calls
+    ) -> None:
+        workflow = push_unsaved_workflow(engine)
+        handler = self._install(engine, calls, forwards_first=False)
+
+        result_event = await engine.event_manager.ahandle_request(
+            _ScopeProbeRequest(), workflow_id=workflow.workflow_id
+        )
+
+        assert result_event.succeeded()
+        assert handler.forwarded == []
+        assert handler.forwards_now_calls == 1
+        assert calls.workflows == [engine.open_workflows.get(workflow.workflow_id)]
+
+    def test_the_sync_path_decides_once_too(self, engine: Engine, calls: _Calls) -> None:
+        handler = self._install(engine, calls, forwards_first=True)
+
+        result_event = engine.event_manager.handle_request(_ScopeProbeRequest())
+
+        assert result_event.succeeded()
+        assert len(handler.forwarded) == 1
+        assert handler.forwards_now_calls == 1
+        assert calls.workflows == []
 
 
 class TestNestedRequests:
