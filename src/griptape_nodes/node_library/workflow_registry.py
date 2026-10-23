@@ -702,7 +702,8 @@ class _WorkflowRegistry:
         """Move `workflow` to the file at `new_path`. The only way an entry's path changes.
 
         Its id stays the same; its legacy name follows the path. An unsaved workflow becomes a
-        saved one. Aliases of the old path are dropped, since they named the old file.
+        saved one, and a library workflow's copy stops being one (`seeded_from_workflow_id` is
+        cleared). Aliases of the old path are dropped, since they named the old file.
 
         Raises:
             KeyError: `workflow` is not this registry's entry.
@@ -734,6 +735,7 @@ class _WorkflowRegistry:
             workflow._alias_paths = previous_aliases
             self._add_to_indexes(workflow)
             raise
+        workflow._seeded_from_workflow_id = None
 
     def remove(self, workflow_id: str) -> Workflow:
         """Remove the entry with this id and return it. An open workflow's entry is refused: close it first.
@@ -978,7 +980,7 @@ class Workflow:
         self._listed = listed
         # Why the header could not be read, so a placeholder `metadata` is never written back to it.
         self._metadata_error = metadata_error
-        # The library workflow this one was opened as a copy of.
+        # The library workflow this one was opened as a copy of, until it is saved.
         self._seeded_from_workflow_id = seeded_from_workflow_id
         # Path in the registry's form, and the legacy name: the registry sets both when it indexes the entry.
         self._file_path: str | None = None
@@ -1064,7 +1066,7 @@ class Workflow:
 
     @property
     def seeded_from_workflow_id(self) -> str | None:
-        """The id of the library workflow this one was opened as a copy of, or None if it is not such a copy."""
+        """The id of the library workflow this unsaved copy was opened from, or None. Cleared when the copy is saved."""
         return self._seeded_from_workflow_id
 
     @property

@@ -1869,6 +1869,20 @@ class TestFirstSaveOfALibraryWorkflowCopy:
         assert library_file.read_bytes() == library_content
         assert project_engine.workflow_registry.get(LIBRARY_ID).absolute_path == library_file
 
+    def test_a_saved_copy_is_no_longer_seeded_from_the_library(self, project_engine: Engine, tmp_path: Path) -> None:
+        _library_workflow(project_engine, tmp_path / "library")
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
+        saved = _save(project_engine)
+        assert project_engine.workflow_registry.get(saved.workflow_id).seeded_from_workflow_id is None  # type: ignore[arg-type]
+        _close(project_engine)
+
+        reopened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=saved.workflow_id))
+
+        assert isinstance(reopened, RunWorkflowFromRegistryResultSuccess), reopened.result_details
+        assert reopened.workflow_id == saved.workflow_id
+        assert reopened.seeded_from_workflow_id is None
+
     def test_second_save_writes_the_same_file(self, project_engine: Engine, tmp_path: Path) -> None:
         _library_workflow(project_engine, tmp_path / "library")
         opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
