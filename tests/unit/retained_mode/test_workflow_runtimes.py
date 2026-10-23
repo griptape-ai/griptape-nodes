@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from griptape_nodes.exe_types.flow import ControlFlow
+from griptape_nodes.retained_mode.events.app_events import EngineHeartbeatRequest, EngineHeartbeatResultSuccess
+from griptape_nodes.retained_mode.events.context_events import GetWorkflowContextRequest, GetWorkflowContextSuccess
 from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest, ExecuteNodeResultFailure
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
@@ -35,6 +37,15 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SetVariableSubstitutionEnabledRequest,
     SetVariableSubstitutionEnabledResultFailure,
 )
+from griptape_nodes.retained_mode.managers.context_manager import MirroredWorkflowContext
+from griptape_nodes.retained_mode.runtime.context import (
+    ElementContext,
+    EmptyStackError,
+    FlowContext,
+    NoActiveFlowError,
+    NodeContext,
+    WorkflowContextStack,
+)
 from griptape_nodes.retained_mode.runtime.open_workflow_set import (
     NoOpenWorkflowError,
     OpenWorkflowError,
@@ -45,6 +56,9 @@ from griptape_nodes.retained_mode.variable_types import VariableScope
 from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+    from pathlib import Path
+
     from griptape_nodes.retained_mode.engine import Engine
 
 
@@ -137,42 +151,103 @@ class TestOpenWorkflowSet:
         assert workflows.sole_workflow_or_none() is None
 
 
+class TestWorkflowContextStack:
+    def test_a_new_runtimes_context_is_empty(self) -> None:
+        context = WorkflowRuntime("abc").context
+
+        assert not context.has_current_flow()
+        assert not context.has_current_node()
+        assert not context.has_current_element()
+
+    def test_flows_nodes_and_elements_nest(self) -> None:
+        context = WorkflowContextStack()
+        flow = MagicMock(name="flow")
+        node = MagicMock()
+        element = MagicMock()
+
+        with FlowContext(context, flow), NodeContext(context, node), ElementContext(context, element):
+            assert context.get_current_flow() is flow
+            assert context.get_current_node() is node
+            assert context.get_current_element() is element
+
+        assert not context.has_current_flow()
+
+    def test_each_level_needs_the_one_above(self) -> None:
+        context = WorkflowContextStack()
+
+        with pytest.raises(NoActiveFlowError):
+            context.push_node(MagicMock())
+        with pytest.raises(EmptyStackError):
+            context.pop_flow()
+
+        context.push_flow(MagicMock(name="flow"))
+        with pytest.raises(EmptyStackError):
+            context.push_element(MagicMock())
+        with pytest.raises(EmptyStackError):
+            context.get_current_node()
+
+    def test_each_runtime_has_its_own_context(self) -> None:
+        first = WorkflowRuntime("first")
+        second = WorkflowRuntime("second")
+
+        first.context.push_flow(MagicMock(name="flow"))
+
+        assert not second.context.has_current_flow()
+
+
 class TestRuntimeLifecycle:
-    """The runtime is open exactly while the context stack holds a workflow."""
+    """The runtime is open exactly while a workflow is in context."""
 
     def test_a_push_onto_an_empty_stack_opens_the_pushed_workflow(self, engine: Engine) -> None:
         workflow = push_unsaved_workflow(engine)
 
         assert engine.open_workflows.sole_workflow().workflow_id == workflow.workflow_id
 
-    def test_a_nested_push_opens_nothing(self, engine: Engine) -> None:
+    def test_a_push_while_a_workflow_is_open_is_refused(self, engine: Engine, tmp_path: Path) -> None:
         outer = push_unsaved_workflow(engine, "outer")
         runtime = engine.open_workflows.sole_workflow()
+        inner = engine.workflow_registry.register_unsaved("inner")
+        unregistered_file = tmp_path / "never_registered.py"
+        unregistered_file.write_text("# stub")
 
-        inner = push_unsaved_workflow(engine, "inner")
+        with pytest.raises(engine.context_manager.WorkflowAlreadyOpenError, match="is already open"):
+            engine.context_manager.push_workflow(workflow_id=inner.workflow_id)
+        with pytest.raises(engine.context_manager.WorkflowAlreadyOpenError):
+            engine.context_manager.push_workflow(file_path=str(unregistered_file))
 
         assert engine.open_workflows.sole_workflow() is runtime
-        assert engine.open_workflows.get(outer.workflow_id) is runtime
-        with pytest.raises(OpenWorkflowError, match="not open"):
-            engine.open_workflows.get(inner.workflow_id)
+        assert engine.context_manager.get_current_workflow_id() == outer.workflow_id
+        # Refused before anything is registered.
+        assert engine.workflow_registry.find_by_path(str(unregistered_file)) is None
 
-    def test_popping_a_nested_entry_keeps_the_workflow_open(self, engine: Engine) -> None:
-        push_unsaved_workflow(engine, "outer")
+    def test_the_workflow_block_opens_and_closes_the_workflow(self, engine: Engine) -> None:
+        workflow = engine.workflow_registry.register_unsaved("block")
+
+        with engine.context_manager.workflow(workflow.name):
+            assert engine.open_workflows.sole_workflow().workflow_id == workflow.workflow_id
+
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+    def test_the_workflow_block_refuses_while_a_workflow_is_open(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine, "open")
         runtime = engine.open_workflows.sole_workflow()
-        push_unsaved_workflow(engine, "inner")
+        other = engine.workflow_registry.register_unsaved("other")
 
-        engine.context_manager.pop_workflow()
+        with (
+            pytest.raises(engine.context_manager.WorkflowAlreadyOpenError),
+            engine.context_manager.workflow(other.name),
+        ):
+            pass
 
         assert engine.open_workflows.sole_workflow() is runtime
 
-    def test_popping_the_last_entry_closes_the_workflow(self, engine: Engine) -> None:
-        push_unsaved_workflow(engine, "outer")
-        push_unsaved_workflow(engine, "inner")
+    def test_popping_the_workflow_closes_it(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
 
-        engine.context_manager.pop_workflow()
         engine.context_manager.pop_workflow()
 
         assert engine.open_workflows.sole_workflow_or_none() is None
+        assert not engine.context_manager.has_current_workflow()
 
     def test_mirroring_a_peers_workflow_opens_nothing(self, engine: Engine) -> None:
         engine.context_manager.mirror_workflow_context("00000000000000000000000000000abc", None, None, None)
@@ -184,16 +259,167 @@ class TestRuntimeLifecycle:
         assert engine.open_workflows.sole_workflow_or_none() is None
 
 
+class TestIdentityFromTheRuntime:
+    """The open workflow's id is its runtime's; its name and file are read from the registry entry by that id."""
+
+    def test_the_getters_read_the_open_workflows_entry(self, engine: Engine, tmp_path: Path) -> None:
+        workflow = push_unsaved_workflow(engine, "Shot", working_directory=str(tmp_path))
+        context_manager = engine.context_manager
+
+        assert context_manager.get_current_workflow_id() == engine.open_workflows.sole_workflow().workflow_id
+        assert context_manager.get_current_workflow() is workflow
+        assert context_manager.get_current_workflow_name() == workflow.name
+        assert context_manager.get_current_workflow_file_path() is None
+        assert context_manager.get_current_workflow_working_directory() == str(tmp_path)
+        assert context_manager.is_workflow_in_context(workflow.workflow_id)
+        assert engine.workflow_registry.is_open(workflow.workflow_id)
+
+    def test_saving_and_moving_the_open_workflow_shows_its_new_name_and_file(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        workflow = push_unsaved_workflow(engine)
+        runtime = engine.open_workflows.sole_workflow()
+        saved = tmp_path / "shot.py"
+        saved.write_text("# stub")
+        moved = tmp_path / "moved" / "final.py"
+        moved.parent.mkdir()
+        moved.write_text("# stub")
+
+        engine.workflow_registry.set_file_path(workflow, saved)
+        assert engine.context_manager.get_current_workflow_file_path() == str(workflow.absolute_path)
+        engine.workflow_registry.set_file_path(workflow, moved)
+
+        context = engine.handle_request(GetWorkflowContextRequest())
+        heartbeat = engine.handle_request(EngineHeartbeatRequest(heartbeat_id="hb"))
+        assert engine.open_workflows.sole_workflow() is runtime
+        assert runtime.workflow_id == workflow.workflow_id
+        assert engine.context_manager.get_current_workflow_name() == workflow.name
+        assert engine.context_manager.get_current_workflow_file_path() == str(workflow.absolute_path)
+        assert workflow.absolute_path is not None
+        assert workflow.absolute_path.name == "final.py"
+        assert isinstance(context, GetWorkflowContextSuccess)
+        assert context.workflow_id == workflow.workflow_id
+        assert context.workflow_name == workflow.name
+        assert context.is_saved is True
+        assert isinstance(heartbeat, EngineHeartbeatResultSuccess)
+        assert heartbeat.current_workflow == workflow.name
+        assert heartbeat.current_workflow_id == workflow.workflow_id
+        assert heartbeat.workflow_file_path == str(workflow.absolute_path)
+
+    def test_with_nothing_open_the_context_and_heartbeat_report_none(self, engine: Engine) -> None:
+        context = engine.handle_request(GetWorkflowContextRequest())
+        heartbeat = engine.handle_request(EngineHeartbeatRequest(heartbeat_id="hb"))
+
+        assert isinstance(context, GetWorkflowContextSuccess)
+        assert context.workflow_id is None
+        assert context.workflow_name is None
+        assert isinstance(heartbeat, EngineHeartbeatResultSuccess)
+        assert heartbeat.current_workflow is None
+        assert heartbeat.current_workflow_id is None
+        with pytest.raises(engine.context_manager.NoActiveWorkflowError):
+            engine.context_manager.get_current_workflow_id()
+
+
+class TestWorkerMirror:
+    """A worker's mirror of its orchestrator's workflow is not an open workflow."""
+
+    PEER_ID = "00000000000000000000000000000abc"
+
+    @pytest.fixture(autouse=True)
+    def _clear_mirror(self, engine: Engine) -> Generator[None, None, None]:
+        yield
+        if engine.open_workflows.sole_workflow_or_none() is not None:
+            engine.context_manager._mirror = None
+            return
+        engine.context_manager.mirror_workflow_context(None, None, None, None)
+
+    def test_the_mirror_is_the_context_but_not_an_open_workflow(self, engine: Engine) -> None:
+        engine.context_manager.mirror_workflow_context(self.PEER_ID, "peer", None, None)
+
+        assert engine.context_manager.get_current_workflow_id() == self.PEER_ID
+        assert engine.context_manager.get_current_workflow_name() == f"unsaved:{self.PEER_ID}"
+        assert engine.open_workflows.sole_workflow_or_none() is None
+        assert not engine.workflow_registry.is_open(self.PEER_ID)
+
+    def test_node_code_on_a_worker_can_enter_a_node_context(self, engine: Engine) -> None:
+        engine.context_manager.mirror_workflow_context(self.PEER_ID, "peer", None, None)
+        flow = MagicMock(name="flow")
+        node = MagicMock(name="node")
+
+        with engine.context_manager.flow(flow), engine.context_manager.node(node):
+            assert engine.context_manager.get_current_node() is node
+
+        assert not engine.context_manager.has_current_flow()
+
+    def test_a_worker_mirroring_a_workflow_opens_none(self, engine: Engine) -> None:
+        engine.context_manager.mirror_workflow_context(self.PEER_ID, "peer", None, None)
+        local = engine.workflow_registry.register_unsaved("local")
+
+        with pytest.raises(engine.context_manager.WorkflowAlreadyOpenError):
+            engine.context_manager.push_workflow(workflow_id=local.workflow_id)
+        with pytest.raises(engine.context_manager.EmptyStackError):
+            engine.context_manager.pop_workflow()
+
+        assert engine.open_workflows.sole_workflow_or_none() is None
+        assert engine.context_manager.get_current_workflow_id() == self.PEER_ID
+
+    def test_an_engine_with_a_workflow_open_mirrors_none(self, engine: Engine) -> None:
+        workflow = push_unsaved_workflow(engine)
+
+        with pytest.raises(engine.context_manager.WorkflowContextError, match="a workflow is open"):
+            engine.context_manager.mirror_workflow_context(self.PEER_ID, "peer", None, None)
+
+        assert engine.context_manager.get_current_workflow_id() == workflow.workflow_id
+
+    def test_an_open_workflow_and_a_mirror_at_once_is_never_read_as_either(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        engine.context_manager._mirror = MirroredWorkflowContext(self.PEER_ID)
+
+        with pytest.raises(engine.context_manager.WorkflowContextError, match="mirrored"):
+            engine.context_manager.has_current_workflow()
+        with pytest.raises(engine.context_manager.WorkflowContextError, match="mirrored"):
+            engine.context_manager.has_current_flow()
+
+
+class TestContextOnTheRuntime:
+    def test_a_flow_entered_through_the_front_is_on_the_open_workflows_context(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        flow = MagicMock(name="flow")
+
+        with engine.context_manager.flow(flow):
+            assert engine.open_workflows.sole_workflow().context.get_current_flow() is flow
+            assert engine.context_manager.get_current_flow() is flow
+
+        assert not engine.open_workflows.sole_workflow().context.has_current_flow()
+
+    def test_the_context_does_not_survive_closing_the_workflow(self, engine: Engine) -> None:
+        workflow = push_unsaved_workflow(engine)
+        engine.context_manager.push_flow(MagicMock(name="flow"))
+
+        engine.context_manager.pop_workflow()
+        engine.context_manager.push_workflow(workflow_id=workflow.workflow_id)
+
+        assert not engine.context_manager.has_current_flow()
+
+    def test_reads_find_no_flow_with_no_workflow_open(self, engine: Engine) -> None:
+        assert not engine.context_manager.has_current_flow()
+        assert not engine.context_manager.has_current_node()
+        with pytest.raises(engine.context_manager.NoActiveFlowError):
+            engine.context_manager.get_current_flow()
+        with pytest.raises(engine.context_manager.NoActiveWorkflowError):
+            engine.context_manager.flow(MagicMock(name="flow"))
+
+
 class TestCloseWorkflowState:
     @pytest.mark.asyncio
     async def test_cancels_the_running_flow_before_tearing_down(self, engine: Engine) -> None:
         push_unsaved_workflow(engine)
         calls: list[str] = []
-        clear_top_entry = engine._clear_top_workflow_entry
+        tear_down_open_workflow = engine._tear_down_open_workflow
 
         def record_teardown() -> None:
             calls.append("teardown")
-            clear_top_entry()
+            tear_down_open_workflow()
 
         with (
             patch.object(
@@ -201,7 +427,7 @@ class TestCloseWorkflowState:
                 "cancel_running_flow_before_teardown",
                 AsyncMock(side_effect=lambda: calls.append("cancel")),
             ),
-            patch.object(engine, "_clear_top_workflow_entry", side_effect=record_teardown),
+            patch.object(engine, "_tear_down_open_workflow", side_effect=record_teardown),
             patch.object(
                 engine.worker_manager,
                 "broadcast_local_object_teardown",
@@ -213,9 +439,8 @@ class TestCloseWorkflowState:
         assert calls == ["cancel", "teardown", "broadcast"]
 
     @pytest.mark.asyncio
-    async def test_pops_every_entry_and_leaves_no_workflow_open(self, engine: Engine) -> None:
-        push_unsaved_workflow(engine, "outer")
-        push_unsaved_workflow(engine, "inner")
+    async def test_leaves_no_workflow_open(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
 
         await engine.close_workflow_state(engine.open_workflows.sole_workflow())
 
@@ -227,7 +452,7 @@ class TestCloseWorkflowState:
         push_unsaved_workflow(engine)
 
         with (
-            patch.object(engine, "_clear_top_workflow_entry", side_effect=RuntimeError("teardown blew up")),
+            patch.object(engine, "_tear_down_open_workflow", side_effect=RuntimeError("teardown blew up")),
             patch.object(engine.worker_manager, "broadcast_local_object_teardown", AsyncMock()) as broadcast,
             pytest.raises(RuntimeError, match="teardown blew up"),
         ):
@@ -347,7 +572,7 @@ class TestCloseWorkflowState:
         flow_manager = engine.flow_manager
         calls: list[str] = []
         running = [True]
-        clear_top_entry = engine._clear_top_workflow_entry
+        tear_down_open_workflow = engine._tear_down_open_workflow
 
         async def cancel_flow_run() -> None:
             await asyncio.sleep(0)
@@ -356,12 +581,12 @@ class TestCloseWorkflowState:
 
         def record_teardown() -> None:
             calls.append("teardown")
-            clear_top_entry()
+            tear_down_open_workflow()
 
         with (
             patch.object(flow_manager, "check_for_existing_running_flow", side_effect=lambda: running[0]),
             patch.object(flow_manager, "cancel_flow_run", side_effect=cancel_flow_run),
-            patch.object(engine, "_clear_top_workflow_entry", side_effect=record_teardown),
+            patch.object(engine, "_tear_down_open_workflow", side_effect=record_teardown),
         ):
             result = engine.handle_request(DeleteWorkflowRequest(workflow_id=workflow.workflow_id))
 

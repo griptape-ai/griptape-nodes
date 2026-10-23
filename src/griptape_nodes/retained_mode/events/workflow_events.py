@@ -142,10 +142,11 @@ class RunWorkflowFromRegistryRequest(RequestPayload):
 
     Args:
         workflow_name: Deprecated: the workflow's registry name. Send workflow_id instead.
-        run_with_clean_slate: Whether to start with a clean state (default: True)
+        run_with_clean_slate: Whether to clear the open workflow first (default: True). With False, the
+            request fails while a workflow is open.
         workflow_id: Permanent id of the workflow to run. Give this or workflow_name, not both.
 
-    Results: RunWorkflowFromRegistryResultSuccess | RunWorkflowFromRegistryResultFailure (workflow not found, execution error)
+    Results: RunWorkflowFromRegistryResultSuccess | RunWorkflowFromRegistryResultFailure (workflow not found, a workflow already open without a clean slate, execution error)
     """
 
     workflow_name: str | None = None

@@ -1739,6 +1739,24 @@ class TestLibraryWorkflowsOpenAsUnsavedCopies:
         assert second.workflow_id not in (first.workflow_id, LIBRARY_ID)
         assert second.seeded_from_workflow_id == LIBRARY_ID
 
+    def test_a_run_without_a_clean_slate_while_one_is_open_is_refused(
+        self, project_engine: Engine, tmp_path: Path
+    ) -> None:
+        """Workflows do not nest: the open one stays, and no copy is registered."""
+        _library_workflow(project_engine, tmp_path / "library")
+        open_id = _open_new_workflow(project_engine, "Open")
+        registered_before = set(project_engine.workflow_registry._by_id)
+
+        refused = _run(
+            project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID, run_with_clean_slate=False)
+        )
+
+        assert isinstance(refused, RunWorkflowFromRegistryResultFailure)
+        assert "Clear the open workflow first" in str(refused.result_details)
+        assert project_engine.context_manager.get_current_workflow_id() == open_id
+        assert project_engine.context_manager.has_current_flow()
+        assert set(project_engine.workflow_registry._by_id) == registered_before
+
     def test_a_failed_open_leaves_no_copy_behind(self, project_engine: Engine, tmp_path: Path) -> None:
         # A file with only a header builds no flow, so running it fails.
         library_file = _write_workflow_file(tmp_path / "library" / "broken.py", workflow_id=LIBRARY_ID)

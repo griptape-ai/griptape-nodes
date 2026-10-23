@@ -52,7 +52,7 @@ class TestClearAllObjectStateCancelsFirst:
         flow = RunningFlowStub(calls)
         flow_manager = engine.flow_manager
         reset = flow_manager.reset_global_execution_state
-        clear_top_entry = engine._clear_top_workflow_entry
+        tear_down_open_workflow = engine._tear_down_open_workflow
 
         def record_reset() -> None:
             calls.append("reset")
@@ -60,7 +60,7 @@ class TestClearAllObjectStateCancelsFirst:
 
         def record_teardown() -> None:
             calls.append("teardown")
-            clear_top_entry()
+            tear_down_open_workflow()
 
         with (
             patch.object(
@@ -68,7 +68,7 @@ class TestClearAllObjectStateCancelsFirst:
             ),
             patch.object(flow_manager, "cancel_flow_run", side_effect=flow.cancel_flow_run),
             patch.object(flow_manager, "reset_global_execution_state", side_effect=record_reset),
-            patch.object(engine, "_clear_top_workflow_entry", side_effect=record_teardown),
+            patch.object(engine, "_tear_down_open_workflow", side_effect=record_teardown),
         ):
             result = engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
 

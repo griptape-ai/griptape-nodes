@@ -608,7 +608,7 @@ class TestMirrorWorkflowContext:
         workflow_file = tmp_path / "shared.py"
         workflow_file.write_text("print('body')\n", encoding="utf-8")
         engine.workflow_registry.register_file(workflow_file, _metadata("shared", self.LOCAL_ID), listed=False)
-        engine.context_manager.push_workflow(workflow_id=self.LOCAL_ID)
+        engine.context_manager.mirror_workflow_context(self.LOCAL_ID, "shared", str(workflow_file), None)
 
         engine.context_manager.mirror_workflow_context(self.PEER_ID, "shared", str(workflow_file), None)
 

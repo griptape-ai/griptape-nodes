@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
 
@@ -47,7 +48,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.retained_mode.events.project_events import ActivateWorkspaceProjectRequest
 from griptape_nodes.servers.static import ORCHESTRATOR_STATIC_SERVER_BASE_URL_ENV
 from griptape_nodes.testing.libraries import WORKER_BEHAVIOR_LIBRARY_NAME, materialize_worker_behavior_library
-from tests.workflow_context import push_unsaved_workflow
+from tests.workflow_context import as_worker_process, push_unsaved_workflow
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -97,13 +98,16 @@ def _make_in_flow(node_type: str, name: str) -> BaseNode:
 
 
 async def _execute(node_type: str, name: str, **parameter_values: object) -> ExecuteNodeResultSuccess:
-    result = await current_engine().ahandle_request(
-        ExecuteNodeRequest(
-            node_name=name,
-            parameter_values=dict(parameter_values),
-            node_metadata={"node_type": node_type, "library": WORKER_BEHAVIOR_LIBRARY_NAME},
-        )
+    request = ExecuteNodeRequest(
+        node_name=name,
+        parameter_values=dict(parameter_values),
+        node_metadata={"node_type": node_type, "library": WORKER_BEHAVIOR_LIBRARY_NAME},
     )
+    if current_engine().library_manager.is_worker:
+        with as_worker_process(current_engine()):
+            result = await current_engine().ahandle_request(request)
+    else:
+        result = await current_engine().ahandle_request(request)
     assert isinstance(result, ExecuteNodeResultSuccess), getattr(result, "result_details", result)
     return result
 
@@ -516,15 +520,8 @@ class TestUnshippableOutputsAreKept:
         current_engine().library_manager._is_worker = True
         _make("UnshippableOutputNode", "Unshippable")
 
-        result = await current_engine().ahandle_request(
-            ExecuteNodeRequest(
-                node_name="Unshippable",
-                parameter_values={},
-                node_metadata={"node_type": "UnshippableOutputNode", "library": WORKER_BEHAVIOR_LIBRARY_NAME},
-            )
-        )
+        result = await _execute("UnshippableOutputNode", "Unshippable")
 
-        assert isinstance(result, ExecuteNodeResultSuccess), result.result_details
         sent = result.parameter_output_values["live_handle"]
         assert is_reference(sent), sent
         # The object itself never left. A fresh transient node runs the execution, so the entry belongs to
@@ -642,8 +639,18 @@ class TestBinaryFileWritesFromAWorker:
         current_engine().library_manager._is_worker = True
         registered = _make("EditorBehaviorNode", "RequestPathNode")
 
-        result = await _execute("EditorBehaviorNode", "RequestPathNode", mode="expand")
+        # One engine plays both roles, and the hook's request must reach the orchestrator's node, so
+        # the open workflow stays and stands in for the worker's mirror of it.
+        with patch.object(current_engine().context_manager, "mirror_workflow_context"):
+            result = await current_engine().ahandle_request(
+                ExecuteNodeRequest(
+                    node_name="RequestPathNode",
+                    parameter_values={"mode": "expand"},
+                    node_metadata={"node_type": "EditorBehaviorNode", "library": WORKER_BEHAVIOR_LIBRARY_NAME},
+                )
+            )
 
+        assert isinstance(result, ExecuteNodeResultSuccess), result.result_details
         assert result.parameter_output_values["dynamic_visible_in_process"] is False
         assert registered.get_parameter_by_name("dynamic_extra") is not None
 

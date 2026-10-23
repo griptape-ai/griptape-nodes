@@ -56,7 +56,7 @@ class WorkflowFileOperations(EngineScoped):
     @handles(DeleteWorkflowRequest)
     async def on_delete_workflows_request(self, request: DeleteWorkflowRequest) -> ResultPayload:
         # If the deleted workflow is the active one, tear down its flows/nodes and
-        # pop the context stack BEFORE removing the registry entry, so downstream
+        # close it BEFORE removing the registry entry, so downstream
         # `DeleteFlowRequest` calls can still push a flow context (they require an
         # active workflow). Non-active deletes (e.g. published-workflow subprocess
         # cleanup) skip this and go straight to the registry/file cleanup.

@@ -3014,10 +3014,10 @@ class ProjectManager(EngineScoped):
         None.
         """
         # Ahead of refresh_workflow_registry, which deletes the entry this teardown resolves
-        # paths through, and ahead of the reload below, whose own clear then finds an empty
-        # stack and no-ops.
+        # paths through, and ahead of the reload below, whose own clear then finds no open
+        # workflow and no-ops.
         #
-        # Both failures below report altered_workflow_state: the teardown pops the context
+        # Both failures below report altered_workflow_state: the teardown closes the workflow
         # before the checks that can fail it, so the workflow is gone either way. A failure
         # that claimed otherwise would leave the client showing a workflow the engine has
         # dropped, which is the state this teardown exists to prevent.

@@ -378,16 +378,17 @@ class TestExecuteNodeWorkerPathStateless:
         """The worker cannot open the orchestrator's workflow; the node fails with its own error, not an engine one."""
         from griptape_nodes.node_library.workflow_registry import _WorkflowRegistry
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
+        from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowSet
 
         mock_node = _make_mock_node()
         lib_mgr = _make_mock_library_manager(is_worker=True)
         node_manager = _make_node_manager(object_manager=_make_mock_obj_mgr(), library_manager=lib_mgr)
         engine = cast("MagicMock", node_manager.engine)
         engine.config_manager.workspace_path = tmp_path
-        context_manager = ContextManager(event_manager=MagicMock(), engine=engine)
-        engine.context_manager = context_manager
+        engine.open_workflows = OpenWorkflowSet()
+        engine.context_manager = ContextManager(event_manager=MagicMock(), engine=engine)
         engine.workflow_registry = _WorkflowRegistry(
-            engine.config_manager, is_workflow_open=context_manager.is_workflow_in_context
+            engine.config_manager, is_workflow_open=engine.open_workflows.is_open
         )
         moved_away = tmp_path / "shots" / "lighting.py"
 
