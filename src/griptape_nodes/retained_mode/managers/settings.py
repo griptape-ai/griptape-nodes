@@ -448,11 +448,11 @@ class DistributedExecutionSettings(BaseModel):
     libraries: dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "Which machine runs each library's nodes: a map of library name to that machine's engine ID, "
+            "Which engine runs each library's nodes: a map of library name to that engine's ID, "
             'for example {"Griptape Nodes Diffusers Library": "3f2c8e1a-5b7d-4c9e-a0f1-2b3c4d5e6f70"}. '
-            "This engine finds that machine in the engine registry and connects directly when it publishes "
+            "This engine finds that engine in the engine registry and connects directly when it publishes "
             "transports.websocket_direct.advertise_url, or through Griptape Cloud when both are connected "
-            "to it. Libraries not listed run on this machine. Set it in a config file: library names are "
+            "to it. Libraries not listed run on this engine. Set it in a config file: library names are "
             "case-sensitive and an environment variable's name is lowercased."
         ),
     )

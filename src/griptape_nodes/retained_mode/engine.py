@@ -44,7 +44,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
-from griptape_nodes.retained_mode.managers.machine_links import MachineNotFoundError
+from griptape_nodes.retained_mode.managers.engine_links import EngineNotFoundError
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.utils.version_utils import engine_version
 
@@ -67,10 +67,10 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.context_manager import ContextManager
     from griptape_nodes.retained_mode.managers.diagnostics_manager import DiagnosticsManager
     from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
+    from griptape_nodes.retained_mode.managers.engine_links import EngineLinks
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
-    from griptape_nodes.retained_mode.managers.machine_links import EngineLinks
     from griptape_nodes.retained_mode.managers.manifest_manager import ManifestManager
     from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
     from griptape_nodes.retained_mode.managers.model_manager import ModelManager
@@ -261,7 +261,7 @@ class Engine:
         self._manifest_manager = ManifestManager(self._event_manager, engine=self)
         self._budget_manager = BudgetManager(self._event_manager, engine=self)
         self._diagnostics_manager = DiagnosticsManager(self._event_manager, engine=self)
-        # Attached by the app; None while this engine cannot reach engines on other machines.
+        # Attached by the app; None while this engine cannot reach other engines.
         self._engine_links: EngineLinks | None = None
         self._lifecycle = EngineLifecycle(self)
         self._event_manager.add_listener_to_app_event(
@@ -563,7 +563,7 @@ class Engine:
 
     @property
     def can_reach_other_engines(self) -> bool:
-        """Whether the app gave this engine a way to reach engines on other machines."""
+        """Whether the app gave this engine a way to reach other engines."""
         return self._engine_links is not None
 
     def attach_engine_links(self, engine_links: EngineLinks) -> None:
@@ -577,23 +577,23 @@ class Engine:
         The app finds that engine and chooses how to reach it.
 
         Raises:
-            MachineNotFoundError: The engine cannot be reached, did not answer within `timeout_s`,
+            EngineNotFoundError: The engine cannot be reached, did not answer within `timeout_s`,
                 or this engine has no way to reach other engines.
         """
         if self._engine_links is None:
-            msg = f"Attempted to reach engine {engine_id}. Failed because this engine has no connections to other machines."
-            raise MachineNotFoundError(msg)
+            msg = f"Attempted to reach engine {engine_id}. Failed because this engine has no connections to other engines."
+            raise EngineNotFoundError(msg)
         return await self._engine_links.request(engine_id, request, timeout_s=timeout_s)
 
     def hosted_worker_environment(self, engine_id: str) -> dict[str, str]:
         """The environment a worker this engine runs for `engine_id` needs to reach that engine.
 
         Raises:
-            MachineNotFoundError: This engine has no way to reach other engines.
+            EngineNotFoundError: This engine has no way to reach other engines.
         """
         if self._engine_links is None:
-            msg = f"Attempted to start a worker for engine {engine_id}. Failed because this engine has no connections to other machines."
-            raise MachineNotFoundError(msg)
+            msg = f"Attempted to start a worker for engine {engine_id}. Failed because this engine has no connections to other engines."
+            raise EngineNotFoundError(msg)
         return self._engine_links.hosted_worker_environment(engine_id)
 
     def clear_current_workflow_data(self) -> None:  # noqa: C901

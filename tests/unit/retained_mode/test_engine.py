@@ -23,7 +23,7 @@ from griptape_nodes.retained_mode.engine import (
 from griptape_nodes.retained_mode.events.base_events import ResultPayloadFailure
 from griptape_nodes.retained_mode.events.secrets_events import SetSecretValueRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.machine_links import MachineNotFoundError
+from griptape_nodes.retained_mode.managers.engine_links import EngineNotFoundError
 
 
 def _engine_scoped_children(path: str, value: object) -> Iterator[tuple[str, EngineScoped]]:
@@ -353,7 +353,7 @@ class TestRequestingAnotherEngine:
     async def test_without_links_a_request_fails_saying_so(self) -> None:
         engine = Engine()
 
-        with pytest.raises(MachineNotFoundError, match="no connections to other machines"):
+        with pytest.raises(EngineNotFoundError, match="no connections to other engines"):
             await engine.request("gpu-01", SetSecretValueRequest(key="k", value="v"), timeout_s=1.0)
 
         assert not engine.can_reach_other_engines

@@ -37,7 +37,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointDenial,
     CheckpointFailure,
 )
-from griptape_nodes.retained_mode.request_handlers import handled_request_types
+from griptape_nodes.retained_mode.request_handlers import RequiredSender, handled_request_types, required_senders
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 if TYPE_CHECKING:
@@ -176,6 +176,20 @@ def current_request_sender() -> RequestSender | None:
     return _active_request_sender.get()
 
 
+def require_request_sender() -> RequestSender:
+    """Return the engine that sent the request being dispatched, in a handler marked to require one.
+
+    Raises:
+        RuntimeError: No other engine sent the request, so the handler was not marked with
+            `@handles(..., sender=...)`.
+    """
+    sender = _active_request_sender.get()
+    if sender is None:
+        msg = "require_request_sender() was called for a request no other engine sent; mark its handler with @handles(..., sender=...)."
+        raise RuntimeError(msg)
+    return sender
+
+
 def _sender_of(result_context: ResultContext) -> RequestSender | None:
     engine_id = result_context.get("sender_engine_id")
     if engine_id is None:
@@ -210,6 +224,8 @@ class EventManager(EngineScoped):
         super().__init__(engine)
         # Dictionary to store the SPECIFIC manager for each request type
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
+        # The request types whose handler runs only for requests another engine sent. See `@handles`.
+        self._required_senders: dict[type[RequestPayload], RequiredSender] = {}
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
         # Libraries subscribe while they load, which runs in asyncio.to_thread, while a broadcast
@@ -850,30 +866,39 @@ class EventManager(EngineScoped):
         self,
         request_type: type[RP],
         callback: Callable[[RP], ResultPayload] | Callable[[RP], Awaitable[ResultPayload]],
+        *,
+        sender: RequiredSender | None = None,
     ) -> None:
         """Assign a manager to handle a request.
 
         Args:
             request_type: The type of request to assign the manager to
             callback: Function to be called when event occurs
+            sender: Who must have sent the request for `callback` to run, or None for anyone.
         """
         existing_manager = self._request_type_to_manager.get(request_type)
         if existing_manager is not None:
             msg = f"Attempted to assign an event of type {request_type} to manager {callback.__name__}, but that request is already assigned to manager {existing_manager.__name__}."
             raise ValueError(msg)
         self._request_type_to_manager[request_type] = callback
+        if sender is not None:
+            self._required_senders[request_type] = sender
 
     def register_request_handlers(self, owner: object) -> None:
         """Assign each `@handles` method on `owner`. An unmarked override keeps its parent's marks."""
         marks: dict[str, tuple[type[RequestPayload], ...]] = {}
+        senders: dict[str, dict[type[RequestPayload], RequiredSender]] = {}
         for klass in reversed(type(owner).__mro__):
             for name, attr in vars(klass).items():
                 request_types = handled_request_types(attr)
                 if request_types:
                     marks[name] = request_types
+                    senders[name] = required_senders(attr)
         for name, request_types in marks.items():
             for request_type in request_types:
-                self.assign_manager_to_request_type(request_type, getattr(owner, name))
+                self.assign_manager_to_request_type(
+                    request_type, getattr(owner, name), sender=senders[name].get(request_type)
+                )
 
     def configure_worker_forwarding(
         self,
@@ -1035,6 +1060,24 @@ class EventManager(EngineScoped):
             response_topic=result_context.get("response_topic"),
         )
 
+    def _refusal_for_sender(
+        self, request_type: type[RequestPayload], result_context: ResultContext
+    ) -> GenericResultFailure | None:
+        """Why a request's handler must not run, when it requires a sender the request did not come from."""
+        required = self._required_senders.get(request_type)
+        if required is None:
+            return None
+        sender = _sender_of(result_context)
+        if sender is not None and (required is RequiredSender.ENGINE or sender.session_id is not None):
+            return None
+        if required is RequiredSender.SESSION:
+            expected = "another engine's session"
+        else:
+            expected = "another engine"
+        return GenericResultFailure(
+            result_details=f"Attempted to handle a {request_type.__name__}. Failed because it did not come from {expected}."
+        )
+
     def remove_manager_from_request_type(self, request_type: type[RP]) -> None:
         """Unsubscribe the manager from the request of a specific type.
 
@@ -1043,6 +1086,7 @@ class EventManager(EngineScoped):
         """
         if request_type in self._request_type_to_manager:
             del self._request_type_to_manager[request_type]
+        self._required_senders.pop(request_type, None)
 
     def _override_result_log_level(self, result: ResultPayload, level: int) -> None:
         """Override the log level on all result details.
@@ -1200,6 +1244,10 @@ class EventManager(EngineScoped):
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
+        refusal = self._refusal_for_sender(request_type, result_context)
+        if refusal is not None:
+            return self._handle_request_core(request, refusal, context=result_context)
+
         # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
         # the manager callback runs.
         short_circuit = self._run_pre_dispatch_hooks(request, result_context)
@@ -1256,6 +1304,10 @@ class EventManager(EngineScoped):
         if not callback:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
+
+        refusal = self._refusal_for_sender(request_type, result_context)
+        if refusal is not None:
+            return self._handle_request_core(request, refusal, context=result_context)
 
         # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
         # the manager callback runs.

@@ -48,7 +48,9 @@ from griptape_nodes.retained_mode.managers.event_manager import (
     ResultContext,
     current_request_sender,
     current_request_type,
+    require_request_sender,
 )
+from griptape_nodes.retained_mode.request_handlers import RequiredSender, handles
 
 
 class TestEventManagerBroadcasting:
@@ -1781,6 +1783,35 @@ class TestTheRequestSender:
 
         assert seen == [RequestSender(engine_id="artist", session_id="s1")]
         assert current_request_sender() is None
+
+    @pytest.mark.parametrize(
+        ("required", "context", "runs"),
+        [
+            (RequiredSender.ENGINE, {}, False),
+            (RequiredSender.ENGINE, {"sender_engine_id": "artist"}, True),
+            (RequiredSender.SESSION, {"sender_engine_id": "artist"}, False),
+            (RequiredSender.SESSION, {"sender_engine_id": "artist", "sender_session_id": "s1"}, True),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_a_handler_marked_with_a_sender_runs_only_for_requests_from_it(
+        self, required: RequiredSender, context: ResultContext, *, runs: bool
+    ) -> None:
+        handled: list[RequestSender] = []
+
+        class _Owner:
+            @handles(_ProbeRequest, sender=required)
+            async def handle(self, _request: _ProbeRequest) -> _ProbeResult:
+                handled.append(require_request_sender())
+                return _ProbeResult(result_details="ok")
+
+        event_manager = EventManager()
+        event_manager.register_request_handlers(_Owner())
+
+        result = await event_manager.ahandle_request(_ProbeRequest(), result_context=context)
+
+        assert bool(handled) == runs
+        assert result.succeeded() == runs
 
     @pytest.mark.asyncio
     async def test_a_request_no_engine_sent_has_no_sender(self) -> None:

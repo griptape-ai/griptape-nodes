@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -36,11 +36,11 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueResultSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.retained_mode.managers.event_manager import RequestSender, _active_request_sender
-from griptape_nodes.retained_mode.managers.machine_links import (
+from griptape_nodes.retained_mode.managers.engine_links import (
     DISTRIBUTED_EXECUTION_SCHEMA_VERSION,
-    MachineNotFoundError,
+    EngineNotFoundError,
 )
+from griptape_nodes.retained_mode.managers.event_manager import RequestSender, _active_request_sender
 from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 from griptape_nodes.retained_mode.managers.settings import DISTRIBUTED_EXECUTION_LIBRARIES_KEY
 from griptape_nodes.retained_mode.managers.worker_manager import (
@@ -2407,7 +2407,7 @@ class TestChallengeAllowanceRounding:
         assert worker_manager.unanswered_challenges_allowed == 3  # noqa: PLR2004
 
 
-_MACHINE = "gpu-01-engine-id"
+_HOST_ENGINE = "gpu-01-engine-id"
 _LIBRARY = "Heavy Library"
 _LICENSE = "artist-license"
 _ARTIST_ENGINE = "artist-engine-id"
@@ -2415,7 +2415,7 @@ _ARTIST_SESSION = "artist-sess"
 
 
 class _FakeEngineLinks:
-    """An in-process `EngineLinks` whose other engine answers like a machine that runs workers.
+    """An in-process `EngineLinks` whose other engine answers like an engine that runs workers.
 
     Each request succeeds unless `refuse` names its type, in which case it fails with that reason.
     `answers` queues results to return, per request type, ahead of the default answer, in the wire
@@ -2437,13 +2437,13 @@ class _FakeEngineLinks:
     def hosted_worker_environment(self, engine_id: str) -> dict[str, str]:
         self.worker_environment_asks.append(engine_id)
         if self.not_found is not None:
-            raise MachineNotFoundError(self.not_found)
+            raise EngineNotFoundError(self.not_found)
         return self.worker_environments.get(engine_id, {})
 
     async def request(self, engine_id: str, request: RequestPayload, *, timeout_s: float | None) -> ResultPayload:
         self.sent.append((engine_id, request, timeout_s))
         if self.not_found is not None:
-            raise MachineNotFoundError(self.not_found)
+            raise EngineNotFoundError(self.not_found)
         request_type = type(request).__name__
         self.arrived.setdefault(request_type, asyncio.Event()).set()
         if request_type in self.blocked:
@@ -2460,7 +2460,7 @@ class _FakeEngineLinks:
             )
         result: dict[str, object] = {"result_details": "ok"}
         if request_type == "RegisterSessionRequest":
-            result["engine_id"] = _MACHINE
+            result["engine_id"] = _HOST_ENGINE
         return _read_back({"result_type": request_type.replace("Request", "ResultSuccess"), "result": result})
 
     def on_link_lost(self, callback: Callable[[str], Awaitable[None]]) -> None:
@@ -2481,7 +2481,7 @@ def _read_back(raw: dict) -> ResultPayload:
 
 
 def _assign_libraries(worker_manager: WorkerManager, libraries: dict[str, str]) -> None:
-    """Assign libraries to machines in the distribution settings."""
+    """Assign libraries to engines in the distribution settings."""
     read_default = worker_manager.engine.config_manager.get_config_value.side_effect  # type: ignore[union-attr]
 
     def get_config_value(key: str, default: object = None, cast_type: type | None = None, **kwargs: object) -> object:
@@ -2492,9 +2492,9 @@ def _assign_libraries(worker_manager: WorkerManager, libraries: dict[str, str]) 
     worker_manager.engine.config_manager.get_config_value.side_effect = get_config_value  # type: ignore[union-attr]
 
 
-def _machine(worker_manager: WorkerManager, *, refuse: dict[str, str] | None = None) -> _FakeEngineLinks:
-    """Assign `_LIBRARY` to `_MACHINE` and attach links whose machine answers, refusing what `refuse` names."""
-    _assign_libraries(worker_manager, {_LIBRARY: _MACHINE})
+def _host_engine(worker_manager: WorkerManager, *, refuse: dict[str, str] | None = None) -> _FakeEngineLinks:
+    """Assign `_LIBRARY` to `_HOST_ENGINE` and attach links whose other engine answers, refusing what `refuse` names."""
+    _assign_libraries(worker_manager, {_LIBRARY: _HOST_ENGINE})
     engine = worker_manager.engine
     engine.secrets_manager.get_secret.return_value = _LICENSE  # type: ignore[union-attr]
     engine.library_manager.get_library_info_by_library_name.return_value = MagicMock(  # type: ignore[union-attr]
@@ -2509,15 +2509,17 @@ def _machine(worker_manager: WorkerManager, *, refuse: dict[str, str] | None = N
     return links
 
 
-async def _start_on_machine(worker_manager: WorkerManager, library_name: str = _LIBRARY) -> None:
+async def _start_on_host_engine(worker_manager: WorkerManager, library_name: str = _LIBRARY) -> None:
     with patch.object(worker_manager, "_orchestrator_static_server_base_url", new=AsyncMock(return_value=None)):
         await worker_manager.handle_start_worker_request(worker_events.StartWorkerRequest(library_name=library_name))
         await worker_manager._requested_spawns[library_name]
 
 
 def _started_worker_id(links: _FakeEngineLinks) -> str:
-    """The engine ID the last StartWorkerRequest named."""
-    start = cast("worker_events.StartWorkerRequest", links.sent_of(worker_events.StartWorkerRequest)[-1])
+    """The engine ID the last StartWorkerForEngineRequest named."""
+    start = cast(
+        "worker_events.StartWorkerForEngineRequest", links.sent_of(worker_events.StartWorkerForEngineRequest)[-1]
+    )
     return cast("str", start.worker_engine_id)
 
 
@@ -2534,51 +2536,51 @@ def _worker_proc_mock(returncode: int = 0, exits: asyncio.Event | None = None) -
     return proc
 
 
-class TestStartingAWorkerOnAnotherMachine:
+class TestStartingAWorkerOnAnotherEngine:
     @pytest.mark.asyncio
-    async def test_the_session_registers_then_asks_the_machine_to_start_a_worker_named_here(
+    async def test_the_session_registers_then_asks_the_engine_to_start_a_worker_named_here(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager)
+        links = _host_engine(worker_manager)
 
         with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as spawn:
-            await _start_on_machine(worker_manager)
+            await _start_on_host_engine(worker_manager)
 
         spawn.assert_not_awaited()
         registration, start = links.sent
-        assert registration[0] == _MACHINE
+        assert registration[0] == _HOST_ENGINE
         assert isinstance(registration[1], worker_events.RegisterSessionRequest)
         assert registration[1].engine_version == engine_version
         assert registration[1].library_versions == {_LIBRARY: "1.0.0"}
         assert registration[1].license_token == _LICENSE
         # The fixture's secrets answer every name with _LICENSE, the API key included.
         assert registration[1].api_key == _LICENSE
-        assert start[0] == _MACHINE
-        assert isinstance(start[1], worker_events.StartWorkerRequest)
+        assert start[0] == _HOST_ENGINE
+        assert isinstance(start[1], worker_events.StartWorkerForEngineRequest)
         assert _started_worker_id(links) in worker_manager._remote_starts
         assert {timeout_s for _engine_id, _request, timeout_s in links.sent} == {60.0}
         assert worker_manager.worker_unavailable_reason(_LIBRARY) is None
 
     @pytest.mark.asyncio
-    async def test_a_start_the_machine_answered_counts_as_starting_until_the_worker_registers(
+    async def test_a_start_the_engine_answered_counts_as_starting_until_the_worker_registers(
         self, worker_manager: WorkerManager
     ) -> None:
         """A second start in that gap would replace the readiness gate a run may already wait on."""
-        links = _machine(worker_manager)
-        await _start_on_machine(worker_manager)
+        links = _host_engine(worker_manager)
+        await _start_on_host_engine(worker_manager)
 
         assert worker_manager.is_worker_running_or_starting(_LIBRARY)
         await worker_manager.handle_start_worker_request(worker_events.StartWorkerRequest(library_name=_LIBRARY))
 
-        assert links.sent_types() == ["RegisterSessionRequest", "StartWorkerRequest"]
+        assert links.sent_types() == ["RegisterSessionRequest", "StartWorkerForEngineRequest"]
 
     @pytest.mark.asyncio
     async def test_a_refused_registration_makes_the_library_unavailable_with_the_reason(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager, refuse={"RegisterSessionRequest": "engine version 9.9.9 differs"})
+        links = _host_engine(worker_manager, refuse={"RegisterSessionRequest": "engine version 9.9.9 differs"})
 
-        await _start_on_machine(worker_manager)
+        await _start_on_host_engine(worker_manager)
 
         assert links.sent_types() == ["RegisterSessionRequest"]
         reason = worker_manager.worker_unavailable_reason(_LIBRARY)
@@ -2588,34 +2590,34 @@ class TestStartingAWorkerOnAnotherMachine:
 
     @pytest.mark.asyncio
     async def test_a_refused_registration_is_asked_again_by_the_next_start(self, worker_manager: WorkerManager) -> None:
-        links = _machine(worker_manager, refuse={"RegisterSessionRequest": "the machine was busy restarting"})
-        await _start_on_machine(worker_manager)
+        links = _host_engine(worker_manager, refuse={"RegisterSessionRequest": "the engine was busy restarting"})
+        await _start_on_host_engine(worker_manager)
         links.refuse.clear()
 
-        await _start_on_machine(worker_manager)
+        await _start_on_host_engine(worker_manager)
 
-        assert links.sent_types() == ["RegisterSessionRequest", "RegisterSessionRequest", "StartWorkerRequest"]
+        assert links.sent_types() == ["RegisterSessionRequest", "RegisterSessionRequest", "StartWorkerForEngineRequest"]
 
     @pytest.mark.asyncio
-    async def test_a_machine_that_forgot_this_session_is_registered_with_again(
+    async def test_a_engine_that_forgot_this_session_is_registered_with_again(
         self, worker_manager: WorkerManager
     ) -> None:
-        """A machine that restarted no longer knows the session its earlier registration accepted."""
-        links = _machine(worker_manager)
-        links.answers["StartWorkerRequest"] = [
+        """An engine that restarted no longer knows the session its earlier registration accepted."""
+        links = _host_engine(worker_manager)
+        links.answers["StartWorkerForEngineRequest"] = [
             {
-                "result_type": "StartWorkerResultFailure",
+                "result_type": "StartWorkerForEngineResultFailure",
                 "result": {"result_details": "never registered", "session_unknown": True},
             }
         ]
 
-        await _start_on_machine(worker_manager)
+        await _start_on_host_engine(worker_manager)
 
         assert links.sent_types() == [
             "RegisterSessionRequest",
-            "StartWorkerRequest",
+            "StartWorkerForEngineRequest",
             "RegisterSessionRequest",
-            "StartWorkerRequest",
+            "StartWorkerForEngineRequest",
         ]
         assert worker_manager.worker_unavailable_reason(_LIBRARY) is None
         assert list(worker_manager._remote_starts) == [_started_worker_id(links)]
@@ -2624,9 +2626,9 @@ class TestStartingAWorkerOnAnotherMachine:
     async def test_a_refused_start_makes_the_library_unavailable_and_forgets_the_worker(
         self, worker_manager: WorkerManager
     ) -> None:
-        _machine(worker_manager, refuse={"StartWorkerRequest": "no room"})
+        _host_engine(worker_manager, refuse={"StartWorkerForEngineRequest": "no room"})
 
-        await _start_on_machine(worker_manager)
+        await _start_on_host_engine(worker_manager)
 
         reason = worker_manager.worker_unavailable_reason(_LIBRARY)
         assert reason is not None
@@ -2635,37 +2637,37 @@ class TestStartingAWorkerOnAnotherMachine:
         assert not worker_manager.is_worker_running_or_starting(_LIBRARY)
 
     @pytest.mark.asyncio
-    async def test_a_machine_that_cannot_be_found_makes_the_library_unavailable_and_is_asked_again(
+    async def test_a_engine_that_cannot_be_found_makes_the_library_unavailable_and_is_asked_again(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager)
+        links = _host_engine(worker_manager)
         links.not_found = "gpu-01 is not running."
 
-        await _start_on_machine(worker_manager)
+        await _start_on_host_engine(worker_manager)
 
         assert worker_manager.worker_unavailable_reason(_LIBRARY) == "gpu-01 is not running."
         assert links.sent_types() == ["RegisterSessionRequest"]
-        assert worker_manager._machine_registrations == {}
+        assert worker_manager._engine_registrations == {}
 
     @pytest.mark.asyncio
-    async def test_a_machine_that_stops_answering_a_start_makes_the_library_unavailable(
+    async def test_a_engine_that_stops_answering_a_start_makes_the_library_unavailable(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager)
+        links = _host_engine(worker_manager)
         with patch.object(worker_manager, "_orchestrator_static_server_base_url", new=AsyncMock(return_value=None)):
-            await worker_manager._register_with_machine(_MACHINE, _SESSION, _LIBRARY)
+            await worker_manager._register_with_engine(_HOST_ENGINE, _SESSION, _LIBRARY)
         links.not_found = "gpu-01 did not answer within 60 seconds."
 
-        await _start_on_machine(worker_manager)
+        await _start_on_host_engine(worker_manager)
 
         assert worker_manager.worker_unavailable_reason(_LIBRARY) == "gpu-01 did not answer within 60 seconds."
         assert worker_manager._remote_starts == {}
 
     @pytest.mark.asyncio
-    async def test_a_machine_that_answers_as_another_engine_is_refused_naming_it(
+    async def test_a_engine_that_answers_as_another_engine_is_refused_naming_it(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager)
+        links = _host_engine(worker_manager)
         links.answers["RegisterSessionRequest"] = [
             {
                 "result_type": "RegisterSessionResultSuccess",
@@ -2673,7 +2675,7 @@ class TestStartingAWorkerOnAnotherMachine:
             }
         ]
 
-        await _start_on_machine(worker_manager)
+        await _start_on_host_engine(worker_manager)
 
         reason = worker_manager.worker_unavailable_reason(_LIBRARY)
         assert reason is not None
@@ -2681,51 +2683,55 @@ class TestStartingAWorkerOnAnotherMachine:
         assert links.sent_types() == ["RegisterSessionRequest"]
 
     @pytest.mark.asyncio
-    async def test_two_libraries_on_one_machine_register_with_it_once(self, worker_manager: WorkerManager) -> None:
-        links = _machine(worker_manager)
-        _assign_libraries(worker_manager, {_LIBRARY: _MACHINE, "Other": _MACHINE})
+    async def test_two_libraries_on_one_engine_register_with_it_once(self, worker_manager: WorkerManager) -> None:
+        links = _host_engine(worker_manager)
+        _assign_libraries(worker_manager, {_LIBRARY: _HOST_ENGINE, "Other": _HOST_ENGINE})
 
-        await _start_on_machine(worker_manager, _LIBRARY)
-        await _start_on_machine(worker_manager, "Other")
+        await _start_on_host_engine(worker_manager, _LIBRARY)
+        await _start_on_host_engine(worker_manager, "Other")
 
-        assert links.sent_types() == ["RegisterSessionRequest", "StartWorkerRequest", "StartWorkerRequest"]
+        assert links.sent_types() == [
+            "RegisterSessionRequest",
+            "StartWorkerForEngineRequest",
+            "StartWorkerForEngineRequest",
+        ]
 
     @pytest.mark.asyncio
-    async def test_without_machine_links_the_library_is_unavailable_rather_than_run_here(
+    async def test_without_engine_links_the_library_is_unavailable_rather_than_run_here(
         self, worker_manager: WorkerManager
     ) -> None:
         """Running it here would run it in the one place it was assigned away from."""
-        _assign_libraries(worker_manager, {_LIBRARY: _MACHINE})
+        _assign_libraries(worker_manager, {_LIBRARY: _HOST_ENGINE})
 
         with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as spawn:
-            await _start_on_machine(worker_manager)
+            await _start_on_host_engine(worker_manager)
 
         spawn.assert_not_awaited()
         reason = worker_manager.worker_unavailable_reason(_LIBRARY)
         assert reason is not None
-        assert _MACHINE in reason
+        assert _HOST_ENGINE in reason
 
     @pytest.mark.asyncio
     async def test_a_library_with_no_assignment_still_spawns_here(self, worker_manager: WorkerManager) -> None:
-        links = _machine(worker_manager)
+        links = _host_engine(worker_manager)
 
         with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as spawn:
-            await _start_on_machine(worker_manager, "Local Lib")
+            await _start_on_host_engine(worker_manager, "Local Lib")
 
         spawn.assert_awaited_once()
         assert links.sent == []
 
     @pytest.mark.asyncio
-    async def test_a_start_withdrawn_while_the_machine_answers_tells_it_to_stop_that_worker(
+    async def test_a_start_withdrawn_while_the_engine_answers_tells_it_to_stop_that_worker(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager)
-        links.blocked["StartWorkerRequest"] = asyncio.Event()
-        links.arrived["StartWorkerRequest"] = asyncio.Event()
+        links = _host_engine(worker_manager)
+        links.blocked["StartWorkerForEngineRequest"] = asyncio.Event()
+        links.arrived["StartWorkerForEngineRequest"] = asyncio.Event()
         with patch.object(worker_manager, "_orchestrator_static_server_base_url", new=AsyncMock(return_value=None)):
             await worker_manager.handle_start_worker_request(worker_events.StartWorkerRequest(library_name=_LIBRARY))
             start = worker_manager._requested_spawns[_LIBRARY]
-            await links.arrived["StartWorkerRequest"].wait()
+            await links.arrived["StartWorkerForEngineRequest"].wait()
             worker_engine_id = _started_worker_id(links)
 
             await worker_manager.stop_worker_for_library(_LIBRARY)
@@ -2737,27 +2743,27 @@ class TestStartingAWorkerOnAnotherMachine:
         assert worker_manager._remote_starts == {}
 
     @pytest.mark.asyncio
-    async def test_a_lost_link_settles_the_starts_sent_to_that_machine(self, worker_manager: WorkerManager) -> None:
-        """Otherwise a start the machine accepted waits out the library load timeout for a worker that never comes."""
-        links = _machine(worker_manager)
-        await _start_on_machine(worker_manager)
+    async def test_a_lost_link_settles_the_starts_sent_to_that_engine(self, worker_manager: WorkerManager) -> None:
+        """Otherwise a start the other engine accepted waits out the library load timeout for a worker that never comes."""
+        links = _host_engine(worker_manager)
+        await _start_on_host_engine(worker_manager)
         assert links.link_lost is not None
 
-        await links.link_lost(_MACHINE)
+        await links.link_lost(_HOST_ENGINE)
 
         assert worker_manager._remote_starts == {}
         reason = worker_manager.worker_unavailable_reason(_LIBRARY)
         assert reason is not None
-        assert _MACHINE in reason
+        assert _HOST_ENGINE in reason
 
 
 class TestARemoteWorkerRegisters:
     @pytest.mark.asyncio
-    async def test_a_worker_this_engine_asked_for_registers_as_running_on_its_machine(
+    async def test_a_worker_this_engine_asked_for_registers_as_running_on_its_engine(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager)
-        await _start_on_machine(worker_manager)
+        links = _host_engine(worker_manager)
+        await _start_on_host_engine(worker_manager)
         worker_engine_id = _started_worker_id(links)
 
         result = await worker_manager.handle_register_worker_request(
@@ -2767,7 +2773,7 @@ class TestARemoteWorkerRegisters:
         )
 
         assert isinstance(result, worker_events.RegisterWorkerResultSuccess), result.result_details
-        assert worker_manager._workers[worker_engine_id].machine == _MACHINE
+        assert worker_manager._workers[worker_engine_id].host_engine_id == _HOST_ENGINE
         assert worker_manager._remote_starts == {}
         worker_manager._tx.subscribe_to_topic.assert_awaited_once_with(  # type: ignore[union-attr]
             f"sessions/{_SESSION}/workers/{worker_engine_id}/response"
@@ -2775,7 +2781,7 @@ class TestARemoteWorkerRegisters:
 
     @pytest.mark.asyncio
     async def test_a_worker_this_engine_did_not_ask_for_is_refused(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
 
         result = await worker_manager.handle_register_worker_request(
             worker_events.RegisterWorkerRequest(
@@ -2784,15 +2790,15 @@ class TestARemoteWorkerRegisters:
         )
 
         assert isinstance(result, worker_events.RegisterWorkerResultFailure)
-        assert _MACHINE in str(result.result_details)
+        assert _HOST_ENGINE in str(result.result_details)
         assert worker_manager._workers == {}
 
     @pytest.mark.asyncio
     async def test_a_worker_registering_for_another_library_than_it_was_started_for_is_refused(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager)
-        await _start_on_machine(worker_manager)
+        links = _host_engine(worker_manager)
+        await _start_on_host_engine(worker_manager)
 
         result = await worker_manager.handle_register_worker_request(
             worker_events.RegisterWorkerRequest(
@@ -2804,11 +2810,11 @@ class TestARemoteWorkerRegisters:
         assert worker_manager._workers == {}
 
     @pytest.mark.asyncio
-    async def test_an_evicted_worker_is_stopped_on_its_machine(self, worker_manager: WorkerManager) -> None:
-        """A hung worker cannot shut itself down, so only its machine can free what it holds."""
-        links = _machine(worker_manager)
+    async def test_an_evicted_worker_is_stopped_on_its_engine(self, worker_manager: WorkerManager) -> None:
+        """A hung worker cannot shut itself down, so only the engine running it can free what it holds."""
+        links = _host_engine(worker_manager)
         worker_manager._workers[_ENGINE] = WorkerRegistration(
-            request_topic=_WORKER_REQUEST_TOPIC, worker_key=_LIBRARY, machine=_MACHINE
+            request_topic=_WORKER_REQUEST_TOPIC, worker_key=_LIBRARY, host_engine_id=_HOST_ENGINE
         )
 
         await worker_manager.evict_worker(_ENGINE)
@@ -2819,10 +2825,10 @@ class TestARemoteWorkerRegisters:
 
     @pytest.mark.asyncio
     async def test_a_reset_forgets_remote_workers_and_starts(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
-        await _start_on_machine(worker_manager)
+        _host_engine(worker_manager)
+        await _start_on_host_engine(worker_manager)
         worker_manager._workers[_ENGINE] = WorkerRegistration(
-            request_topic=_WORKER_REQUEST_TOPIC, worker_key="Other", machine=_MACHINE
+            request_topic=_WORKER_REQUEST_TOPIC, worker_key="Other", host_engine_id=_HOST_ENGINE
         )
 
         await worker_manager.reset_workers()
@@ -2832,12 +2838,10 @@ class TestARemoteWorkerRegisters:
         assert not worker_manager.is_worker_running_or_starting(_LIBRARY)
 
 
-def _exited(worker_engine_id: str, reason: str, exit_code: int = 1) -> object:
-    return worker_events.WorkerExitedRequest(
-        worker_engine_id=worker_engine_id,
-        exit_code=exit_code,
-        reason=reason,  # type: ignore[arg-type]
-    )
+def _exited(
+    worker_engine_id: str, reason: Literal["stopped", "exited"], exit_code: int = 1
+) -> worker_events.WorkerExitedRequest:
+    return worker_events.WorkerExitedRequest(worker_engine_id=worker_engine_id, exit_code=exit_code, reason=reason)
 
 
 class TestARemoteWorkerExits:
@@ -2846,32 +2850,34 @@ class TestARemoteWorkerExits:
         self, worker_manager: WorkerManager
     ) -> None:
         """Otherwise a run waits out the whole library load timeout for a worker that is gone."""
-        links = _machine(worker_manager)
-        await _start_on_machine(worker_manager)
+        links = _host_engine(worker_manager)
+        await _start_on_host_engine(worker_manager)
         worker_engine_id = _started_worker_id(links)
 
         result = await _sent_by(
-            _FROM_MACHINE, worker_manager.handle_worker_exited_request, _exited(worker_engine_id, "exited", exit_code=3)
-        )  # type: ignore[arg-type]
+            _FROM_HOST_ENGINE,
+            worker_manager.handle_worker_exited_request,
+            _exited(worker_engine_id, "exited", exit_code=3),
+        )
 
         assert isinstance(result, worker_events.WorkerExitedResultSuccess), result.result_details
         assert worker_manager.has_settled(_LIBRARY)
         reason = worker_manager.worker_unavailable_reason(_LIBRARY)
         assert reason is not None
         assert "exit code 3" in reason
-        assert _MACHINE in reason
+        assert _HOST_ENGINE in reason
         assert not worker_manager.is_worker_running_or_starting(_LIBRARY)
 
     @pytest.mark.asyncio
     async def test_a_registered_worker_that_exits_is_removed_at_once(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
         worker_manager._workers[_ENGINE] = WorkerRegistration(
-            request_topic=_WORKER_REQUEST_TOPIC, worker_key=_LIBRARY, machine=_MACHINE
+            request_topic=_WORKER_REQUEST_TOPIC, worker_key=_LIBRARY, host_engine_id=_HOST_ENGINE
         )
         request_client = cast("_FakeRequestClient", worker_manager._tx.request_client)
         pending = await request_client.track_request("r1", tag=_ENGINE)
 
-        await _sent_by(_FROM_MACHINE, worker_manager.handle_worker_exited_request, _exited(_ENGINE, "exited"))  # type: ignore[arg-type]
+        await _sent_by(_FROM_HOST_ENGINE, worker_manager.handle_worker_exited_request, _exited(_ENGINE, "exited"))
 
         assert _ENGINE not in worker_manager._workers
         assert isinstance(pending.exception(), worker_events.WorkerGoneError)
@@ -2879,17 +2885,17 @@ class TestARemoteWorkerExits:
         assert worker_manager.worker_unavailable_reason(_LIBRARY) is not None
 
     @pytest.mark.asyncio
-    async def test_a_loaded_worker_the_machine_stopped_leaves_the_library_free_to_start_again(
+    async def test_a_loaded_worker_the_engine_stopped_leaves_the_library_free_to_start_again(
         self, worker_manager: WorkerManager
     ) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
         worker_manager._workers[_ENGINE] = WorkerRegistration(
-            request_topic=_WORKER_REQUEST_TOPIC, worker_key=_LIBRARY, machine=_MACHINE
+            request_topic=_WORKER_REQUEST_TOPIC, worker_key=_LIBRARY, host_engine_id=_HOST_ENGINE
         )
 
         await _sent_by(
-            _FROM_MACHINE, worker_manager.handle_worker_exited_request, _exited(_ENGINE, "stopped", exit_code=0)
-        )  # type: ignore[arg-type]
+            _FROM_HOST_ENGINE, worker_manager.handle_worker_exited_request, _exited(_ENGINE, "stopped", exit_code=0)
+        )
 
         assert _ENGINE not in worker_manager._workers
         assert worker_manager.worker_unavailable_reason(_LIBRARY) is None
@@ -2897,31 +2903,33 @@ class TestARemoteWorkerExits:
 
     @pytest.mark.asyncio
     async def test_an_exit_reported_twice_is_recorded_once(self, worker_manager: WorkerManager) -> None:
-        links = _machine(worker_manager)
-        await _start_on_machine(worker_manager)
+        links = _host_engine(worker_manager)
+        await _start_on_host_engine(worker_manager)
         worker_engine_id = _started_worker_id(links)
-        await _sent_by(_FROM_MACHINE, worker_manager.handle_worker_exited_request, _exited(worker_engine_id, "exited"))  # type: ignore[arg-type]
+        await _sent_by(
+            _FROM_HOST_ENGINE, worker_manager.handle_worker_exited_request, _exited(worker_engine_id, "exited")
+        )
 
         reason = worker_manager.worker_unavailable_reason(_LIBRARY)
 
         result = await _sent_by(
-            _FROM_MACHINE, worker_manager.handle_worker_exited_request, _exited(worker_engine_id, "exited")
-        )  # type: ignore[arg-type]
+            _FROM_HOST_ENGINE, worker_manager.handle_worker_exited_request, _exited(worker_engine_id, "exited")
+        )
 
         assert isinstance(result, worker_events.WorkerExitedResultSuccess)
         assert "nothing to record" in str(result.result_details)
         assert worker_manager.worker_unavailable_reason(_LIBRARY) == reason
 
     @pytest.mark.asyncio
-    async def test_an_exit_reported_by_another_machine_is_refused(self, worker_manager: WorkerManager) -> None:
-        links = _machine(worker_manager)
-        await _start_on_machine(worker_manager)
+    async def test_an_exit_reported_by_another_engine_is_refused(self, worker_manager: WorkerManager) -> None:
+        links = _host_engine(worker_manager)
+        await _start_on_host_engine(worker_manager)
         worker_engine_id = _started_worker_id(links)
 
         result = await _sent_by(
-            RequestSender(engine_id="another-machine", session_id=None),
+            RequestSender(engine_id="another-engine", session_id=None),
             worker_manager.handle_worker_exited_request,
-            _exited(worker_engine_id, "exited"),  # type: ignore[arg-type]
+            _exited(worker_engine_id, "exited"),
         )
 
         assert isinstance(result, worker_events.WorkerExitedResultFailure)
@@ -2929,7 +2937,7 @@ class TestARemoteWorkerExits:
 
 
 _ARTIST = RequestSender(engine_id=_ARTIST_ENGINE, session_id=_ARTIST_SESSION)
-_FROM_MACHINE = RequestSender(engine_id=_MACHINE, session_id=None)
+_FROM_HOST_ENGINE = RequestSender(engine_id=_HOST_ENGINE, session_id=None)
 
 
 async def _sent_by[R](sender: RequestSender, handler: Callable[[Any], Awaitable[R]], request: object) -> R:
@@ -2960,8 +2968,10 @@ def _register_session(worker_manager: WorkerManager, **overrides: object) -> obj
         _active_request_sender.reset(token)
 
 
-def _start_for_artist(library_name: str = _LIBRARY, worker_engine_id: str = "w1") -> object:
-    return worker_events.StartWorkerRequest(library_name=library_name, worker_engine_id=worker_engine_id)
+def _start_for_artist(
+    library_name: str = _LIBRARY, worker_engine_id: str = "w1"
+) -> worker_events.StartWorkerForEngineRequest:
+    return worker_events.StartWorkerForEngineRequest(library_name=library_name, worker_engine_id=worker_engine_id)
 
 
 async def _host(worker_manager: WorkerManager, *, returncode: int = 0, exits: asyncio.Event | None = None) -> MagicMock:
@@ -2972,13 +2982,13 @@ async def _host(worker_manager: WorkerManager, *, returncode: int = 0, exits: as
         worker_manager._managed_worker_processes[worker_key] = proc
 
     with patch.object(worker_manager, "spawn_worker", side_effect=record_spawn):
-        await _sent_by(_ARTIST, worker_manager.handle_start_worker_request, _start_for_artist())  # type: ignore[arg-type]
+        await _sent_by(_ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist())
     return proc
 
 
-class TestServingAnotherMachinesSession:
+class TestServingAnotherEnginesSession:
     def test_a_session_on_the_same_versions_is_accepted(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
 
         result = _register_session(worker_manager)
 
@@ -2987,7 +2997,7 @@ class TestServingAnotherMachinesSession:
         assert result.refused_libraries == {}
 
     def test_a_different_engine_version_is_refused_naming_both(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
 
         result = _register_session(worker_manager, engine_version="0.0.1")
 
@@ -2996,7 +3006,7 @@ class TestServingAnotherMachinesSession:
         assert engine_version in str(result.result_details)
 
     def test_a_different_library_version_refuses_only_that_library(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
 
         result = _register_session(worker_manager, library_versions={_LIBRARY: "2.0.0"})
 
@@ -3004,8 +3014,8 @@ class TestServingAnotherMachinesSession:
         assert "2.0.0" in result.refused_libraries[_LIBRARY]
         assert "1.0.0" in result.refused_libraries[_LIBRARY]
 
-    def test_a_library_this_machine_lacks_is_refused(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+    def test_a_library_this_engine_lacks_is_refused(self, worker_manager: WorkerManager) -> None:
+        _host_engine(worker_manager)
         worker_manager.engine.library_manager.get_library_info_by_library_name.return_value = None  # type: ignore[union-attr]
 
         result = _register_session(worker_manager)
@@ -3015,7 +3025,7 @@ class TestServingAnotherMachinesSession:
 
     @pytest.mark.asyncio
     async def test_the_worker_joins_the_session_under_its_license_and_id(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
         _register_session(worker_manager)
         spawned: dict[str, object] = {}
 
@@ -3023,7 +3033,7 @@ class TestServingAnotherMachinesSession:
             spawned.update(kwargs, args=args, worker_key=worker_key)
 
         with patch.object(worker_manager, "spawn_worker", side_effect=record_spawn):
-            await _sent_by(_ARTIST, worker_manager.handle_start_worker_request, _start_for_artist())  # type: ignore[arg-type]
+            await _sent_by(_ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist())
 
         assert spawned["worker_key"] == f"{_ARTIST_SESSION}/{_LIBRARY}"
         assert spawned["worker_engine_id"] == "w1"
@@ -3037,10 +3047,10 @@ class TestServingAnotherMachinesSession:
         }
 
     @pytest.mark.asyncio
-    async def test_a_credential_the_artist_has_none_of_hides_this_machines_from_the_worker(
+    async def test_a_credential_the_artist_has_none_of_hides_this_engines_from_the_worker(
         self, worker_manager: WorkerManager
     ) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
         _register_session(worker_manager, license_token=None, api_key=None)
         spawned: dict[str, object] = {}
 
@@ -3048,18 +3058,18 @@ class TestServingAnotherMachinesSession:
             spawned.update(kwargs)
 
         with patch.object(worker_manager, "spawn_worker", side_effect=record_spawn):
-            await _sent_by(_ARTIST, worker_manager.handle_start_worker_request, _start_for_artist())  # type: ignore[arg-type]
+            await _sent_by(_ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist())
 
         environ = cast("dict[str, str]", spawned["environ_overrides"])
         assert environ["GRIPTAPE_NODES_LICENSE"] == ""
         assert environ["GT_CLOUD_API_KEY"] == ""
 
     @pytest.mark.asyncio
-    async def test_the_worker_reaches_the_artist_the_way_the_artist_reached_this_machine(
+    async def test_the_worker_reaches_the_artist_the_way_the_artist_reached_this_engine(
         self, worker_manager: WorkerManager
     ) -> None:
         """The transport decides how; the worker gets what it says."""
-        links = _machine(worker_manager)
+        links = _host_engine(worker_manager)
         _register_session(worker_manager)
         links.worker_environments[_ARTIST_ENGINE] = {"REACH_THE_ARTIST": "over the relay"}
         spawned: dict[str, object] = {}
@@ -3068,7 +3078,7 @@ class TestServingAnotherMachinesSession:
             spawned.update(kwargs)
 
         with patch.object(worker_manager, "spawn_worker", side_effect=record_spawn):
-            await _sent_by(_ARTIST, worker_manager.handle_start_worker_request, _start_for_artist())  # type: ignore[arg-type]
+            await _sent_by(_ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist())
 
         assert links.worker_environment_asks == [_ARTIST_ENGINE]
         environ = cast("dict[str, str]", spawned["environ_overrides"])
@@ -3078,26 +3088,26 @@ class TestServingAnotherMachinesSession:
     async def test_a_start_the_worker_could_not_reach_the_artist_from_fails_and_blocks_nothing(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager)
+        links = _host_engine(worker_manager)
         _register_session(worker_manager)
         links.not_found = "it sent no Griptape Cloud credential for the worker to connect with."
 
         with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as spawn:
-            result = await _sent_by(_ARTIST, worker_manager.handle_start_worker_request, _start_for_artist())  # type: ignore[arg-type]
+            result = await _sent_by(_ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist())
 
-        assert isinstance(result, worker_events.StartWorkerResultFailure)
+        assert isinstance(result, worker_events.StartWorkerForEngineResultFailure)
         assert "credential" in str(result.result_details)
         assert worker_manager._hosted_workers == {}
         spawn.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_a_start_for_an_unregistered_session_fails(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
 
         with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as spawn:
-            result = await _sent_by(_ARTIST, worker_manager.handle_start_worker_request, _start_for_artist())  # type: ignore[arg-type]
+            result = await _sent_by(_ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist())
 
-        assert isinstance(result, worker_events.StartWorkerResultFailure)
+        assert isinstance(result, worker_events.StartWorkerForEngineResultFailure)
         assert result.session_unknown
         spawn.assert_not_awaited()
 
@@ -3105,21 +3115,23 @@ class TestServingAnotherMachinesSession:
     async def test_a_start_from_another_engine_than_registered_the_session_fails(
         self, worker_manager: WorkerManager
     ) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
         _register_session(worker_manager)
         impostor = RequestSender(engine_id="impostor", session_id=_ARTIST_SESSION)
 
         with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as spawn:
-            result = await _sent_by(impostor, worker_manager.handle_start_worker_request, _start_for_artist())  # type: ignore[arg-type]
+            result = await _sent_by(
+                impostor, worker_manager.handle_start_worker_for_engine_request, _start_for_artist()
+            )
 
-        assert isinstance(result, worker_events.StartWorkerResultFailure)
+        assert isinstance(result, worker_events.StartWorkerForEngineResultFailure)
         assert not result.session_unknown
         spawn.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_a_start_for_a_running_worker_replaces_it(self, worker_manager: WorkerManager) -> None:
         """The artist's engine asks only once it stopped using that worker, so the old one would never register."""
-        _machine(worker_manager)
+        _host_engine(worker_manager)
         _register_session(worker_manager)
         stale = _managed_proc_mock()
         worker_manager._managed_worker_processes[f"{_ARTIST_SESSION}/{_LIBRARY}"] = stale
@@ -3128,7 +3140,7 @@ class TestServingAnotherMachinesSession:
             patch.object(worker_manager, "_terminate_via_spawn_loop", new=AsyncMock()) as terminate,
             patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as spawn,
         ):
-            await _sent_by(_ARTIST, worker_manager.handle_start_worker_request, _start_for_artist())  # type: ignore[arg-type]
+            await _sent_by(_ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist())
 
         terminate.assert_awaited_once_with(f"{_ARTIST_SESSION}/{_LIBRARY}", stale)
         spawn.assert_awaited_once()
@@ -3137,48 +3149,50 @@ class TestServingAnotherMachinesSession:
     async def test_a_start_for_a_library_the_session_never_named_asks_it_to_register_again(
         self, worker_manager: WorkerManager
     ) -> None:
-        """Its version was never checked, so starting it would run whatever this machine has."""
-        _machine(worker_manager)
+        """Its version was never checked, so starting it would run whatever this engine has."""
+        _host_engine(worker_manager)
         _register_session(worker_manager)
 
         with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as spawn:
             result = await _sent_by(
-                _ARTIST, worker_manager.handle_start_worker_request, _start_for_artist(library_name="Unnamed")
-            )  # type: ignore[arg-type]
+                _ARTIST,
+                worker_manager.handle_start_worker_for_engine_request,
+                _start_for_artist(library_name="Unnamed"),
+            )
 
-        assert isinstance(result, worker_events.StartWorkerResultFailure)
+        assert isinstance(result, worker_events.StartWorkerForEngineResultFailure)
         assert result.session_unknown
         spawn.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_a_start_for_a_refused_library_fails_with_the_refusal(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
         _register_session(worker_manager, library_versions={_LIBRARY: "2.0.0"})
 
         with patch.object(worker_manager, "spawn_worker", new=AsyncMock()) as spawn:
-            result = await _sent_by(_ARTIST, worker_manager.handle_start_worker_request, _start_for_artist())  # type: ignore[arg-type]
+            result = await _sent_by(_ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist())
 
-        assert isinstance(result, worker_events.StartWorkerResultFailure)
+        assert isinstance(result, worker_events.StartWorkerForEngineResultFailure)
         assert "2.0.0" in str(result.result_details)
         assert not result.session_unknown
         spawn.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_a_spawn_that_produced_no_worker_fails_and_forgets_it(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
         _register_session(worker_manager)
 
         with patch.object(worker_manager, "spawn_worker", new=AsyncMock()):
-            result = await _sent_by(_ARTIST, worker_manager.handle_start_worker_request, _start_for_artist())  # type: ignore[arg-type]
+            result = await _sent_by(_ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist())
 
-        assert isinstance(result, worker_events.StartWorkerResultFailure)
+        assert isinstance(result, worker_events.StartWorkerForEngineResultFailure)
         assert worker_manager._hosted_workers == {}
 
     @pytest.mark.asyncio
     async def test_a_worker_that_exits_on_its_own_is_reported_exited_with_its_code(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager)
+        links = _host_engine(worker_manager)
         _register_session(worker_manager)
         await _host(worker_manager, returncode=7)
 
@@ -3191,8 +3205,8 @@ class TestServingAnotherMachinesSession:
         assert worker_manager._hosted_workers == {}
 
     @pytest.mark.asyncio
-    async def test_a_worker_this_machine_stops_is_reported_stopped(self, worker_manager: WorkerManager) -> None:
-        links = _machine(worker_manager)
+    async def test_a_worker_this_engine_stops_is_reported_stopped(self, worker_manager: WorkerManager) -> None:
+        links = _host_engine(worker_manager)
         _register_session(worker_manager)
         exits = asyncio.Event()
         proc = await _host(worker_manager, exits=exits)
@@ -3217,7 +3231,7 @@ class TestServingAnotherMachinesSession:
         self, worker_manager: WorkerManager
     ) -> None:
         """The artist withdrew the start, so the worker it makes must not be left running."""
-        _machine(worker_manager)
+        _host_engine(worker_manager)
         _register_session(worker_manager)
         worker_key = f"{_ARTIST_SESSION}/{_LIBRARY}"
         worker_manager._managed_worker_processes[worker_key] = _managed_proc_mock()
@@ -3235,8 +3249,8 @@ class TestServingAnotherMachinesSession:
             patch.object(worker_manager, "spawn_worker", side_effect=record_spawn),
         ):
             start = asyncio.ensure_future(
-                _sent_by(_ARTIST, worker_manager.handle_start_worker_request, _start_for_artist())
-            )  # type: ignore[arg-type]
+                _sent_by(_ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist())
+            )
             await asyncio.sleep(0)
             stop = asyncio.ensure_future(
                 _sent_by(
@@ -3258,7 +3272,7 @@ class TestServingAnotherMachinesSession:
 
     @pytest.mark.asyncio
     async def test_a_second_start_for_a_worker_still_starting_is_refused(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
         _register_session(worker_manager)
         worker_manager._managed_worker_processes[f"{_ARTIST_SESSION}/{_LIBRARY}"] = _managed_proc_mock()
         replacing = asyncio.Event()
@@ -3271,21 +3285,21 @@ class TestServingAnotherMachinesSession:
             patch.object(worker_manager, "spawn_worker", new=AsyncMock()),
         ):
             first = asyncio.ensure_future(
-                _sent_by(_ARTIST, worker_manager.handle_start_worker_request, _start_for_artist())
-            )  # type: ignore[arg-type]
+                _sent_by(_ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist())
+            )
             await asyncio.sleep(0)
             second = await _sent_by(
-                _ARTIST, worker_manager.handle_start_worker_request, _start_for_artist(worker_engine_id="w2")
-            )  # type: ignore[arg-type]
+                _ARTIST, worker_manager.handle_start_worker_for_engine_request, _start_for_artist(worker_engine_id="w2")
+            )
             replacing.set()
             await first
 
-        assert isinstance(second, worker_events.StartWorkerResultFailure)
+        assert isinstance(second, worker_events.StartWorkerForEngineResultFailure)
         assert "already starting" in str(second.result_details)
 
     @pytest.mark.asyncio
     async def test_a_stop_from_another_engine_is_refused(self, worker_manager: WorkerManager) -> None:
-        _machine(worker_manager)
+        _host_engine(worker_manager)
         _register_session(worker_manager)
         proc = await _host(worker_manager, exits=asyncio.Event())
         impostor = RequestSender(engine_id="impostor", session_id=_ARTIST_SESSION)
@@ -3305,7 +3319,7 @@ class TestServingAnotherMachinesSession:
     async def test_a_lost_link_forgets_the_artists_sessions_and_stops_their_workers(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager)
+        links = _host_engine(worker_manager)
         _register_session(worker_manager)
         exits = asyncio.Event()
         proc = await _host(worker_manager, exits=exits)
@@ -3326,7 +3340,7 @@ class TestServingAnotherMachinesSession:
     async def test_a_lost_link_from_another_engine_leaves_the_session_alone(
         self, worker_manager: WorkerManager
     ) -> None:
-        links = _machine(worker_manager)
+        links = _host_engine(worker_manager)
         _register_session(worker_manager)
         assert links.link_lost is not None
 
