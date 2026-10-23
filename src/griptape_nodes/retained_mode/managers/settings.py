@@ -24,6 +24,7 @@ WORKER_HEARTBEAT_INTERVAL_KEY = "worker.heartbeat_interval_s"
 WORKER_HEARTBEAT_TIMEOUT_KEY = "worker.heartbeat_timeout_s"
 WORKER_LIBRARY_LOAD_TIMEOUT_KEY = "worker.library_load_timeout_s"
 WORKER_COMMAND_PREFIX_KEY = "worker.command_prefix"
+DISTRIBUTED_EXECUTION_LIBRARIES_KEY = "distributed_execution.libraries"
 DISCOVERY_MAX_DEPTH_KEY = "discovery_max_depth"
 # The `Settings.libraries_directory` field below, named here so every reader of it -- the live
 # libraries root, the provisioning preview, the offline libraries-root resolver, and the packager --
@@ -443,6 +444,29 @@ class WorkerSettings(BaseModel):
             raise ValueError(msg) from e
 
 
+class DistributedExecutionSettings(BaseModel):
+    libraries: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Which engine runs each library's nodes: a map of library name to that engine's ID, "
+            'for example {"Griptape Nodes Diffusers Library": "3f2c8e1a-5b7d-4c9e-a0f1-2b3c4d5e6f70"}. '
+            "This engine finds that engine in the engine registry and connects directly when it publishes "
+            "transports.websocket_direct.advertise_url, or through Griptape Cloud when both are connected "
+            "to it. Libraries not listed run on this engine. Set it in a config file: library names are "
+            "case-sensitive and an environment variable's name is lowercased."
+        ),
+    )
+
+    @field_validator("libraries", mode="after")
+    @classmethod
+    def validate_libraries(cls, v: dict[str, str]) -> dict[str, str]:
+        for library_name, engine_id in v.items():
+            if not engine_id.strip():
+                msg = f"{DISTRIBUTED_EXECUTION_LIBRARIES_KEY} entry for '{library_name}' must be an engine ID"
+                raise ValueError(msg)
+        return v
+
+
 class AgentSettings(BaseModel):
     system_prompt: str = Field(
         default="",
@@ -704,6 +728,10 @@ class Settings(BaseModel):
     worker: WorkerSettings = Field(
         category=EXECUTION,
         default_factory=WorkerSettings,
+    )
+    distributed_execution: DistributedExecutionSettings = Field(
+        category=EXECUTION,
+        default_factory=DistributedExecutionSettings,
     )
     storage_backend: Literal["local", "gtc"] = Field(
         category=STORAGE,
