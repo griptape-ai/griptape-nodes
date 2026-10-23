@@ -47,41 +47,36 @@ class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecut
 
     async def arun(
         self,
-        workflow_name: str,
         workflow_path: str,
         publisher_name: str,
         published_workflow_file_name: str,
-        **kwargs: Any,  # noqa: ARG002 callers may still pass the deprecated pickle_control_flow_result
+        **kwargs: Any,  # noqa: ARG002 callers may still pass the deprecated pickle_control_flow_result or workflow_name
     ) -> None:
-        """Publish a workflow in a subprocess and wait for completion."""
+        """Publish a workflow in a subprocess and wait for completion.
+
+        The subprocess loads the file at `workflow_path`, not a copy, so the workflow it publishes
+        is the one its registry holds for that file, under that file's name and id. Publishers look
+        the workflow up by the name they receive, so a copy elsewhere would carry another name.
+        """
         script_path = Path(__file__).parent / "utils" / "subprocess_script.py"
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_workflow_path = Path(tmpdir) / "workflow.py"
             tmp_script_path = Path(tmpdir) / "subprocess_script.py"
 
             try:
-                async with (
-                    await anyio.open_file(workflow_path, "rb") as src,
-                    await anyio.open_file(tmp_workflow_path, "wb") as dst,
-                ):
-                    await dst.write(await src.read())
-
                 async with (
                     await anyio.open_file(script_path, "rb") as src,
                     await anyio.open_file(tmp_script_path, "wb") as dst,
                 ):
                     await dst.write(await src.read())
             except Exception as e:
-                msg = f"Failed to copy workflow or script to temp directory: {e}"
+                msg = f"Failed to copy the publish script to a temp directory: {e}"
                 logger.exception(msg)
                 raise SubprocessWorkflowPublisherError(msg) from e
 
             args = [
-                "--workflow-name",
-                workflow_name,
                 "--workflow-path",
-                str(tmp_workflow_path),
+                workflow_path,
                 "--publisher-name",
                 publisher_name,
                 "--published-workflow-file-name",

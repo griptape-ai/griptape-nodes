@@ -203,6 +203,28 @@ button to cancel the flow right from the dialog.
 A **Saving workflow…** overlay appears briefly at the bottom of the screen
 while a save is in progress.
 
+### Workflow ids
+
+Every workflow has a permanent id, saved in the header at the top of its
+file. It stays the same when you save, rename, or move the workflow, and
+when you reopen it later. **Save As**, **Save As New Version**, branching,
+and creating a workflow from a template make a new workflow, so the new file
+gets an id of its own. If you copy a workflow file yourself, outside the
+editor, the first time the engine finds both files one of them, usually
+the copy, gets a new id.
+
+A workflow file saved by an earlier version of Griptape Nodes has no id
+yet. It gets one the next time you save it.
+
+!!! note "Workflows in a shared folder"
+
+    If a workflow without an id sits in a folder that several machines share,
+    such as a git repository or a Dropbox folder, each machine works out its
+    own id for it until it is saved. When two machines each save it, each
+    writes its own id into the header, and the two versions of that line can
+    conflict. To avoid this, open and save the workflow on one machine first,
+    then share the saved file.
+
 ### Auto-save
 
 **Settings → Editor Settings → Auto-Save Settings** lets you turn on

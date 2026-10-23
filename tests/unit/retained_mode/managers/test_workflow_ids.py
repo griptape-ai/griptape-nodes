@@ -9,15 +9,17 @@ import shutil
 import sys
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from griptape_nodes.bootstrap.workflow_publishers.local_workflow_publisher import LocalWorkflowPublisher
 from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
 from griptape_nodes.files.path_utils import canonicalize_for_identity_preserving_symlinks
 from griptape_nodes.node_library.workflow_registry import (
     WorkflowMetadata,
+    WorkflowShape,
     derive_library_workflow_id,
     derive_workflow_id_for_path,
     read_workflow_metadata,
@@ -30,15 +32,20 @@ from griptape_nodes.retained_mode.events.app_events import (
 )
 from griptape_nodes.retained_mode.events.context_events import (
     EnsureWorkflowAndFlowRequest,
+    EnsureWorkflowAndFlowResultFailure,
     EnsureWorkflowAndFlowResultSuccess,
     GetWorkflowContextRequest,
     GetWorkflowContextSuccess,
+    SetWorkflowContextFailure,
+    SetWorkflowContextRequest,
+    SetWorkflowContextSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
     CreateFlowResultSuccess,
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
+    ImportWorkflowAsReferencedSubFlowRequest,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.project_events import (
@@ -49,9 +56,26 @@ from griptape_nodes.retained_mode.events.project_events import (
 from griptape_nodes.retained_mode.events.workflow_events import (
     BranchWorkflowRequest,
     BranchWorkflowResultSuccess,
+    CompareWorkflowsRequest,
+    CompareWorkflowsResultSuccess,
     CreateWorkflowFromTemplateRequest,
     CreateWorkflowFromTemplateResultFailure,
     CreateWorkflowFromTemplateResultSuccess,
+    DeleteWorkflowRequest,
+    DeleteWorkflowResultFailure,
+    DeleteWorkflowResultSuccess,
+    GetPublishOptionsRequest,
+    GetPublishOptionsResultFailure,
+    GetPublishOptionsResultSuccess,
+    GetWorkflowInfoRequest,
+    GetWorkflowInfoResultSuccess,
+    GetWorkflowMetadataRequest,
+    GetWorkflowMetadataResultSuccess,
+    GetWorkflowRunCommandRequest,
+    GetWorkflowRunCommandResultFailure,
+    GetWorkflowRunCommandResultSuccess,
+    ImportWorkflowAsReferencedSubFlowResultFailure,
+    ImportWorkflowAsReferencedSubFlowResultSuccess,
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultSuccess,
     MergeWorkflowBranchRequest,
@@ -60,6 +84,11 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     MoveWorkflowRequest,
     MoveWorkflowResultFailure,
     MoveWorkflowResultSuccess,
+    PublishWorkflowRegisteredEventData,
+    PublishWorkflowRequest,
+    PublishWorkflowResultFailure,
+    PublishWorkflowResultSuccess,
+    RenameDisplayNameBehavior,
     RenameWorkflowRequest,
     RenameWorkflowResultFailure,
     RenameWorkflowResultSuccess,
@@ -72,16 +101,23 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveSubflowToWorkflowResultSuccess,
     SaveWorkflowFileFromSerializedFlowRequest,
     SaveWorkflowRequest,
+    SaveWorkflowResultFailure,
     SaveWorkflowResultSuccess,
     SetWorkflowMetadataRequest,
     SetWorkflowMetadataResultFailure,
     SetWorkflowMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.context_manager import read_metadata_for_open_file
-from griptape_nodes.retained_mode.managers.library.common import LibraryFitness, LibraryInfo, LibraryLifecycleState
+from griptape_nodes.retained_mode.managers.library.common import (
+    LibraryFitness,
+    LibraryInfo,
+    LibraryLifecycleState,
+    RegisteredEventHandler,
+)
+from griptape_nodes.retained_mode.managers.workflow.saving import WriteWorkflowFileResult
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator
 
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -371,10 +407,12 @@ class TestWritePathsStampAnId:
             open_id = source.workflow_id
         project_engine.context_manager.push_workflow(workflow_id=open_id)
 
-        merged = project_engine.handle_request(MergeWorkflowBranchRequest(workflow_name=branch.branched_workflow_name))
+        # Addressed by id, so the message must name the branch from its entry, not the request.
+        merged = project_engine.handle_request(MergeWorkflowBranchRequest(workflow_id=branch.branched_workflow_id))
 
         assert isinstance(merged, MergeWorkflowBranchResultFailure)
         assert "is open" in str(merged.result_details)
+        assert f"'{branch.branched_workflow_name}'" in str(merged.result_details)
         assert Path(source.file_path).read_text(encoding="utf-8") == source_content
         assert branch_path.read_text(encoding="utf-8") == branch_content
         assert project_engine.workflow_registry.get(branch_entry.workflow_id) is branch_entry
@@ -944,3 +982,653 @@ class TestIdentityAcrossTheWorkflowLifecycle:
         _scan(restarted, workspace)
         assert restarted.workflow_registry.get(workflow_id).name == "shots/renamed"
         restarted.handle_request(SetCurrentProjectRequest(project_id=None))
+
+
+class _OpenAndOther(NamedTuple):
+    """Workflow A, saved and open, and workflow B, saved and closed."""
+
+    open_id: str
+    open_file: Path
+    open_flow_name: str
+    other: SaveWorkflowResultSuccess
+
+
+def _open_a_and_save_b(engine: Engine, *, other: SaveWorkflowResultSuccess | None = None) -> _OpenAndOther:
+    """Save B and close it, then open and save A. A request for B must leave A alone."""
+    if other is None:
+        other = _saved_workflow(engine, "other")
+    open_id = _open_new_workflow(engine, "open")
+    open_saved = _save(engine)
+    return _OpenAndOther(
+        open_id=open_id,
+        open_file=Path(open_saved.file_path),
+        open_flow_name=engine.context_manager.get_current_flow().name,
+        other=other,
+    )
+
+
+def _assert_open_workflow_untouched(engine: Engine, setup: _OpenAndOther, open_file_content: str) -> None:
+    assert engine.context_manager.get_current_workflow_id() == setup.open_id
+    assert engine.context_manager.get_current_flow().name == setup.open_flow_name
+    assert engine.workflow_registry.get(setup.open_id).absolute_path == setup.open_file
+    assert setup.open_file.read_text(encoding="utf-8") == open_file_content
+
+
+class TestRequestsForAnotherWorkflowLeaveTheOpenOneAlone:
+    """A request addressed to workflow B while A is open never saves, moves, or deletes A or its file."""
+
+    def test_rename(self, project_engine: Engine) -> None:
+        setup = _open_a_and_save_b(project_engine)
+        open_file_content = setup.open_file.read_text(encoding="utf-8")
+
+        renamed = _run(
+            project_engine, RenameWorkflowRequest(workflow_id=setup.other.workflow_id, requested_name="renamed")
+        )
+
+        assert isinstance(renamed, RenameWorkflowResultSuccess), renamed.result_details
+        assert renamed.workflow_id == setup.other.workflow_id
+        assert renamed.new_workflow_name == "renamed"
+        assert not Path(setup.other.file_path).exists()
+        renamed_file = Path(setup.other.file_path).with_name("renamed.py")
+        assert read_workflow_metadata(renamed_file).workflow_id == setup.other.workflow_id
+        _assert_open_workflow_untouched(project_engine, setup, open_file_content)
+
+    def test_rename_by_name(self, project_engine: Engine) -> None:
+        """The deprecated name address takes the same path: B's file is renamed, and A is left alone."""
+        setup = _open_a_and_save_b(project_engine)
+        open_file_content = setup.open_file.read_text(encoding="utf-8")
+
+        renamed = _run(
+            project_engine, RenameWorkflowRequest(workflow_name=setup.other.workflow_name, requested_name="renamed")
+        )
+
+        assert isinstance(renamed, RenameWorkflowResultSuccess), renamed.result_details
+        assert renamed.workflow_id == setup.other.workflow_id
+        assert not Path(setup.other.file_path).exists()
+        renamed_file = Path(setup.other.file_path).with_name("renamed.py")
+        assert read_workflow_metadata(renamed_file).workflow_id == setup.other.workflow_id
+        _assert_open_workflow_untouched(project_engine, setup, open_file_content)
+
+    def test_move(self, project_engine: Engine, workspace: Path) -> None:
+        setup = _open_a_and_save_b(project_engine)
+        open_file_content = setup.open_file.read_text(encoding="utf-8")
+
+        moved = project_engine.handle_request(
+            MoveWorkflowRequest(workflow_id=setup.other.workflow_id, target_directory="elsewhere")
+        )
+
+        assert isinstance(moved, MoveWorkflowResultSuccess), moved.result_details
+        assert moved.workflow_id == setup.other.workflow_id
+        assert not Path(setup.other.file_path).exists()
+        assert _header_id(workspace / moved.moved_file_path) == setup.other.workflow_id
+        _assert_open_workflow_untouched(project_engine, setup, open_file_content)
+
+    def test_delete(self, project_engine: Engine) -> None:
+        setup = _open_a_and_save_b(project_engine)
+        open_file_content = setup.open_file.read_text(encoding="utf-8")
+
+        deleted = _run(project_engine, DeleteWorkflowRequest(workflow_id=setup.other.workflow_id))
+
+        assert isinstance(deleted, DeleteWorkflowResultSuccess), deleted.result_details
+        assert not Path(setup.other.file_path).exists()
+        assert project_engine.workflow_registry.find_by_id(setup.other.workflow_id or "") is None
+        _assert_open_workflow_untouched(project_engine, setup, open_file_content)
+
+    def test_merge(self, project_engine: Engine) -> None:
+        source = _saved_workflow(project_engine, "source")
+        branch = project_engine.handle_request(BranchWorkflowRequest(workflow_id=source.workflow_id))
+        assert isinstance(branch, BranchWorkflowResultSuccess), branch.result_details
+        setup = _open_a_and_save_b(project_engine, other=source)
+        open_file_content = setup.open_file.read_text(encoding="utf-8")
+
+        merged = project_engine.handle_request(MergeWorkflowBranchRequest(workflow_id=branch.branched_workflow_id))
+
+        assert isinstance(merged, MergeWorkflowBranchResultSuccess), merged.result_details
+        assert merged.workflow_id == source.workflow_id
+        assert project_engine.workflow_registry.find_by_id(branch.branched_workflow_id or "") is None
+        _assert_open_workflow_untouched(project_engine, setup, open_file_content)
+
+    def test_reset(self, project_engine: Engine) -> None:
+        source = _saved_workflow(project_engine, "source")
+        branch = project_engine.handle_request(BranchWorkflowRequest(workflow_id=source.workflow_id))
+        assert isinstance(branch, BranchWorkflowResultSuccess), branch.result_details
+        setup = _open_a_and_save_b(project_engine, other=source)
+        open_file_content = setup.open_file.read_text(encoding="utf-8")
+
+        reset = project_engine.handle_request(ResetWorkflowBranchRequest(workflow_id=branch.branched_workflow_id))
+
+        assert isinstance(reset, ResetWorkflowBranchResultSuccess), reset.result_details
+        assert reset.workflow_id == branch.branched_workflow_id
+        _assert_open_workflow_untouched(project_engine, setup, open_file_content)
+
+    def test_set_metadata(self, project_engine: Engine) -> None:
+        setup = _open_a_and_save_b(project_engine)
+        open_file_content = setup.open_file.read_text(encoding="utf-8")
+        open_description = project_engine.workflow_registry.get(setup.open_id).metadata.description
+
+        updated = _run(
+            project_engine,
+            SetWorkflowMetadataRequest(
+                workflow_id=setup.other.workflow_id,
+                workflow_metadata={"description": "only the other one"},  # type: ignore[arg-type]
+            ),
+        )
+
+        assert isinstance(updated, SetWorkflowMetadataResultSuccess), updated.result_details
+        assert read_workflow_metadata(Path(setup.other.file_path)).description == "only the other one"
+        assert project_engine.workflow_registry.get(setup.open_id).metadata.description == open_description
+        _assert_open_workflow_untouched(project_engine, setup, open_file_content)
+
+    def test_save_subflow(self, project_engine: Engine) -> None:
+        setup = _open_a_and_save_b(project_engine)
+        open_file_content = setup.open_file.read_text(encoding="utf-8")
+        subflow = project_engine.handle_request(
+            CreateFlowRequest(parent_flow_name=setup.open_flow_name, flow_name="Sub", set_as_new_context=False)
+        )
+        assert isinstance(subflow, CreateFlowResultSuccess), subflow.result_details
+
+        result = _run(
+            project_engine, SaveSubflowToWorkflowRequest(flow_name="Sub", workflow_id=setup.other.workflow_id)
+        )
+
+        assert isinstance(result, SaveSubflowToWorkflowResultSuccess), result.result_details
+        assert result.file_path == setup.other.file_path
+        assert _header_id(setup.other.file_path) == setup.other.workflow_id
+        _assert_open_workflow_untouched(project_engine, setup, open_file_content)
+
+
+class TestRequestsAddressAWorkflowById:
+    """Every request that acts on a saved workflow finds it by `workflow_id`."""
+
+    def test_read_requests(self, project_engine: Engine) -> None:
+        # Unsaved, so the info is the engine's own stub rather than a record of loading a file.
+        workflow_id = _open_new_workflow(project_engine, "unsaved")
+
+        metadata = _run(project_engine, GetWorkflowMetadataRequest(workflow_id=workflow_id))
+        info = _run(project_engine, GetWorkflowInfoRequest(workflow_id=workflow_id))
+
+        assert isinstance(metadata, GetWorkflowMetadataResultSuccess), metadata.result_details
+        assert metadata.workflow_metadata.workflow_id == workflow_id
+        assert isinstance(info, GetWorkflowInfoResultSuccess), info.result_details
+        assert info.workflow_id == workflow_id
+
+    def test_run_from_registry(self, project_engine: Engine) -> None:
+        saved = _saved_workflow(project_engine, "runner")
+
+        reopened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=saved.workflow_id))
+
+        assert isinstance(reopened, RunWorkflowFromRegistryResultSuccess), reopened.result_details
+        assert reopened.workflow_id == saved.workflow_id
+        assert project_engine.context_manager.get_current_workflow_id() == saved.workflow_id
+
+    def test_branch_compare_and_create_from_template(self, project_engine: Engine) -> None:
+        source = _saved_workflow(project_engine, "source")
+
+        branch = project_engine.handle_request(BranchWorkflowRequest(workflow_id=source.workflow_id))
+        assert isinstance(branch, BranchWorkflowResultSuccess), branch.result_details
+        assert branch.original_workflow_id == source.workflow_id
+        compared = project_engine.handle_request(
+            CompareWorkflowsRequest(workflow_id=branch.branched_workflow_id, compare_workflow_id=source.workflow_id)
+        )
+        assert isinstance(compared, CompareWorkflowsResultSuccess), compared.result_details
+        assert compared.workflow_name == branch.branched_workflow_name
+        assert compared.compare_workflow_name == source.workflow_name
+
+        project_engine.workflow_registry.get(source.workflow_id).metadata.is_template = True  # type: ignore[arg-type]
+        created = project_engine.handle_request(
+            CreateWorkflowFromTemplateRequest(template_workflow_id=source.workflow_id)
+        )
+        assert isinstance(created, CreateWorkflowFromTemplateResultSuccess), created.result_details
+        assert created.workflow_id not in (None, source.workflow_id)
+
+    def test_compare_against_a_deleted_source_reports_no_source(self, project_engine: Engine) -> None:
+        saved = _saved_workflow(project_engine, "orphan")
+
+        compared = project_engine.handle_request(
+            CompareWorkflowsRequest(workflow_id=saved.workflow_id, compare_workflow_id="deleted_source")
+        )
+
+        assert isinstance(compared, CompareWorkflowsResultSuccess), compared.result_details
+        assert compared.status == "no_source"
+
+    def test_set_workflow_context_and_ensure(self, project_engine: Engine) -> None:
+        saved = _saved_workflow(project_engine, "context")
+
+        entered = project_engine.handle_request(SetWorkflowContextRequest(workflow_id=saved.workflow_id))
+        assert isinstance(entered, SetWorkflowContextSuccess), entered.result_details
+        assert entered.workflow_id == saved.workflow_id
+        assert entered.workflow_name == saved.workflow_name
+        _close(project_engine)
+
+        ensured = project_engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_id=saved.workflow_id))
+        assert isinstance(ensured, EnsureWorkflowAndFlowResultSuccess), ensured.result_details
+        assert ensured.workflow_id == saved.workflow_id
+        assert ensured.created_workflow
+
+    def test_ensure_with_the_id_of_another_workflow_than_the_open_one_fails(self, project_engine: Engine) -> None:
+        setup = _open_a_and_save_b(project_engine)
+
+        refused = project_engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_id=setup.other.workflow_id))
+        reused = project_engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_id=setup.open_id))
+        reused_by_dashed_id = project_engine.handle_request(
+            EnsureWorkflowAndFlowRequest(workflow_id=str(uuid.UUID(hex=setup.open_id)))
+        )
+        by_name = project_engine.handle_request(EnsureWorkflowAndFlowRequest(workflow_name=setup.other.workflow_name))
+
+        assert isinstance(refused, EnsureWorkflowAndFlowResultFailure)
+        assert str(refused.result_details) == (
+            f"Attempted to ensure workflow '{setup.other.workflow_id}'. Failed because workflow "
+            f"'{project_engine.context_manager.get_current_workflow_name()}' is in the Current Context."
+        )
+        assert isinstance(reused, EnsureWorkflowAndFlowResultSuccess), reused.result_details
+        assert reused.workflow_id == setup.open_id
+        assert not reused.created_workflow
+        assert isinstance(reused_by_dashed_id, EnsureWorkflowAndFlowResultSuccess), reused_by_dashed_id.result_details
+        assert reused_by_dashed_id.workflow_id == setup.open_id
+        # A name keeps the lenient rule: the workflow in context is reused.
+        assert isinstance(by_name, EnsureWorkflowAndFlowResultSuccess), by_name.result_details
+        assert by_name.workflow_id == setup.open_id
+        assert project_engine.context_manager.get_current_workflow_id() == setup.open_id
+
+    def test_set_workflow_context_refuses_an_unknown_id(self, project_engine: Engine) -> None:
+        refused = project_engine.handle_request(SetWorkflowContextRequest(workflow_id="nobody"))
+
+        assert isinstance(refused, SetWorkflowContextFailure)
+        assert str(refused.result_details) == (
+            "Attempted to set the Current Context to workflow 'nobody'. Failed because no workflow has that id."
+        )
+        assert not project_engine.context_manager.has_current_workflow()
+
+    def test_run_command(self, project_engine: Engine) -> None:
+        saved = _saved_workflow(project_engine, "commanded")
+        project_engine.workflow_registry.get(saved.workflow_id).metadata.workflow_shape = WorkflowShape()  # type: ignore[arg-type]
+
+        command = _run(project_engine, GetWorkflowRunCommandRequest(workflow_id=saved.workflow_id))
+
+        assert isinstance(command, GetWorkflowRunCommandResultSuccess), command.result_details
+        assert Path(saved.file_path).name in command.run_command
+
+    def test_run_command_with_no_address_uses_the_workflow_in_context(self, project_engine: Engine) -> None:
+        workflow_id = _open_new_workflow(project_engine, "in_context")
+        saved = _save(project_engine)
+        project_engine.workflow_registry.get(workflow_id).metadata.workflow_shape = WorkflowShape()  # type: ignore[arg-type]
+
+        command = _run(project_engine, GetWorkflowRunCommandRequest())
+
+        assert isinstance(command, GetWorkflowRunCommandResultSuccess), command.result_details
+        assert Path(saved.file_path).name in command.run_command
+
+    def test_run_command_names_the_field_that_was_given(self, project_engine: Engine) -> None:
+        refused = _run(project_engine, GetWorkflowRunCommandRequest(workflow_name="shot", file_path="shot.py"))
+
+        assert isinstance(refused, GetWorkflowRunCommandResultFailure)
+        assert "both workflow_name and file_path" in str(refused.result_details)
+
+    def test_import_of_an_unknown_workflow_names_it(self, project_engine: Engine) -> None:
+        _open_new_workflow(project_engine, "host")
+
+        refused = _run(project_engine, ImportWorkflowAsReferencedSubFlowRequest(workflow_id="nobody"))
+
+        assert isinstance(refused, ImportWorkflowAsReferencedSubFlowResultFailure)
+        assert (
+            str(refused.result_details)
+            == "Attempted to import workflow 'nobody'. Failed because no workflow has that id."
+        )
+
+    def test_import_as_referenced_subflow(self, project_engine: Engine) -> None:
+        referenced = _saved_workflow(project_engine, "referenced")
+        _open_new_workflow(project_engine, "host")
+
+        imported = _run(project_engine, ImportWorkflowAsReferencedSubFlowRequest(workflow_id=referenced.workflow_id))
+
+        assert isinstance(imported, ImportWorkflowAsReferencedSubFlowResultSuccess), imported.result_details
+
+    def test_id_and_name_of_different_workflows_fail(self, project_engine: Engine) -> None:
+        first = _saved_workflow(project_engine, "first")
+        second = _saved_workflow(project_engine, "second")
+
+        refused = project_engine.handle_request(
+            MoveWorkflowRequest(
+                workflow_id=first.workflow_id, workflow_name=second.workflow_name, target_directory="elsewhere"
+            )
+        )
+
+        assert isinstance(refused, MoveWorkflowResultFailure)
+        assert Path(first.file_path).exists()
+        assert Path(second.file_path).exists()
+
+    def test_a_request_naming_no_workflow_fails(self, project_engine: Engine) -> None:
+        _open_new_workflow(project_engine, "open")
+
+        refused = _run(project_engine, DeleteWorkflowRequest())
+
+        assert isinstance(refused, DeleteWorkflowResultFailure)
+        assert "names no workflow" in str(refused.result_details)
+        assert project_engine.context_manager.has_current_workflow()
+
+
+# Requests that resolve an address, each built with the id no workflow has. CompareWorkflowsRequest's
+# compare_workflow_id is left out: an unknown one is a "no_source" status, not a failure
+# (test_compare_against_a_deleted_source_reports_no_source).
+UNKNOWN_ID_REQUESTS: dict[str, Callable[[str], object]] = {
+    "branch": lambda unknown_id: BranchWorkflowRequest(workflow_id=unknown_id),
+    "merge": lambda unknown_id: MergeWorkflowBranchRequest(workflow_id=unknown_id),
+    "reset": lambda unknown_id: ResetWorkflowBranchRequest(workflow_id=unknown_id),
+    "compare": lambda unknown_id: CompareWorkflowsRequest(workflow_id=unknown_id, compare_workflow_id=unknown_id),
+    "set_metadata": lambda unknown_id: SetWorkflowMetadataRequest(
+        workflow_id=unknown_id,
+        workflow_metadata={"description": "never written"},  # type: ignore[arg-type]
+    ),
+    "publish_options": lambda unknown_id: GetPublishOptionsRequest(workflow_id=unknown_id, publisher_name="lib"),
+    "publish": lambda unknown_id: PublishWorkflowRequest(workflow_id=unknown_id, publisher_name="lib"),
+    "run_from_registry": lambda unknown_id: RunWorkflowFromRegistryRequest(workflow_id=unknown_id),
+    "run_command": lambda unknown_id: GetWorkflowRunCommandRequest(workflow_id=unknown_id),
+    "save_subflow": lambda unknown_id: SaveSubflowToWorkflowRequest(flow_name="Sub", workflow_id=unknown_id),
+    "set_workflow_context": lambda unknown_id: SetWorkflowContextRequest(workflow_id=unknown_id),
+}
+
+
+class TestRequestsForAnUnknownWorkflowIdFailAndLeaveTheOpenOneAlone:
+    @pytest.mark.parametrize("make_request", UNKNOWN_ID_REQUESTS.values(), ids=UNKNOWN_ID_REQUESTS.keys())
+    def test_unknown_id(self, project_engine: Engine, make_request: Callable[[str], object]) -> None:
+        setup = _open_a_and_save_b(project_engine)
+        open_file_content = setup.open_file.read_text(encoding="utf-8")
+        other_file_content = Path(setup.other.file_path).read_text(encoding="utf-8")
+        unknown_id = uuid.uuid4().hex
+
+        result = _run(project_engine, make_request(unknown_id))
+
+        assert result.failed(), result.result_details
+        assert unknown_id in str(result.result_details)
+        assert project_engine.workflow_registry.find_by_id(unknown_id) is None
+        assert Path(setup.other.file_path).read_text(encoding="utf-8") == other_file_content
+        _assert_open_workflow_untouched(project_engine, setup, open_file_content)
+
+
+class TestPublishingAddressesAWorkflowById:
+    """Publishers still receive the workflow's name, filled in on a copy of the request."""
+
+    def _publisher(self, received: list[object]) -> RegisteredEventHandler:
+        def get_publish_options(request: GetPublishOptionsRequest) -> GetPublishOptionsResultSuccess:
+            received.append(request)
+            return GetPublishOptionsResultSuccess(fields=[], result_details="ok")
+
+        def publish(request: object) -> PublishWorkflowResultSuccess:
+            received.append(request)
+            return PublishWorkflowResultSuccess(
+                published_workflow_file_path="", skip_published_workflow_registration=True, result_details="ok"
+            )
+
+        event_data = PublishWorkflowRegisteredEventData(
+            start_flow_node_type="Start",
+            start_flow_node_library_name="lib",
+            end_flow_node_type="End",
+            end_flow_node_library_name="lib",
+            get_publish_options=get_publish_options,
+        )
+        return RegisteredEventHandler(handler=publish, library_data=MagicMock(), event_data=event_data)
+
+    def _saved_result(self) -> SaveWorkflowResultSuccess:
+        return SaveWorkflowResultSuccess(file_path="", workflow_name="", result_details="ok")
+
+    def test_publish_options_and_publish_by_id(self, project_engine: Engine) -> None:
+        workflow_id = _open_new_workflow(project_engine, "published")
+        saved = _save(project_engine)
+        received: list[object] = []
+        publisher = self._publisher(received)
+
+        with (
+            patch.object(
+                project_engine.library_manager, "get_registered_event_handlers", return_value={"lib": publisher}
+            ),
+            patch.object(
+                project_engine.workflow_manager.saver, "save_open_workflow", return_value=self._saved_result()
+            ) as save_open_workflow,
+        ):
+            options = project_engine.handle_request(
+                GetPublishOptionsRequest(workflow_id=workflow_id, publisher_name="lib")
+            )
+            published = _run(project_engine, PublishWorkflowRequest(workflow_id=workflow_id, publisher_name="lib"))
+
+        assert isinstance(options, GetPublishOptionsResultSuccess), options.result_details
+        assert isinstance(published, PublishWorkflowResultSuccess), published.result_details
+        assert [(request.workflow_name, request.workflow_id) for request in received] == [  # type: ignore[attr-defined]
+            (saved.workflow_name, workflow_id),
+            (saved.workflow_name, workflow_id),
+        ]
+        # The open workflow is saved first, so the latest changes are published.
+        save_open_workflow.assert_called_once()
+
+    def test_a_workflow_that_is_not_open_is_refused(self, project_engine: Engine) -> None:
+        setup = _open_a_and_save_b(project_engine)
+        other_content = Path(setup.other.file_path).read_text(encoding="utf-8")
+        received: list[object] = []
+        publisher = self._publisher(received)
+
+        with (
+            patch.object(
+                project_engine.library_manager, "get_registered_event_handlers", return_value={"lib": publisher}
+            ),
+            patch.object(project_engine.workflow_manager.saver, "save_open_workflow") as save_open_workflow,
+        ):
+            options = project_engine.handle_request(
+                GetPublishOptionsRequest(workflow_id=setup.other.workflow_id, publisher_name="lib")
+            )
+            published = _run(
+                project_engine, PublishWorkflowRequest(workflow_id=setup.other.workflow_id, publisher_name="lib")
+            )
+
+        assert isinstance(options, GetPublishOptionsResultFailure)
+        assert isinstance(published, PublishWorkflowResultFailure)
+        assert str(published.result_details) == (
+            f"Attempted to publish workflow '{setup.other.workflow_name}'. "
+            "Failed because it is not open. Open it, then publish it."
+        )
+        # Publishers read the open graph, so neither ran, and nothing was saved over the other file.
+        assert received == []
+        save_open_workflow.assert_not_called()
+        assert Path(setup.other.file_path).read_text(encoding="utf-8") == other_content
+
+    def test_a_failed_save_fails_the_publish(self, project_engine: Engine) -> None:
+        workflow_id = _open_new_workflow(project_engine, "published")
+        _save(project_engine)
+        received: list[object] = []
+        publisher = self._publisher(received)
+
+        with (
+            patch.object(
+                project_engine.library_manager, "get_registered_event_handlers", return_value={"lib": publisher}
+            ),
+            patch.object(
+                project_engine.workflow_manager.saver,
+                "save_open_workflow",
+                return_value=SaveWorkflowResultFailure(result_details="disk full"),
+            ),
+        ):
+            published = _run(project_engine, PublishWorkflowRequest(workflow_id=workflow_id, publisher_name="lib"))
+
+        assert isinstance(published, PublishWorkflowResultFailure)
+        assert "could not be saved first" in str(published.result_details)
+        assert received == []
+
+    def test_the_local_publisher_publishes_the_workflow_it_loaded(self, project_engine: Engine, tmp_path: Path) -> None:
+        # A copy loaded from outside the workspace is registered under its absolute path, not the
+        # name of the file it was copied from, so the publisher addresses the loaded workflow by id.
+        saved = _saved_workflow(project_engine, "packaged")
+        saved_content = Path(saved.file_path).read_text(encoding="utf-8")
+        copied_file = tmp_path / "subprocess" / "workflow.py"
+        copied_file.parent.mkdir()
+        shutil.copy(saved.file_path, copied_file)
+        received: list[object] = []
+        publisher = self._publisher(received)
+
+        with patch.object(
+            project_engine.library_manager, "get_registered_event_handlers", return_value={"lib": publisher}
+        ):
+            asyncio.run(
+                LocalWorkflowPublisher().arun(
+                    workflow_path=str(copied_file),
+                    publisher_name="lib",
+                    published_workflow_file_name="packaged_published",
+                )
+            )
+
+        loaded = project_engine.workflow_registry.find_by_path(copied_file)
+        assert loaded is not None
+        assert project_engine.context_manager.get_current_workflow_id() == loaded.workflow_id
+        assert [(request.workflow_name, request.workflow_id) for request in received] == [  # type: ignore[attr-defined]
+            (loaded.name, loaded.workflow_id)
+        ]
+        # The copy was saved where it was loaded from; the file it was copied from is untouched.
+        assert sorted(path.name for path in Path(saved.file_path).parent.glob("*.py")) == [Path(saved.file_path).name]
+        assert Path(saved.file_path).read_text(encoding="utf-8") == saved_content
+
+
+class TestRenameOfAWorkflowThatIsNotOpen:
+    """Renaming a closed workflow moves its file and rewrites its header's display name; it saves nothing."""
+
+    def test_the_file_moves_and_keeps_the_id(self, project_engine: Engine) -> None:
+        saved = _saved_workflow(project_engine, "Before")
+        body = Path(saved.file_path).read_text(encoding="utf-8").split("# ///", 2)[2]
+
+        renamed = _run(project_engine, RenameWorkflowRequest(workflow_id=saved.workflow_id, requested_name="after"))
+
+        assert isinstance(renamed, RenameWorkflowResultSuccess), renamed.result_details
+        renamed_file = Path(saved.file_path).with_name("after.py")
+        assert not Path(saved.file_path).exists()
+        metadata = read_workflow_metadata(renamed_file)
+        assert metadata.workflow_id == saved.workflow_id
+        # MATCH_FILE_NAME, the default: the display name follows the requested name.
+        assert metadata.name == "after"
+        # Only the header changed: the graph below it is the one that was saved.
+        assert renamed_file.read_text(encoding="utf-8").split("# ///", 2)[2] == body
+        entry = project_engine.workflow_registry.get(saved.workflow_id)  # type: ignore[arg-type]
+        assert entry.name == renamed.new_workflow_name == "after"
+        assert entry.absolute_path == renamed_file
+        assert entry.metadata.name == "after"
+        assert not project_engine.context_manager.has_current_workflow()
+
+    def test_display_name_behavior_is_honored(self, project_engine: Engine) -> None:
+        kept = _saved_workflow(project_engine, "kept")
+        kept_title = read_workflow_metadata(Path(kept.file_path)).name
+        overridden = _saved_workflow(project_engine, "overridden")
+
+        kept_result = _run(
+            project_engine,
+            RenameWorkflowRequest(
+                workflow_id=kept.workflow_id,
+                requested_name="kept_file",
+                display_name_behavior=RenameDisplayNameBehavior.PRESERVE_EXISTING,
+            ),
+        )
+        overridden_result = _run(
+            project_engine,
+            RenameWorkflowRequest(
+                workflow_id=overridden.workflow_id,
+                requested_name="overridden_file",
+                display_name_behavior=RenameDisplayNameBehavior.OVERRIDE,
+                display_name="New Title",
+            ),
+        )
+
+        assert isinstance(kept_result, RenameWorkflowResultSuccess), kept_result.result_details
+        assert isinstance(overridden_result, RenameWorkflowResultSuccess), overridden_result.result_details
+        assert read_workflow_metadata(Path(kept.file_path).with_name("kept_file.py")).name == kept_title
+        assert read_workflow_metadata(Path(overridden.file_path).with_name("overridden_file.py")).name == "New Title"
+
+    def test_the_file_stays_in_its_folder(self, project_engine: Engine, workspace: Path) -> None:
+        saved = _saved_workflow(project_engine, "nested")
+        moved = project_engine.handle_request(
+            MoveWorkflowRequest(workflow_id=saved.workflow_id, target_directory="shots")
+        )
+        assert isinstance(moved, MoveWorkflowResultSuccess), moved.result_details
+
+        renamed = _run(project_engine, RenameWorkflowRequest(workflow_id=saved.workflow_id, requested_name="renamed"))
+
+        assert isinstance(renamed, RenameWorkflowResultSuccess), renamed.result_details
+        assert renamed.new_workflow_name == "shots/renamed"
+        assert _header_id(workspace / "shots" / "renamed.py") == saved.workflow_id
+
+    def test_a_name_another_file_has_is_refused(self, project_engine: Engine) -> None:
+        saved = _saved_workflow(project_engine, "first")
+        taken = _saved_workflow(project_engine, "second")
+        taken_content = Path(taken.file_path).read_text(encoding="utf-8")
+
+        refused = _run(project_engine, RenameWorkflowRequest(workflow_id=saved.workflow_id, requested_name="second"))
+
+        assert isinstance(refused, RenameWorkflowResultFailure)
+        assert _header_id(saved.file_path) == saved.workflow_id
+        assert Path(taken.file_path).read_text(encoding="utf-8") == taken_content
+        assert project_engine.workflow_registry.get(saved.workflow_id).name == saved.workflow_name  # type: ignore[arg-type]
+
+    def test_a_name_whose_file_was_deleted_outside_the_engine_is_refused(self, project_engine: Engine) -> None:
+        """The stale entry still holds the path, so the rename fails before moving anything."""
+        target = _saved_workflow(project_engine, "target")
+        stale = _saved_workflow(project_engine, "stale")
+        Path(stale.file_path).unlink()
+
+        refused = _run(project_engine, RenameWorkflowRequest(workflow_id=target.workflow_id, requested_name="stale"))
+
+        assert isinstance(refused, RenameWorkflowResultFailure)
+        assert f"workflow '{stale.workflow_name}' is registered at" in str(refused.result_details)
+        assert _header_id(target.file_path) == target.workflow_id
+        assert not Path(stale.file_path).exists()
+        entry = project_engine.workflow_registry.get(target.workflow_id)  # type: ignore[arg-type]
+        assert entry.absolute_path == Path(target.file_path)
+
+    def test_a_library_workflow_is_refused(self, project_engine: Engine) -> None:
+        saved = _saved_workflow(project_engine, "library")
+        project_engine.workflow_registry.get(saved.workflow_id).metadata.is_griptape_provided = True  # type: ignore[arg-type]
+
+        refused = _run(project_engine, RenameWorkflowRequest(workflow_id=saved.workflow_id, requested_name="moved"))
+
+        assert isinstance(refused, RenameWorkflowResultFailure)
+        assert "a library provides it" in str(refused.result_details)
+        assert Path(saved.file_path).exists()
+
+    def test_an_unsaved_workflow_that_is_not_open_is_refused(self, project_engine: Engine) -> None:
+        unsaved = project_engine.workflow_registry.register_unsaved("Scratch")
+
+        refused = _run(project_engine, RenameWorkflowRequest(workflow_id=unsaved.workflow_id, requested_name="named"))
+
+        assert isinstance(refused, RenameWorkflowResultFailure)
+        assert "unsaved and not open" in str(refused.result_details)
+
+    def test_renaming_only_the_letter_case_keeps_the_file(self, project_engine: Engine, workspace: Path) -> None:
+        probe = workspace / "Case_Probe.txt"
+        probe.write_text("probe")
+        case_insensitive = (workspace / "case_probe.txt").exists()
+        probe.unlink()
+        if not case_insensitive:
+            pytest.skip("the filesystem is case-sensitive, so the new name is a different file")
+        _open_new_workflow(project_engine, "Shot")
+        saved = _save(project_engine, SaveWorkflowRequest(file_name="Shot"))
+        _close(project_engine)
+
+        renamed = _run(project_engine, RenameWorkflowRequest(workflow_id=saved.workflow_id, requested_name="shot"))
+
+        assert isinstance(renamed, RenameWorkflowResultSuccess), renamed.result_details
+        entry = project_engine.workflow_registry.get(saved.workflow_id)  # type: ignore[arg-type]
+        assert entry.absolute_path is not None
+        assert _header_id(entry.absolute_path) == saved.workflow_id
+        assert "shot.py" in [path.name for path in entry.absolute_path.parent.iterdir()]
+
+    def test_a_failed_header_write_moves_the_file_back(self, project_engine: Engine) -> None:
+        saved = _saved_workflow(project_engine, "Before")
+        original_content = Path(saved.file_path).read_text(encoding="utf-8")
+        renamed_file = Path(saved.file_path).with_name("after.py")
+
+        with patch.object(
+            project_engine.workflow_manager.saver,
+            "write_workflow_file",
+            return_value=WriteWorkflowFileResult(success=False, error_details="disk full"),
+        ):
+            refused = _run(project_engine, RenameWorkflowRequest(workflow_id=saved.workflow_id, requested_name="after"))
+
+        assert isinstance(refused, RenameWorkflowResultFailure)
+        assert "disk full" in str(refused.result_details)
+        assert Path(saved.file_path).read_text(encoding="utf-8") == original_content
+        assert not renamed_file.exists()
+        entry = project_engine.workflow_registry.get(saved.workflow_id)  # type: ignore[arg-type]
+        assert entry.absolute_path == Path(saved.file_path)
+        assert entry.name == saved.workflow_name

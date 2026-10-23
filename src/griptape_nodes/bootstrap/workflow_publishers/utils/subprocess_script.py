@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 class PublishWorkflowArgs:
     """Arguments for publishing a workflow."""
 
-    workflow_name: str
     workflow_path: str
     publisher_name: str
     published_workflow_file_name: str
@@ -33,7 +32,6 @@ async def _main(args: PublishWorkflowArgs) -> None:
 
     async with publisher:
         await publisher.arun(
-            workflow_name=args.workflow_name,
             workflow_path=args.workflow_path,
             publisher_name=args.publisher_name,
             published_workflow_file_name=args.published_workflow_file_name,
@@ -45,11 +43,6 @@ async def _main(args: PublishWorkflowArgs) -> None:
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument(
-        "--workflow-name",
-        help="Name of the workflow to publish",
-        required=True,
-    )
     parser.add_argument(
         "--workflow-path",
         help="Path to the workflow file to publish",
@@ -71,7 +64,6 @@ if __name__ == "__main__":
     parsed_args = parser.parse_args()
 
     publish_args = PublishWorkflowArgs(
-        workflow_name=parsed_args.workflow_name,
         workflow_path=parsed_args.workflow_path,
         publisher_name=parsed_args.publisher_name,
         published_workflow_file_name=parsed_args.published_workflow_file_name,

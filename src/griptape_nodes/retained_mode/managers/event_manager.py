@@ -174,8 +174,11 @@ def _running_loop() -> asyncio.AbstractEventLoop | None:
 
 
 class ResultContext(TypedDict, total=False):
+    """Request envelope fields echoed on the result envelope."""
+
     response_topic: str | None
     request_id: str | None
+    workflow_id: str | None
 
 
 class EventManager(EngineScoped):
@@ -1100,6 +1103,7 @@ class EventManager(EngineScoped):
                     result=callback_result,
                     retained_mode=retained_mode_str,
                     response_topic=context.get("response_topic"),
+                    workflow_id=context.get("workflow_id"),
                 )
             else:
                 result_event = EventResultFailure(
@@ -1108,6 +1112,7 @@ class EventManager(EngineScoped):
                     result=callback_result,
                     retained_mode=retained_mode_str,
                     response_topic=context.get("response_topic"),
+                    workflow_id=context.get("workflow_id"),
                 )
 
         # Fired here rather than in the two dispatch methods because every path that
@@ -1139,16 +1144,17 @@ class EventManager(EngineScoped):
         request: RP,
         *,
         result_context: ResultContext | None = None,
+        workflow_id: str | None = None,
     ) -> EventResultSuccess | EventResultFailure:
         """Publish an event to the manager assigned to its type.
 
         Args:
             request: The request to handle
             result_context: The result context containing response_topic and request_id
+            workflow_id: The request envelope's workflow_id, echoed on the result. Not routed on.
         """
         operation_depth_mgr = self.engine.operation_depth_manager
-        if result_context is None:
-            result_context = ResultContext()
+        result_context = self._result_context_with_workflow_id(request, result_context, workflow_id)
 
         # Notify the manager of the event type
         request_type = type(request)
@@ -1194,16 +1200,17 @@ class EventManager(EngineScoped):
         request: RP,
         *,
         result_context: ResultContext | None = None,
+        workflow_id: str | None = None,
     ) -> EventResultSuccess | EventResultFailure:
         """Publish an event to the manager assigned to its type (sync version).
 
         Args:
             request: The request to handle
             result_context: The result context containing response_topic and request_id
+            workflow_id: The request envelope's workflow_id, echoed on the result. Not routed on.
         """
         operation_depth_mgr = self.engine.operation_depth_manager
-        if result_context is None:
-            result_context = ResultContext()
+        result_context = self._result_context_with_workflow_id(request, result_context, workflow_id)
 
         # Notify the manager of the event type
         request_type = type(request)
@@ -1242,6 +1249,36 @@ class EventManager(EngineScoped):
             )
         finally:
             _active_request_type.reset(token)
+
+    def _result_context_with_workflow_id(
+        self, request: RequestPayload, result_context: ResultContext | None, workflow_id: str | None
+    ) -> ResultContext:
+        """The result context to answer `request` with, carrying the envelope's workflow_id.
+
+        The envelope names the tab's open workflow. Requests are not dispatched by it yet, so it
+        is only compared with the workflow in context, and a mismatch is logged at DEBUG. It is
+        never a reason to refuse a request: host requests carry one on purpose.
+        """
+        context = ResultContext() if result_context is None else ResultContext(**result_context)
+        if workflow_id is not None:
+            context["workflow_id"] = workflow_id
+        envelope_workflow_id = context.get("workflow_id")
+        if envelope_workflow_id is None:
+            return context
+
+        context_manager = self.engine.context_manager
+        current_workflow_id = None
+        if context_manager.has_current_workflow():
+            current_workflow_id = context_manager.get_current_workflow_id()
+        if envelope_workflow_id != current_workflow_id:
+            logging.getLogger("griptape_nodes").debug(
+                "%s was addressed to workflow '%s', but the workflow in context is '%s'. "
+                "Requests are not routed by workflow yet, so it runs against the workflow in context.",
+                type(request).__name__,
+                envelope_workflow_id,
+                current_workflow_id,
+            )
+        return context
 
     def _invoke_handler_from_sync(self, callback: Callable, request: RequestPayload) -> ResultPayload:
         """Call a request handler from sync code, bridging async handlers onto a loop."""

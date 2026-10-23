@@ -816,9 +816,7 @@ class NodeExecutor(EngineScoped):
             raise RuntimeError(msg) from e
 
         try:
-            published_workflow_filename = await self._publish_library_workflow(
-                workflow_result, library_name, result.file_name, node=node
-            )
+            published_workflow_filename = await self._publish_library_workflow(workflow_result, library_name, node=node)
         except Exception as e:
             logger.exception(
                 "Failed to publish library workflow for node '%s' via library '%s'. Node type: %s",
@@ -954,7 +952,6 @@ class NodeExecutor(EngineScoped):
         self,
         workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess,
         library_name: str,
-        file_name: str,
         node: BaseNode | None = None,
     ) -> Path:
         # Define event callback if node is a SubflowNodeGroup for GUI updates
@@ -968,7 +965,6 @@ class NodeExecutor(EngineScoped):
 
         async with subprocess_workflow_publisher:
             await subprocess_workflow_publisher.arun(
-                workflow_name=file_name,
                 workflow_path=workflow_result.file_path,
                 publisher_name=library_name,
                 published_workflow_file_name=published_filename,
@@ -3983,9 +3979,7 @@ class NodeExecutor(EngineScoped):
             raise RuntimeError(msg)  # noqa: TRY004 - This is a runtime failure, not a type validation error
 
         # Publish to the library
-        published_workflow_filename = await self._publish_library_workflow(
-            workflow_result, library_name, file_name, node=node
-        )
+        published_workflow_filename = await self._publish_library_workflow(workflow_result, library_name, node=node)
 
         logger.info("Successfully published workflow to '%s'", published_workflow_filename)
 
@@ -4273,7 +4267,7 @@ class NodeExecutor(EngineScoped):
                 logger.debug("Could not register workflow '%s' to clean it up: %s", workflow_path, err)
                 return
 
-        delete_request = DeleteWorkflowRequest(name=workflow.name)
+        delete_request = DeleteWorkflowRequest(workflow_id=workflow.workflow_id)
         delete_result = await self.engine.ahandle_request(delete_request)
         if not isinstance(delete_result, DeleteWorkflowResultFailure):
             logger.debug(
