@@ -2,26 +2,29 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
+import pytest_asyncio
 
-from griptape_nodes.app.worker_routing import RemoteHandler
+from griptape_nodes.app.worker_routing import RemoteHandler, register_remote_handlers
 from griptape_nodes.retained_mode.events.base_events import (
+    EventRequest,
     EventResultSuccess,
     RequestPayload,
     ResultPayload,
     ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
+from griptape_nodes.retained_mode.managers.event_manager import ResultContext
 from griptape_nodes.retained_mode.request_handlers import RequestScope
 from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
-    from griptape_nodes.retained_mode.managers.event_manager import ResultContext
     from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 NOT_OPEN_ID = "0000000000000000000000000000dead"
@@ -293,3 +296,68 @@ class TestNestedRequests:
         assert isinstance(result, GenericResultFailure)
         assert f"in workflow '{closed.workflow_id}'" in str(result.result_details)
         assert calls.workflows == []
+
+
+class _RecordingRequestClient:
+    """Stands in for a worker's RequestClient: records what it is asked to send and answers success."""
+
+    def __init__(self) -> None:
+        self.sent: list[EventRequest] = []
+
+    async def request_to_orchestrator(
+        self,
+        event_request: EventRequest,
+        orchestrator_request_topic: str,  # noqa: ARG002
+        worker_response_topic: str,  # noqa: ARG002
+        timeout_ms: int | None = None,  # noqa: ARG002
+    ) -> dict[str, Any]:
+        self.sent.append(event_request)
+        return {
+            "event_type": "EventResultSuccess",
+            "result_type": "GenericResultFailure",
+            "result": {"result_details": "answered by the orchestrator"},
+        }
+
+
+class TestWorkerForwarding:
+    """A worker names the orchestrator's workflow it mirrors on every request it forwards."""
+
+    PEER_ID = "00000000000000000000000000000abc"
+
+    @pytest_asyncio.fixture
+    async def request_client(self, engine: Engine) -> _RecordingRequestClient:
+        """Configure `engine` to forward as a worker does, through a recording client."""
+        client = _RecordingRequestClient()
+        engine.event_manager.configure_worker_forwarding(
+            request_client=client,  # type: ignore[arg-type]
+            orchestrator_request_topic="orchestrator",
+            worker_response_topic="worker",
+            websocket_event_loop=asyncio.get_running_loop(),
+        )
+        return client
+
+    @pytest.mark.asyncio
+    async def test_a_workflow_request_from_node_code_carries_the_mirrored_workflow_id(
+        self, engine: Engine, calls: _Calls, request_client: _RecordingRequestClient
+    ) -> None:
+        event_manager = engine.event_manager
+        engine.context_manager.mirror_workflow_context(self.PEER_ID, "peer", None, None)
+        _register(engine, calls, RequestScope.WORKFLOW)
+        register_remote_handlers(event_manager)
+
+        with event_manager.node_execution_scope():
+            result_event = await event_manager.ahandle_request(_ScopeProbeRequest())
+
+        assert str(result_event.result.result_details) == "answered by the orchestrator"
+        assert [(type(sent.request), sent.workflow_id) for sent in request_client.sent] == [
+            (_ScopeProbeRequest, self.PEER_ID)
+        ]
+        assert calls.workflows == []
+
+    @pytest.mark.asyncio
+    async def test_with_no_mirrored_workflow_the_envelope_names_none(
+        self, engine: Engine, request_client: _RecordingRequestClient
+    ) -> None:
+        await engine.event_manager.forward_to_orchestrator(_ScopeProbeRequest(), ResultContext())
+
+        assert [sent.workflow_id for sent in request_client.sent] == [None]

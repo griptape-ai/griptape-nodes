@@ -561,6 +561,12 @@ class ContextManager(EngineScoped):
             return
         registry.remove(workflow_id)
 
+    def mirrored_workflow_id(self) -> str | None:
+        """The id of the peer engine's workflow this engine mirrors, or None when it mirrors none."""
+        if self._mirror is None:
+            return None
+        return self._mirror.workflow_id
+
     def has_current_workflow(self) -> bool:
         """Check if there is an active Workflow context: the open workflow, or a worker's mirror."""
         return self._current_or_none() is not None

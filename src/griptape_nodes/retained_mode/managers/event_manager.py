@@ -1012,7 +1012,8 @@ class EventManager(EngineScoped):
 
         Wraps the request in an EventRequest, awaits the orchestrator's EventResult
         payload, and reconstructs it as an EventResultSuccess/EventResultFailure whose
-        shape matches the locally-dispatched path.
+        shape matches the locally-dispatched path. The envelope names the orchestrator's
+        workflow this worker mirrors, which the orchestrator runs the request in.
 
         The send/track/await is dispatched onto the websocket event loop (configured via
         configure_worker_forwarding), the loop that owns the transport. Reaching
@@ -1029,7 +1030,9 @@ class EventManager(EngineScoped):
             msg = "Worker forwarding is enabled but not fully configured."
             raise RuntimeError(msg)
 
-        event_request: EventRequest = EventRequest(request=request)
+        event_request: EventRequest = EventRequest(
+            request=request, workflow_id=self.engine.context_manager.mirrored_workflow_id()
+        )
 
         response_future = asyncio.run_coroutine_threadsafe(
             self._worker_request_client.request_to_orchestrator(
