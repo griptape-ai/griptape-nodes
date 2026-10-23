@@ -89,8 +89,9 @@ Create, open, save, and manage the current workflow file:
 
 - **New** / **Open...** — start a new workflow or browse to an
     existing one.
-- **Rename...** — rename the workflow (disabled for Griptape-provided
-    templates; use Save As to make an editable copy instead).
+- **Rename...** — rename the workflow. For a workflow that's never been
+    saved, including the copy you get when you open a Griptape-provided
+    template, this opens the **Save Workflow** dialog instead.
 - **Save** / **Save As...** / **Save As New Version** — Save As New
     Version writes a new versioned file (`my_workflow_v002.py`, and so
     on) instead of overwriting; it only appears once the workflow has
