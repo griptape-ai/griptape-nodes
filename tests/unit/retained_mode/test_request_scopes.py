@@ -11,6 +11,8 @@ import pytest
 import pytest_asyncio
 
 from griptape_nodes.app.worker_routing import RemoteHandler, register_remote_handlers
+from griptape_nodes.retained_mode.events.access_events import QueryModelAccessForNodeRequest
+from griptape_nodes.retained_mode.events.app_events import EngineHeartbeatRequest
 from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     EventResultSuccess,
@@ -18,7 +20,18 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayload,
     ResultPayloadSuccess,
 )
+from griptape_nodes.retained_mode.events.context_events import (
+    GetWorkflowContextRequest,
+    GetWorkflowContextSuccess,
+    SetWorkflowContextRequest,
+)
 from griptape_nodes.retained_mode.events.generic_events import GenericResultFailure
+from griptape_nodes.retained_mode.events.workflow_events import (
+    ListAllWorkflowsRequest,
+    RunWorkflowFromRegistryRequest,
+    RunWorkflowFromScratchRequest,
+    RunWorkflowWithCurrentStateRequest,
+)
 from griptape_nodes.retained_mode.managers.event_manager import ResultContext
 from griptape_nodes.retained_mode.request_handlers import RequestScope
 from tests.workflow_context import push_unsaved_workflow
@@ -204,6 +217,18 @@ class TestHostAndUndeclaredScopes:
         mismatches = [record for record in caplog.records if NOT_OPEN_ID in record.getMessage()]
         assert [record.levelno for record in mismatches] == [logging.DEBUG]
 
+    @pytest.mark.asyncio
+    async def test_an_undeclared_scope_logs_nothing_for_the_open_workflow(
+        self, engine: Engine, calls: _Calls, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        workflow = push_unsaved_workflow(engine)
+        _register(engine, calls, None)
+
+        with caplog.at_level(logging.DEBUG, logger="griptape_nodes"):
+            await engine.event_manager.ahandle_request(_ScopeProbeRequest(), workflow_id=workflow.workflow_id)
+
+        assert not [record for record in caplog.records if "was addressed to workflow" in record.getMessage()]
+
 
 class TestForwardedRequests:
     """On a worker, which opens no workflow, a forwarded request is resolved where it is forwarded to."""
@@ -361,3 +386,31 @@ class TestWorkerForwarding:
         await engine.event_manager.forward_to_orchestrator(_ScopeProbeRequest(), ResultContext())
 
         assert [sent.workflow_id for sent in request_client.sent] == [None]
+
+
+# The editor sends these with no envelope id, or an id it has not confirmed open, because they
+# report or replace what is open. QueryModelAccessForNodeRequest asks about the host's license.
+HOST_REQUESTS = [
+    GetWorkflowContextRequest,
+    ListAllWorkflowsRequest,
+    EngineHeartbeatRequest,
+    SetWorkflowContextRequest,
+    RunWorkflowFromRegistryRequest,
+    RunWorkflowFromScratchRequest,
+    RunWorkflowWithCurrentStateRequest,
+    QueryModelAccessForNodeRequest,
+]
+
+
+class TestHostRequests:
+    @pytest.mark.parametrize("request_type", HOST_REQUESTS)
+    def test_is_registered_with_host_scope(self, engine: Engine, request_type: type[RequestPayload]) -> None:
+        assert engine.event_manager.get_scope_for_request_type(request_type) is RequestScope.HOST
+
+    def test_the_context_is_reported_for_an_id_that_is_not_open(self, engine: Engine) -> None:
+        workflow = push_unsaved_workflow(engine)
+
+        result_event = engine.event_manager.handle_request(GetWorkflowContextRequest(), workflow_id=NOT_OPEN_ID)
+
+        assert isinstance(result_event.result, GetWorkflowContextSuccess)
+        assert result_event.result.workflow_id == workflow.workflow_id

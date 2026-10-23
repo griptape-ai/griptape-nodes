@@ -28,7 +28,7 @@ from griptape_nodes.retained_mode.events.context_events import (
     SetWorkflowContextRequest,
     SetWorkflowContextSuccess,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.runtime import context as runtime_context
 from griptape_nodes.retained_mode.runtime.context import (
     ElementContext,
@@ -121,7 +121,7 @@ class ContextManager(EngineScoped):
         self._mirror = None
         event_manager.register_request_handlers(self)
 
-    @handles(SetWorkflowContextRequest)
+    @handles(SetWorkflowContextRequest, scope=RequestScope.HOST)
     def on_set_workflow_context_request(self, request: SetWorkflowContextRequest) -> ResultPayload:
         # As of today, we only allow a single Workflow context at a time. This may change in the future.
         if self.has_current_workflow():
@@ -208,7 +208,7 @@ class ContextManager(EngineScoped):
                 f"before setting it as the Current Context. Failed because of '{err}'."
             )
 
-    @handles(GetWorkflowContextRequest)
+    @handles(GetWorkflowContextRequest, scope=RequestScope.HOST)
     def on_get_workflow_context_request(self, request: GetWorkflowContextRequest) -> ResultPayload:  # noqa: ARG002
         workflow_name = None
         workflow_id = None

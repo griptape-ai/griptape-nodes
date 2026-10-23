@@ -2,11 +2,10 @@
 
 `data/workflow_id_envelope_golden.json` is shared: the editor and app suites copy it. The editor
 asserts it emits this shape, the app that it forwards the id, and this suite that the engine
-reads it and echoes it on the result. The engine does not route by the id yet.
+reads it and echoes it on the result. The golden request reports what is open, so it ignores the id.
 """
 
 import json
-import logging
 from pathlib import Path
 
 import pytest
@@ -52,26 +51,20 @@ def test_the_envelope_workflow_id_round_trips() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_result_echoes_the_envelope_workflow_id_and_a_mismatch_is_only_logged(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """No workflow is open, so the id names none in context. The request still runs."""
-    # Booting the engine sets the log level, so it boots before the capture starts.
+async def test_the_result_echoes_the_envelope_workflow_id() -> None:
+    """No workflow is open, so the id names none. The host request runs anyway and echoes it."""
     engine = current_engine()
     event = converters.engine.structure(_golden()["EventRequest"], EventRequest)
     result_context = ResultContext(request_id=event.request_id, response_topic=event.response_topic)
 
-    with caplog.at_level(logging.DEBUG, logger="griptape_nodes"):
-        result_event = await engine.event_manager.ahandle_request(
-            event.request, result_context=result_context, workflow_id=event.workflow_id
-        )
+    result_event = await engine.event_manager.ahandle_request(
+        event.request, result_context=result_context, workflow_id=event.workflow_id
+    )
 
     assert isinstance(result_event.result, GetWorkflowContextSuccess)
     assert result_event.workflow_id == GOLDEN_WORKFLOW_ID
     assert result_event.request_id == "golden-request-1"
     assert json.loads(converters.engine.dumps(result_event))["workflow_id"] == GOLDEN_WORKFLOW_ID
-    mismatches = [record for record in caplog.records if GOLDEN_WORKFLOW_ID in record.getMessage()]
-    assert [record.levelno for record in mismatches] == [logging.DEBUG]
 
 
 def test_the_sync_path_echoes_the_envelope_workflow_id() -> None:
@@ -82,18 +75,3 @@ def test_the_sync_path_echoes_the_envelope_workflow_id() -> None:
 
     assert result_event.succeeded()
     assert result_event.workflow_id == GOLDEN_WORKFLOW_ID
-
-
-def test_a_matching_workflow_id_logs_nothing(caplog: pytest.LogCaptureFixture) -> None:
-    """An id naming the workflow in context is the expected case, so it logs nothing."""
-    engine = current_engine()
-    workflow = engine.workflow_registry.register_unsaved("Open")
-    engine.context_manager.push_workflow(workflow_id=workflow.workflow_id)
-
-    with caplog.at_level(logging.DEBUG, logger="griptape_nodes"):
-        result_event = engine.event_manager.handle_request(
-            GetWorkflowContextRequest(), workflow_id=workflow.workflow_id
-        )
-
-    assert result_event.workflow_id == workflow.workflow_id
-    assert not [record for record in caplog.records if "was addressed to workflow" in record.getMessage()]

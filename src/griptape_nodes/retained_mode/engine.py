@@ -42,7 +42,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowError, OpenWorkflowSet
 from griptape_nodes.utils.version_utils import engine_version
 
@@ -665,7 +665,7 @@ class Engine:
             details = f"Attempted to get engine version. Failed due to '{err}'."
             return GetEngineVersionResultFailure(result_details=details)
 
-    @handles(EngineHeartbeatRequest)
+    @handles(EngineHeartbeatRequest, scope=RequestScope.HOST)
     def handle_engine_heartbeat_request(self, request: EngineHeartbeatRequest) -> ResultPayload:
         """Handle engine heartbeat requests.
 

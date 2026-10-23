@@ -49,7 +49,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.workflow.loading import LoadProblemFrame
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -146,7 +146,7 @@ class WorkflowRunner(EngineScoped):
                 relative_file_path=relative_file_path, complete_file_path=complete_file_path, frame=frame
             )
 
-    @handles(RunWorkflowFromScratchRequest)
+    @handles(RunWorkflowFromScratchRequest, scope=RequestScope.HOST)
     async def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it into a blank slate.
         with self.engine.workflow_manager.squelch_workflow_altered():
@@ -189,7 +189,7 @@ class WorkflowRunner(EngineScoped):
                 result_details=ResultDetails(*execution_result_details(execution_result, level=logging.ERROR))
             )
 
-    @handles(RunWorkflowWithCurrentStateRequest)
+    @handles(RunWorkflowWithCurrentStateRequest, scope=RequestScope.HOST)
     async def on_run_workflow_with_current_state_request(
         self, request: RunWorkflowWithCurrentStateRequest
     ) -> ResultPayload:
@@ -223,7 +223,7 @@ class WorkflowRunner(EngineScoped):
             result_details=ResultDetails(*execution_result_details(execution_result, level=logging.ERROR))
         )
 
-    @handles(RunWorkflowFromRegistryRequest)
+    @handles(RunWorkflowFromRegistryRequest, scope=RequestScope.HOST)
     async def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
         await self.engine.workflow_manager.wait_for_workflows_loaded()
 
