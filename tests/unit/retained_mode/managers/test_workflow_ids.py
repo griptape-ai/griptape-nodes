@@ -78,6 +78,8 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowResultSuccess,
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultSuccess,
+    ListCallableWorkflowsRequest,
+    ListCallableWorkflowsResultSuccess,
     MergeWorkflowBranchRequest,
     MergeWorkflowBranchResultFailure,
     MergeWorkflowBranchResultSuccess,
@@ -1759,6 +1761,19 @@ class TestLibraryWorkflowsOpenAsUnsavedCopies:
         assert isinstance(metadata, GetWorkflowMetadataResultSuccess), metadata.result_details
         assert set(_listed(project_engine)) == listed_before
         assert not project_engine.context_manager.has_current_workflow()
+
+    def test_an_open_copy_is_not_a_callable_workflow(self, project_engine: Engine, tmp_path: Path) -> None:
+        """The copy has the library's shape but no file to import, so a subflow cannot call it."""
+        _library_workflow(project_engine, tmp_path / "library")
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
+
+        callable_result = _run(project_engine, ListCallableWorkflowsRequest())
+
+        assert isinstance(callable_result, ListCallableWorkflowsResultSuccess), callable_result.result_details
+        callable_ids = {callable_workflow.workflow_id for callable_workflow in callable_result.callable_workflows}
+        assert LIBRARY_ID in callable_ids
+        assert opened.workflow_id not in callable_ids
 
     def test_run_from_scratch_on_a_library_file_opens_a_copy(self, project_engine: Engine, tmp_path: Path) -> None:
         library = _library_workflow(project_engine, tmp_path / "library")
