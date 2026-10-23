@@ -337,10 +337,29 @@ class FlowManager(EngineScoped):
         self._global_single_node_resolution = False
         self._global_dag_builder = DagBuilder(self.engine)
         self._node_executor = NodeExecutor(self.engine)
+        # Set when this engine runs a node group for another engine's run, which owns the id.
+        self.parent_run_id: str | None = None
 
     @property
     def global_single_node_resolution(self) -> bool:
         return self._global_single_node_resolution
+
+    @property
+    def current_run_id(self) -> str | None:
+        """The id of the flow run in progress, or None when nothing is running.
+
+        Spend attribution reads this, so a model call made while a run is in progress counts toward
+        that run. A node in a library worker sends its budget requests to this engine, which is why
+        the id is read here rather than from the running task's context. When this engine runs a
+        node group for another engine, its runs count toward that engine's run.
+        """
+        if not self.check_for_existing_running_flow():
+            return None
+        if self._global_control_flow_machine is None:
+            return None
+        if self.parent_run_id is not None:
+            return self.parent_run_id
+        return self._global_control_flow_machine.context.run_id
 
     @property
     def global_flow_queue(self) -> Queue[QueueItem]:
@@ -4705,28 +4724,21 @@ class FlowManager(EngineScoped):
             raise RuntimeError(errormsg)
         self._global_flow_queue.queue.clear()
 
-        # Request cancellation on all nodes and wait for them to complete
-        run_seconds = None
-        if self._global_control_flow_machine is not None:
-            await self._global_control_flow_machine.cancel_flow()
-            # Read before the reset below clears the run's start time.
-            run_seconds = self._global_control_flow_machine.context.seconds_since_run_started()
-
-        # Reset control flow machine
-        if self._global_control_flow_machine is not None:
-            self._global_control_flow_machine.reset_machine(cancel=True)
-        self._global_single_node_resolution = False
-        self._global_dag_builder.clear()
+        # Request cancellation on all nodes and wait for them to complete. The machine is held on to
+        # across the wait: a new run can start meanwhile, and it is this run that has been cancelled.
+        machine = self._global_control_flow_machine
+        if machine is not None:
+            try:
+                await machine.cancel_flow()
+            except Exception:
+                # Cancelling awaits arbitrary node code, so there is no narrower type to catch.
+                # The run may have finished while it was marked cancelled, holding its id back for a
+                # cancelled event; end it now, or no end event would ever carry that id.
+                if machine.current_state is CompleteState and machine.context.run_id is not None:
+                    self._end_cancelled_run(machine)
+                raise
         logger.debug("Cancelling flow run")
-
-        self.engine.event_manager.put_event(
-            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
-        )
-        self.engine.event_manager.put_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds))
-            )
-        )
+        self._end_cancelled_run(machine)
 
     async def _abandon_running_flow(self) -> None:
         """Give up on a run that has already failed, leaving the engine able to start another.
@@ -4754,20 +4766,7 @@ class FlowManager(EngineScoped):
             # cancel_flow_run already reset the machine and told the editor the run is over.
             return
 
-        run_seconds = None
-        if self._global_control_flow_machine is not None:
-            run_seconds = self._global_control_flow_machine.context.seconds_since_run_started()
-            self._global_control_flow_machine.reset_machine(cancel=True)
-        self._global_single_node_resolution = False
-        self._global_dag_builder.clear()
-        self.engine.event_manager.put_event(
-            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
-        )
-        self.engine.event_manager.put_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds))
-            )
-        )
+        self._end_cancelled_run(self._global_control_flow_machine)
 
     def reset_global_execution_state(self) -> None:
         """Reset all global execution state - useful when clearing all workflows."""
@@ -4814,6 +4813,36 @@ class FlowManager(EngineScoped):
     ) -> bool:
         """Check if a connection exists between the specified nodes and parameters."""
         return self._has_connection(source_node, source_parameter, target_node, target_parameter)
+
+    def _end_cancelled_run(self, machine: ControlFlowMachine | None) -> None:
+        """Reset the cancelled run's machine and tell the editor the run is over, with its timing and id.
+
+        Both are read before the reset, which clears them, and sent on the run's
+        `ControlFlowCancelledEvent`. The id is None when another end event already carried it.
+
+        A run started while this one was being cancelled has replaced its machine and owns the
+        shared state now: the DAG builder every top-level machine uses, the single-node flag, and
+        the editor's involved-node set. Those are left to it, and so is the reset, which would
+        clear that builder too. Nothing steps the replaced machine again.
+        """
+        run_seconds = None
+        run_id = None
+        if machine is not None:
+            run_seconds = machine.context.seconds_since_run_started()
+            run_id = machine.context.end_run()
+        if machine is self._global_control_flow_machine:
+            if machine is not None:
+                machine.reset_machine(cancel=True)
+            self._global_single_node_resolution = False
+            self._global_dag_builder.clear()
+            self.engine.event_manager.put_event(
+                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
+            )
+        self.engine.event_manager.put_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent(run_seconds=run_seconds, run_id=run_id))
+            )
+        )
 
     # Internal execution queue helper methods to consolidate redundant operations
     async def _handle_flow_start_if_not_running(

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,7 @@ from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, Exec
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
+    FlowRunStartedEvent,
     InvolvedNodesEvent,
 )
 from griptape_nodes.retained_mode.managers.node_manager import NodeManager
@@ -53,6 +55,12 @@ class ControlFlowContext(EngineScoped):
     is_isolated: bool
     # perf_counter() when the current run started, for the run_seconds the run's end events carry.
     run_started_at: float | None = None
+    # Names the current run in spend attribution, so Griptape Cloud can total its direct provider spend.
+    # Only a top-level run has one; an isolated subflow's spend reads the global machine's.
+    run_id: str | None = None
+    # Set when the run is cancelled, whatever its nodes do about it, so its end event is the
+    # ControlFlowCancelledEvent that cancelling sends rather than the resolved one it passes on the way.
+    cancel_requested: bool = False
 
     def __init__(
         self,
@@ -90,12 +98,24 @@ class ControlFlowContext(EngineScoped):
         self.selected_output = None
         self.paused = False
         self.run_started_at = None
+        self.run_id = None
+        self.cancel_requested = False
 
     def seconds_since_run_started(self) -> float | None:
         """Seconds since the current run started, or None when no run is being timed."""
         if self.run_started_at is None:
             return None
         return time.perf_counter() - self.run_started_at
+
+    def end_run(self) -> str | None:
+        """Hand over the run's id for its end event, once.
+
+        Whichever end event goes out first carries the id and any later one carries None, so a
+        client that closes a run on its end event sees exactly one.
+        """
+        run_id = self.run_id
+        self.run_id = None
+        return run_id
 
 
 # GOOD!
@@ -156,7 +176,19 @@ class CompleteState(State):
             logger.debug("Isolated subflow '%s' is complete.", context.flow_name)
             return None
 
-        # Broadcast completion events for any remaining current nodes
+        # A cancelled run passes through here on its way out, but its end event is the
+        # ControlFlowCancelledEvent that cancelling sends, so it keeps its id for that. Asked of the
+        # cancel request, not the resolution's outcome: a node may catch the cancellation and finish
+        # or fail, and a node task can end cancelled when nobody cancelled the run.
+        cancelled = context.cancel_requested
+
+        if cancelled:
+            run_id = None
+        else:
+            run_id = context.end_run()
+
+        # Broadcast completion events for any remaining current nodes. Only the first carries the
+        # run's id, which is also the one LocalWorkflowExecutor treats as the workflow finishing.
         for current_node in context.current_nodes:
             context.engine.event_manager.put_event(
                 ExecutionGriptapeNodeEvent(
@@ -165,10 +197,12 @@ class CompleteState(State):
                             end_node_name=current_node.name,
                             parameter_output_values=NodeManager.result_parameter_values(current_node),
                             run_seconds=context.seconds_since_run_started(),
+                            run_id=run_id,
                         )
                     )
                 )
             )
+            run_id = None
         logger.debug("Flow is complete.")
         return None
 
@@ -211,6 +245,9 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self, start_node: BaseNode, end_node: BaseNode | None = None, *, debug_mode: bool = False
     ) -> None:
         self._context.run_started_at = time.perf_counter()
+        self._context.cancel_requested = False
+        self._context.run_id = None
+        flow_manager = self._context.engine.flow_manager
         # If using DAG resolution, process data_nodes from queue first
         current_nodes = await self._process_nodes_for_dag(start_node)
         self._context.current_nodes = current_nodes
@@ -220,7 +257,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             node.set_entry_control_parameter(None)
         # Set up to debug
         self._context.paused = debug_mode
-        flow_manager = self._context.engine.flow_manager
         flow = flow_manager.get_flow_by_name(self._context.flow_name)
         if start_node != end_node and not self._context.is_isolated:
             # This blocks all nodes in the entire flow from running. If we're just resolving one node, we don't want to block that.
@@ -236,6 +272,9 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                     wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
                 )
             )
+        # Announced last, once setup has succeeded, so a start that fails setting up announces no run
+        # that nothing would end. From here on the run's own failures end it.
+        self._begin_run(flow_manager)
         await self.start(ResolveNodeState)  # Begins the flow
 
     async def update(self) -> None:
@@ -320,6 +359,28 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
         return self._seed_dag_from_categories(start_node, categories, dag_builder, flow_manager, node_manager)
 
+    def _begin_run(self, flow_manager: FlowManager) -> None:
+        """Give the run its id, announcing it only when this engine started the run.
+
+        A loop body is part of the run that started it: spend reads the id off the global machine,
+        so an isolated subflow neither takes an id nor announces a run. A node group run in a local
+        process of its own counts toward the parent engine's run and leaves its events to it.
+        """
+        if self._context.is_isolated:
+            return
+        if flow_manager.parent_run_id is not None:
+            # The parent's id is read from FlowManager for spend; this run's own events carry no id,
+            # since the parent engine sends the start and end events for that run.
+            return
+        self._context.run_id = uuid.uuid4().hex
+        self._context.engine.event_manager.put_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(
+                    payload=FlowRunStartedEvent(run_id=self._context.run_id, flow_name=self._context.flow_name)
+                )
+            )
+        )
+
     @staticmethod
     def _drain_global_flow_queue(flow_manager: FlowManager) -> DagNodeCategories:
         """Consume the global flow queue into categorized node lists for seeding.
@@ -392,8 +453,18 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         return start_nodes
 
     async def cancel_flow(self) -> None:
-        """Cancel all nodes in the flow by delegating to the resolution machine."""
-        await self.resolution_machine.cancel_all_nodes()
+        """Cancel all nodes in the flow by delegating to the resolution machine.
+
+        The run is marked cancelled first, because it can reach CompleteState while its nodes are
+        still being cancelled. If cancelling fails the run goes on, so the mark comes off again.
+        """
+        self._context.cancel_requested = True
+        try:
+            await self.resolution_machine.cancel_all_nodes()
+        except Exception:
+            # Cancelling awaits arbitrary node code, so there is no narrower type to catch.
+            self._context.cancel_requested = False
+            raise
 
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)

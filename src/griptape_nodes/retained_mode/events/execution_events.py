@@ -399,6 +399,31 @@ class ParameterSpotlightEvent(ExecutionPayload):
 
 @dataclass
 @PayloadRegistry.register
+class FlowRunStartedEvent(ExecutionPayload):
+    """A flow run started, whether of the whole flow, from one node, or of a single node.
+
+    A run lasts from one start of the flow to its `ControlFlowResolvedEvent` or
+    `ControlFlowCancelledEvent`. When the engine goes on to the next start node queued during a run,
+    that is a run of its own, with its own id.
+
+    Every `BudgetAccessRequest` and `ReportUsageRequest` sent during the run is tagged with
+    `run_id`, so a client can look up what the run's direct provider calls cost in Griptape Cloud
+    with a spend search filtered on the `run_id` tag. Loop bodies, and node groups run in a local
+    process of their own, are part of the run that started them: they announce no run, and their end
+    events carry no `run_id`, so the only end event with this id is the run's own.
+
+    Args:
+        run_id: The run's id. The run's `ControlFlowResolvedEvent` or `ControlFlowCancelledEvent`
+            carries the same id.
+        flow_name: The flow being run.
+    """
+
+    run_id: str
+    flow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
 class ControlFlowResolvedEvent(ExecutionPayload):
     """A flow run finished.
 
@@ -406,21 +431,35 @@ class ControlFlowResolvedEvent(ExecutionPayload):
         end_node_name: The node the run ended on.
         parameter_output_values: That node's output values.
         run_seconds: Wall-clock seconds the whole run took, or None when the run was not timed.
+        run_id: The id `FlowRunStartedEvent` announced for this run, or None for a run that announced
+            none, such as a node group run in a process of its own for another engine's run. A run
+            that ends on several nodes sends one of these per node, and only the first carries the id.
     """
 
     end_node_name: str
     parameter_output_values: dict[str, Value]
     run_seconds: float | None = None
+    run_id: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class ControlFlowCancelledEvent(ExecutionPayload):
-    """A flow run was cancelled. run_seconds is how long it ran before that, or None when not timed."""
+    """A flow run was cancelled.
+
+    Args:
+        result_details: Why the run was cancelled.
+        exception: The exception that ended the run, if one did.
+        run_seconds: How long the run ran before it was cancelled, or None when it was not timed.
+        run_id: The id `FlowRunStartedEvent` announced for this run, or None for a run that announced
+            none, or when a workflow executor reports the failure after the engine has let go of
+            the run.
+    """
 
     result_details: ResultDetails | str | None = None
     exception: Exception | None = None
     run_seconds: float | None = None
+    run_id: str | None = None
 
 
 @dataclass
