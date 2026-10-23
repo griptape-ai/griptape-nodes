@@ -53,6 +53,8 @@ from griptape_nodes.retained_mode.variable_types import VariableScope
 from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from griptape_nodes.retained_mode.engine import Engine
 
 
@@ -190,41 +192,37 @@ class TestWorkflowContextStack:
 
 
 class TestRuntimeLifecycle:
-    """The runtime is open exactly while the context stack holds a workflow."""
+    """The runtime is open exactly while a workflow is in context."""
 
     def test_a_push_onto_an_empty_stack_opens_the_pushed_workflow(self, engine: Engine) -> None:
         workflow = push_unsaved_workflow(engine)
 
         assert engine.open_workflows.sole_workflow().workflow_id == workflow.workflow_id
 
-    def test_a_nested_push_opens_nothing(self, engine: Engine) -> None:
+    def test_a_push_while_a_workflow_is_open_is_refused(self, engine: Engine, tmp_path: Path) -> None:
         outer = push_unsaved_workflow(engine, "outer")
         runtime = engine.open_workflows.sole_workflow()
+        inner = engine.workflow_registry.register_unsaved("inner")
+        unregistered_file = tmp_path / "never_registered.py"
+        unregistered_file.write_text("# stub")
 
-        inner = push_unsaved_workflow(engine, "inner")
-
-        assert engine.open_workflows.sole_workflow() is runtime
-        assert engine.open_workflows.get(outer.workflow_id) is runtime
-        with pytest.raises(OpenWorkflowError, match="not open"):
-            engine.open_workflows.get(inner.workflow_id)
-
-    def test_popping_a_nested_entry_keeps_the_workflow_open(self, engine: Engine) -> None:
-        push_unsaved_workflow(engine, "outer")
-        runtime = engine.open_workflows.sole_workflow()
-        push_unsaved_workflow(engine, "inner")
-
-        engine.context_manager.pop_workflow()
+        with pytest.raises(engine.context_manager.WorkflowAlreadyOpenError, match="is already open"):
+            engine.context_manager.push_workflow(workflow_id=inner.workflow_id)
+        with pytest.raises(engine.context_manager.WorkflowAlreadyOpenError):
+            engine.context_manager.push_workflow(file_path=str(unregistered_file))
 
         assert engine.open_workflows.sole_workflow() is runtime
+        assert engine.context_manager.get_current_workflow_id() == outer.workflow_id
+        # Refused before anything is registered.
+        assert engine.workflow_registry.find_by_path(str(unregistered_file)) is None
 
-    def test_popping_the_last_entry_closes_the_workflow(self, engine: Engine) -> None:
-        push_unsaved_workflow(engine, "outer")
-        push_unsaved_workflow(engine, "inner")
+    def test_popping_the_workflow_closes_it(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
 
-        engine.context_manager.pop_workflow()
         engine.context_manager.pop_workflow()
 
         assert engine.open_workflows.sole_workflow_or_none() is None
+        assert not engine.context_manager.has_current_workflow()
 
     def test_mirroring_a_peers_workflow_opens_nothing(self, engine: Engine) -> None:
         engine.context_manager.mirror_workflow_context("00000000000000000000000000000abc", None, None, None)
@@ -270,11 +268,11 @@ class TestCloseWorkflowState:
     async def test_cancels_the_running_flow_before_tearing_down(self, engine: Engine) -> None:
         push_unsaved_workflow(engine)
         calls: list[str] = []
-        clear_top_entry = engine._clear_top_workflow_entry
+        tear_down_open_workflow = engine._tear_down_open_workflow
 
         def record_teardown() -> None:
             calls.append("teardown")
-            clear_top_entry()
+            tear_down_open_workflow()
 
         with (
             patch.object(
@@ -282,7 +280,7 @@ class TestCloseWorkflowState:
                 "cancel_running_flow_before_teardown",
                 AsyncMock(side_effect=lambda: calls.append("cancel")),
             ),
-            patch.object(engine, "_clear_top_workflow_entry", side_effect=record_teardown),
+            patch.object(engine, "_tear_down_open_workflow", side_effect=record_teardown),
             patch.object(
                 engine.worker_manager,
                 "broadcast_local_object_teardown",
@@ -294,9 +292,8 @@ class TestCloseWorkflowState:
         assert calls == ["cancel", "teardown", "broadcast"]
 
     @pytest.mark.asyncio
-    async def test_pops_every_entry_and_leaves_no_workflow_open(self, engine: Engine) -> None:
-        push_unsaved_workflow(engine, "outer")
-        push_unsaved_workflow(engine, "inner")
+    async def test_leaves_no_workflow_open(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
 
         await engine.close_workflow_state(engine.open_workflows.sole_workflow())
 
@@ -308,7 +305,7 @@ class TestCloseWorkflowState:
         push_unsaved_workflow(engine)
 
         with (
-            patch.object(engine, "_clear_top_workflow_entry", side_effect=RuntimeError("teardown blew up")),
+            patch.object(engine, "_tear_down_open_workflow", side_effect=RuntimeError("teardown blew up")),
             patch.object(engine.worker_manager, "broadcast_local_object_teardown", AsyncMock()) as broadcast,
             pytest.raises(RuntimeError, match="teardown blew up"),
         ):
@@ -428,7 +425,7 @@ class TestCloseWorkflowState:
         flow_manager = engine.flow_manager
         calls: list[str] = []
         running = [True]
-        clear_top_entry = engine._clear_top_workflow_entry
+        tear_down_open_workflow = engine._tear_down_open_workflow
 
         async def cancel_flow_run() -> None:
             await asyncio.sleep(0)
@@ -437,12 +434,12 @@ class TestCloseWorkflowState:
 
         def record_teardown() -> None:
             calls.append("teardown")
-            clear_top_entry()
+            tear_down_open_workflow()
 
         with (
             patch.object(flow_manager, "check_for_existing_running_flow", side_effect=lambda: running[0]),
             patch.object(flow_manager, "cancel_flow_run", side_effect=cancel_flow_run),
-            patch.object(engine, "_clear_top_workflow_entry", side_effect=record_teardown),
+            patch.object(engine, "_tear_down_open_workflow", side_effect=record_teardown),
         ):
             result = engine.handle_request(DeleteWorkflowRequest(workflow_id=workflow.workflow_id))
 

@@ -76,6 +76,9 @@ class ContextManager(EngineScoped):
     class LibraryWorkflowOpenError(WorkflowContextError):
         """A push named a library-provided workflow, which never becomes the open workflow itself."""
 
+    class WorkflowAlreadyOpenError(WorkflowContextError):
+        """A push asked to open a workflow while another one is open."""
+
     class WorkflowContextState:
         """Internal class that represents a Workflow's place on the stack.
 
@@ -691,14 +694,15 @@ class ContextManager(EngineScoped):
         workflow_id: str | None = None,
         working_directory: str | None = None,
     ) -> str:
-        """Push a new Workflow context onto the stack.
+        """Open a workflow as the Workflow context.
 
         The context holds only the workflow's id; its name, file and folder are read from its
         registry entry. Exactly one of the arguments names the workflow.
 
-        A push onto an empty stack opens the workflow's runtime. A push onto a non-empty stack
-        opens nothing. A library-provided workflow is never opened itself: its file opens as a
-        new unsaved copy (`register_unsaved_copy`), and naming it by id or name is refused.
+        Opens the workflow's runtime. A push while a workflow is open is refused: workflows do not
+        nest, so close the open one first. Saved workflow files push only when no workflow is in
+        context. A library-provided workflow is never opened itself: its file opens as a new
+        unsaved copy (`register_unsaved_copy`), and naming it by id or name is refused.
 
         Args:
             workflow_name: The legacy registry name of a registered Workflow.
@@ -717,6 +721,7 @@ class ContextManager(EngineScoped):
 
         Raises:
             ValueError: If not exactly one of the arguments is provided.
+            WorkflowAlreadyOpenError: If a workflow is already in context.
             UnknownWorkflowError: If no registered workflow has that name or id.
             LibraryWorkflowOpenError: If the push would open a library-provided workflow named by
                 id or name.
@@ -725,6 +730,12 @@ class ContextManager(EngineScoped):
         if len(provided) != 1:
             msg = "Provide exactly one of workflow_name, file_path or workflow_id."
             raise ValueError(msg)
+        if self.has_current_workflow():
+            msg = (
+                f"Attempted to open workflow '{provided[0]}'. Failed because workflow "
+                f"'{self.get_current_workflow_name()}' is already open. Close or clear the open workflow first."
+            )
+            raise self.WorkflowAlreadyOpenError(msg)
 
         registry = self.engine.workflow_registry
         if workflow_name is not None:
@@ -740,8 +751,7 @@ class ContextManager(EngineScoped):
         else:
             workflow = self._find_or_register_open_file(str(file_path))
 
-        opens_workflow = not self._workflow_stack
-        if opens_workflow and workflow.metadata.is_griptape_provided:
+        if workflow.metadata.is_griptape_provided:
             if file_path is None:
                 msg = (
                     f"Attempted to open workflow '{workflow.name}'. Failed because a library provides it, and "
@@ -754,10 +764,7 @@ class ContextManager(EngineScoped):
 
         if working_directory is not None:
             workflow.working_directory = working_directory
-        if opens_workflow:
-            # The workflow at the bottom of the stack is the open one. A push onto it opens
-            # nothing: its objects keep going to the workflow already open.
-            self.engine.open_workflows.open(workflow.workflow_id)
+        self.engine.open_workflows.open(workflow.workflow_id)
         self._workflow_stack.append(self.WorkflowContextState(workflow.workflow_id))
         return workflow.name
 
@@ -794,13 +801,12 @@ class ContextManager(EngineScoped):
             )
 
     def pop_workflow(self) -> str:
-        """Pop the top Workflow from the stack.
+        """Close the Workflow context: the open workflow closes and its state is dropped.
 
-        Popping the last entry closes the open workflow and drops its state, so a caller tearing
-        a workflow down deletes its flows first.
+        A caller tearing a workflow down deletes its flows first.
 
         Returns:
-            The name of the Workflow that was popped. `get_current_workflow_id` gives its id
+            The name of the Workflow that was closed. `get_current_workflow_id` gives its id
             beforehand.
 
         Raises:
@@ -812,11 +818,10 @@ class ContextManager(EngineScoped):
 
         name = self.get_current_workflow_name()
         self._workflow_stack.pop()
-        if not self._workflow_stack:
-            # None when only a worker's mirror was on the stack, e.g. the facade's teardown on a worker.
-            workflow = self.engine.open_workflows.sole_workflow_or_none()
-            if workflow is not None:
-                self.engine.open_workflows.close(workflow)
+        # None when only a worker's mirror was on the stack, e.g. the facade's teardown on a worker.
+        workflow = self.engine.open_workflows.sole_workflow_or_none()
+        if workflow is not None:
+            self.engine.open_workflows.close(workflow)
         return name
 
     def push_flow(self, flow: ControlFlow) -> ControlFlow:

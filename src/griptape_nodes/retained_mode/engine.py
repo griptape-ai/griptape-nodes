@@ -584,15 +584,14 @@ class Engine:
             logger.debug("The workflow being closed was closed by another request while its run was cancelled.")
             return
         try:
-            while self._context_manager.has_current_workflow():
-                self._clear_top_workflow_entry()
+            self._tear_down_open_workflow()
         finally:
-            # _clear_top_workflow_entry releases the objects this process holds; the workers hold their
+            # _tear_down_open_workflow releases the objects this process holds; the workers hold their
             # own, and telling them has to be awaited.
             await self._worker_manager.broadcast_local_object_teardown()
 
     def clear_current_workflow_data(self) -> None:
-        """Tear down the top workflow on the context stack, requesting cancellation of its run.
+        """Tear down the workflow in context, requesting cancellation of its run.
 
         The target of `GriptapeNodes.clear_current_workflow_data()`. Engine code awaits
         `close_workflow_state` instead, which awaits the cancellation and tells the workers.
@@ -610,14 +609,14 @@ class Engine:
             if flow_manager.check_for_existing_running_flow():
                 self.handle_request(CancelFlowRequest(flow_name=flow_name))
 
-        self._clear_top_workflow_entry()
+        self._tear_down_open_workflow()
 
-    def _clear_top_workflow_entry(self) -> None:
-        """Delete the open workflow's orphan flows, then pop the top workflow off the context stack.
+    def _tear_down_open_workflow(self) -> None:
+        """Delete the open workflow's orphan flows, then close its context, dropping its state.
 
         Order matters: `on_delete_flow_request` pushes a flow context via `ContextManager().flow(...)`,
-        which raises `NoActiveWorkflowError` if the workflow has already been popped. So we delete
-        flows first and pop the workflow last.
+        which raises `NoActiveWorkflowError` if the workflow has already been closed. So we delete
+        flows first and close the workflow last.
         """
         context_manager = self._context_manager
         flow_manager = self._flow_manager
@@ -640,13 +639,7 @@ class Engine:
             if not flows or not found_orphan:
                 more_flows = False
 
-        # Drain this workflow's context substack before popping the workflow itself.
-        while context_manager.has_current_flow():
-            while context_manager.has_current_node():
-                while context_manager.has_current_element():
-                    context_manager.pop_element()
-                context_manager.pop_node()
-            context_manager.pop_flow()
+        # Its flow, node and element contexts go with it.
         context_manager.pop_workflow()
 
         # Every key referring to a held object lived on a node just deleted, so each entry would hold
