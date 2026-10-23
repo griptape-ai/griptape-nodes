@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
     from griptape_nodes.retained_mode.engine import Engine
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 # Timeout with thread dump.
 pytestmark = pytest.mark.timeout(300, method="thread")
@@ -100,7 +101,7 @@ def general_purpose_worker(engine: Engine) -> Iterator[_StandInWorker]:
     worker = _StandInWorker(engine=engine)
     node_manager = engine.node_manager
 
-    async def run_on_worker(request: ExecuteNodeRequest, *_args: Any) -> Any:
+    async def run_on_worker(_workflow: WorkflowRuntime, request: ExecuteNodeRequest, *_args: Any) -> Any:
         worker.received.append((request.node_name, current_isolated_execution_scope.get()))
         # Run the node as a worker does: on a fresh copy built from the request's metadata, which has
         # only the parameters its type declares, with the request's values applied to it. The worker
