@@ -4241,7 +4241,14 @@ class NodeExecutor(EngineScoped):
             # parameter_values would destroy the template the user typed rather than
             # merely hiding it. The output value below still reflects the last
             # iteration for downstream consumers and artifacts.
-            if not target_node.should_preserve_stored_template(target_param_name, param_value):
+            #
+            # Skip it as well for a list whose rows are connected to other nodes. A whole
+            # list written to a node becomes its rows, and replacing a connected row would
+            # remove its connection, which the list refuses. Those rows belong to their
+            # connections; the output value below still carries the iteration's list.
+            preserves_template = target_node.should_preserve_stored_template(target_param_name, param_value)
+            rows_are_connected = target_node._list_rows.has_connected_rows(target_param)
+            if not preserves_template and not rows_are_connected:
                 target_node.set_parameter_value(target_param_name, param_value)
             target_node.parameter_output_values[target_param_name] = param_value
 
