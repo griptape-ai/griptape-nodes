@@ -211,15 +211,26 @@ class TestRegistrationChecksTheWorkflowParameter:
         with pytest.raises(TypeError, match="defaulting to None"):
             EventManager().assign_manager_to_request_type(_PingRequest, on_ping, scope=RequestScope.OPTIONAL_WORKFLOW)
 
-    @pytest.mark.parametrize("scope", [RequestScope.HOST, None])
-    def test_host_and_undeclared_refuse_a_workflow_parameter(self, scope: RequestScope | None) -> None:
+    def test_host_refuses_a_workflow_parameter(self) -> None:
         class _Misdeclared:
-            @handles(_PingRequest, scope=scope)
+            @handles(_PingRequest, scope=RequestScope.HOST)
             def on_ping(self, request: _PingRequest, workflow: object | None = None) -> None:
                 pass
 
         with pytest.raises(TypeError, match="has a `workflow` parameter"):
             EventManager().register_request_handlers(_Misdeclared())
+
+    def test_undeclared_registers_with_a_workflow_parameter(self) -> None:
+        """A handler with no scope, such as a library's, is not checked: dispatch passes it the request alone."""
+
+        def on_ping(request: _PingRequest, workflow: object) -> ResultPayload:  # noqa: ARG001
+            return GenericResultFailure(result_details="unused")
+
+        event_manager = EventManager()
+
+        event_manager.assign_manager_to_request_type(_PingRequest, on_ping)
+
+        assert event_manager.get_manager_for_request_type(_PingRequest) is on_ping
 
 
 class TestReplaceManagerForRequestType:

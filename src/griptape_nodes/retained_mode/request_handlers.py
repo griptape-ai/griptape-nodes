@@ -26,7 +26,8 @@ class RequestScope(StrEnum):
     OPTIONAL_WORKFLOW: works without a workflow, and uses the one the envelope names when there is
         one. The handler takes `workflow=None`.
 
-    A handler that declares no scope is called with the request alone and has no `workflow` parameter.
+    A handler that declares no scope is called with the request alone. Its parameters are not checked,
+    so a library handler with a parameter of any name keeps registering.
     """
 
     HOST = "host"
@@ -72,13 +73,16 @@ def check_handler_signature(
 ) -> None:
     """Check that `handler` takes the `workflow` argument dispatch passes for `scope`, by parameter name.
 
+    A handler that declares no scope is not checked: dispatch passes it the request alone.
+
     Raises:
         TypeError: The handler's `workflow` parameter does not match its scope.
     """
+    if scope is None:
+        return
     parameter = inspect.signature(handler).parameters.get("workflow")
     name = getattr(handler, "__qualname__", repr(handler))
-    declared = "no scope" if scope is None else f"scope {scope.name}"
-    attempt = f"Attempted to register '{name}' as the handler for {request_type.__name__} with {declared}."
+    attempt = f"Attempted to register '{name}' as the handler for {request_type.__name__} with scope {scope.name}."
 
     if scope is RequestScope.WORKFLOW:
         if parameter is None:
