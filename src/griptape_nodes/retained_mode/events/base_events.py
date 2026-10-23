@@ -309,8 +309,8 @@ class EventRequest[P: Payload](BaseEvent):
         request_id: Id the caller matches the result by. Echoed on the result.
         response_topic: Where the result is sent. Echoed on the result.
         workflow_id: The open workflow of the tab that sent the request, never in the request
-            body. Echoed on the result. The engine does not route by it yet, and never rejects
-            a request for carrying one.
+            body. Echoed on the result. A handler that acts on a workflow gets this one, and the
+            request fails if it isn't open. A host request ignores it and never rejects it.
     """
 
     request: P
