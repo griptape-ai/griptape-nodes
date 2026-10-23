@@ -576,7 +576,7 @@ class Engine:
             msg = "Attempted to close a workflow. Failed because it is not the open workflow."
             raise OpenWorkflowError(msg)
 
-        await self._flow_manager.cancel_running_flow_before_teardown()
+        await self._flow_manager.cancel_running_flow_before_teardown(workflow)
         if self._open_workflows.sole_workflow_or_none() is not workflow:
             # Another request closed the workflow while the cancel was awaited, and may have opened
             # the next one. Tear nothing down. Skip the worker broadcast too: it would release objects
@@ -585,7 +585,7 @@ class Engine:
             logger.debug("The workflow being closed was closed by another request while its run was cancelled.")
             return
         try:
-            self._tear_down_open_workflow()
+            self._tear_down_open_workflow(workflow)
         finally:
             # _tear_down_open_workflow releases the objects this process holds; the workers hold their
             # own, and telling them has to be awaited.
@@ -600,19 +600,20 @@ class Engine:
         Raises:
             RuntimeError: No workflow is open.
         """
-        if self._open_workflows.sole_workflow_or_none() is None:
+        workflow = self._open_workflows.sole_workflow_or_none()
+        if workflow is None:
             msg = "Cannot clear current workflow data without an active workflow context."
             raise RuntimeError(msg)
 
         # Cancel any running flow so the delete path doesn't race with execution.
         flow_manager = self._flow_manager
         for flow_name in self._object_manager.get_filtered_subset(type=ControlFlow):
-            if flow_manager.check_for_existing_running_flow():
+            if flow_manager.check_for_existing_running_flow_in(workflow):
                 self.handle_request(CancelFlowRequest(flow_name=flow_name))
 
-        self._tear_down_open_workflow()
+        self._tear_down_open_workflow(workflow)
 
-    def _tear_down_open_workflow(self) -> None:
+    def _tear_down_open_workflow(self, workflow: WorkflowRuntime) -> None:
         """Delete the open workflow's orphan flows, then close its context, dropping its state.
 
         Order matters: `on_delete_flow_request` pushes a flow context via `ContextManager().flow(...)`,
@@ -631,7 +632,7 @@ class Engine:
             flows = self._object_manager.get_filtered_subset(type=ControlFlow)
             found_orphan = False
             for flow_name in flows:
-                parent = flow_manager.get_parent_flow(flow_name)
+                parent = flow_manager.get_parent_flow_in(workflow, flow_name)
                 if not parent:
                     self.handle_request(DeleteFlowRequest(flow_name=flow_name))
                     found_orphan = True

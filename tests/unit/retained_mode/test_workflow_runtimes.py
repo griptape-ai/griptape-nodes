@@ -414,15 +414,15 @@ class TestCloseWorkflowState:
         calls: list[str] = []
         tear_down_open_workflow = engine._tear_down_open_workflow
 
-        def record_teardown() -> None:
+        def record_teardown(workflow: WorkflowRuntime) -> None:
             calls.append("teardown")
-            tear_down_open_workflow()
+            tear_down_open_workflow(workflow)
 
         with (
             patch.object(
                 engine.flow_manager,
                 "cancel_running_flow_before_teardown",
-                AsyncMock(side_effect=lambda: calls.append("cancel")),
+                AsyncMock(side_effect=lambda _workflow: calls.append("cancel")),
             ),
             patch.object(engine, "_tear_down_open_workflow", side_effect=record_teardown),
             patch.object(
@@ -464,7 +464,7 @@ class TestCloseWorkflowState:
         cancel_calls: list[None] = []
         opened: dict[str, WorkflowRuntime] = {}
 
-        async def clear_and_open_another() -> None:
+        async def clear_and_open_another(_workflow: WorkflowRuntime) -> None:
             cancel_calls.append(None)
             # ClearAll below awaits this same cancel; only the first call interleaves.
             if len(cancel_calls) > 1:
@@ -491,7 +491,7 @@ class TestCloseWorkflowState:
         push_unsaved_workflow(engine)
         runtime = engine.open_workflows.sole_workflow()
 
-        async def close_meanwhile() -> None:
+        async def close_meanwhile(_workflow: WorkflowRuntime) -> None:
             engine.context_manager.pop_workflow()
 
         with (
@@ -576,9 +576,9 @@ class TestCloseWorkflowState:
             calls.append("cancel")
             running[0] = False
 
-        def record_teardown() -> None:
+        def record_teardown(workflow: WorkflowRuntime) -> None:
             calls.append("teardown")
-            tear_down_open_workflow()
+            tear_down_open_workflow(workflow)
 
         with (
             patch.object(flow_manager, "check_for_existing_running_flow_in", side_effect=lambda _workflow: running[0]),
@@ -862,11 +862,6 @@ class TestFlowsOnTheRuntime:
         result = engine.handle_request(GetTopLevelFlowRequest())
         assert isinstance(result, GetTopLevelFlowResultSuccess)
         assert result.flow_name is None
-        assert engine.open_workflows.sole_workflow_or_none() is None
-
-    def test_resetting_execution_state_with_no_workflow_open_does_nothing(self, engine: Engine) -> None:
-        engine.flow_manager.reset_global_execution_state()
-
         assert engine.open_workflows.sole_workflow_or_none() is None
 
     @pytest.mark.asyncio

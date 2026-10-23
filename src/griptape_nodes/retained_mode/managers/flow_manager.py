@@ -991,9 +991,9 @@ class FlowManager(EngineScoped):
         for node in flow.nodes.values():
             node.state = NodeResolutionState.UNRESOLVED
 
-    def handle_flow_rename(self, old_name: str, new_name: str) -> None:
+    def handle_flow_rename(self, workflow: WorkflowRuntime, old_name: str, new_name: str) -> None:
         # Replace the old flow name and its parent first.
-        name_to_parent_name = self.engine.open_workflows.sole_workflow().flows.name_to_parent_name
+        name_to_parent_name = workflow.flows.name_to_parent_name
         parent = name_to_parent_name[old_name]
         name_to_parent_name[new_name] = parent
         del name_to_parent_name[old_name]
@@ -4939,8 +4939,8 @@ class FlowManager(EngineScoped):
             )
         )
 
-    async def cancel_running_flow_before_teardown(self) -> None:
-        """Cancel the running flow, if any, ahead of tearing the open workflow down.
+    async def cancel_running_flow_before_teardown(self, workflow: WorkflowRuntime) -> None:
+        """Cancel the workflow's running flow, if any, ahead of tearing the workflow down.
 
         Without this the previous run's node tasks keep going after their flows are deleted:
         billing API calls, and emitting parameter updates keyed by node name onto the same-named
@@ -4950,8 +4950,7 @@ class FlowManager(EngineScoped):
         parked holds its FSM claim until it wakes and abandons the run; harmless here because
         deleting the flows drops the machine it holds.
         """
-        workflow = self.engine.open_workflows.sole_workflow_or_none()
-        if workflow is None or not self.check_for_existing_running_flow_in(workflow):
+        if not self.check_for_existing_running_flow_in(workflow):
             return
         try:
             await self.cancel_flow_run(workflow)
@@ -5000,9 +4999,9 @@ class FlowManager(EngineScoped):
             )
         )
 
-    def reset_global_execution_state(self) -> None:
-        """Reset all global execution state - useful when clearing all workflows."""
-        flows = self._flows_or_empty()
+    def reset_global_execution_state(self, workflow: WorkflowRuntime) -> None:
+        """Reset the workflow's execution state - useful when clearing it."""
+        flows = workflow.flows
         flows.global_flow_queue.queue.clear()
 
         # Cleanup proxy nodes and restore connections before resetting machine
