@@ -486,6 +486,18 @@ class _WorkflowRegistry:
             return None
         return parse_workflow_id(name.removeprefix(self.UNSAVED_KEY_PREFIX))
 
+    def library_file_stem(self, workflow: Workflow) -> str | None:
+        """The file stem of the library workflow an unsaved copy was opened from, or None for any other workflow.
+
+        A copy's first save, and any file named after it before then, takes this name.
+        """
+        if workflow.is_saved or workflow.seeded_from_workflow_id is None:
+            return None
+        library_workflow = self.find_by_id(workflow.seeded_from_workflow_id)
+        if library_workflow is None or library_workflow.absolute_path is None:
+            return None
+        return library_workflow.absolute_path.stem
+
     def find_by_path(self, path: str | Path) -> Workflow | None:
         """Return the entry for the file at `path`, or None. Accepts any path the entry is known by."""
         for path_key in self._path_keys(self.canonical_path(path)):

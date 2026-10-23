@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
 from griptape_nodes.bootstrap.workflow_publishers.local_workflow_publisher import LocalWorkflowPublisher
 from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
 from griptape_nodes.files.path_utils import canonicalize_for_identity_preserving_symlinks
@@ -1810,6 +1811,21 @@ class TestLibraryWorkflowsOpenAsUnsavedCopies:
         assert "The library workflow is broken." in str(failed.result_details)
         assert not project_engine.context_manager.has_current_workflow()
         assert set(_listed(project_engine)) == listed_before
+
+    def test_a_failed_script_run_of_a_library_file_is_saved_under_the_library_file_name(
+        self, project_engine: Engine, tmp_path: Path, workspace: Path
+    ) -> None:
+        """The copy's registry name holds a colon, which no file name on Windows may."""
+        library = _library_workflow(project_engine, tmp_path / "library")
+        opened = _run(project_engine, RunWorkflowFromScratchRequest(file_path=str(library.absolute_path)))
+        assert isinstance(opened, RunWorkflowFromScratchResultSuccess), opened.result_details
+        executor = LocalWorkflowExecutor(save_on_failure_path="")
+
+        asyncio.run(executor._save_failed_workflow(RuntimeError("The run failed.")))
+
+        failure_files = list(workspace.rglob("*_failed_*.py"))
+        assert len(failure_files) == 1
+        assert failure_files[0].name.startswith("collage_poster_failed_")
 
     def test_run_with_current_state_and_nothing_open_opens_a_copy(self, project_engine: Engine, tmp_path: Path) -> None:
         library = _library_workflow(project_engine, tmp_path / "library")

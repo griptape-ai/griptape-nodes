@@ -911,7 +911,7 @@ class WorkflowSaver(EngineScoped):
         if current_workflow is None:
             return self._resolve_named_save_path(timestamp_name)
 
-        library_file_stem = self._library_file_stem(current_workflow)
+        library_file_stem = self.engine.workflow_registry.library_file_stem(current_workflow)
         if library_file_stem is not None:
             file_name = self.generate_unique_filename(library_file_stem)
             destination, relative_file_path = self._build_workflow_save_path(f"{file_name}.py")
@@ -920,15 +920,6 @@ class WorkflowSaver(EngineScoped):
         candidate_name = (current_workflow.metadata.name or "").strip()
         sanitized = re.sub(r"[^A-Za-z0-9._/-]+", "_", candidate_name).strip("_/")
         return self._resolve_named_save_path(sanitized or timestamp_name)
-
-    def _library_file_stem(self, workflow: Workflow) -> str | None:
-        """The file stem of the library workflow an unsaved copy was opened from, or None for any other workflow."""
-        if workflow.is_saved or workflow.seeded_from_workflow_id is None:
-            return None
-        library_workflow = self.engine.workflow_registry.find_by_id(workflow.seeded_from_workflow_id)
-        if library_workflow is None or library_workflow.absolute_path is None:
-            return None
-        return library_workflow.absolute_path.stem
 
     def _resolve_versioned_save_target(
         self,
@@ -987,7 +978,7 @@ class WorkflowSaver(EngineScoped):
             return self._resolve_named_save_path(stem, situation_name=situation_name)
 
         if candidate_workflow is not None:
-            library_file_stem = self._library_file_stem(candidate_workflow)
+            library_file_stem = self.engine.workflow_registry.library_file_stem(candidate_workflow)
             if library_file_stem is not None:
                 return self._resolve_named_save_path(library_file_stem, situation_name=situation_name)
             display_name = (candidate_workflow.metadata.name or "").strip()
