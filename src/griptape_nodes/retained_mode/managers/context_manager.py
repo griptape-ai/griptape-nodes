@@ -71,6 +71,9 @@ class ContextManager(EngineScoped):
     class MirroredWorkflowError(WorkflowContextError):
         """A peer engine's workflow could not be registered in this engine's registry."""
 
+    class LibraryWorkflowOpenError(WorkflowContextError):
+        """A push named a library-provided workflow, which never becomes the open workflow itself."""
+
     class WorkflowContextState:
         """Internal class that represents a Workflow's state which owns a stack of flow names.
 
@@ -307,7 +310,11 @@ class ContextManager(EngineScoped):
             return SetWorkflowContextFailure(result_details=workflow_or_error)
         workflow = workflow_or_error
 
-        self.push_workflow(workflow_id=workflow.workflow_id)
+        # Setting the context opens no file to copy from, so a library workflow is refused here.
+        try:
+            self.push_workflow(workflow_id=workflow.workflow_id)
+        except self.LibraryWorkflowOpenError as err:
+            return SetWorkflowContextFailure(result_details=str(err))
         msg = f"Successfully set the Workflow '{workflow.name}' as the Current Context."
         return SetWorkflowContextSuccess(
             workflow_name=workflow.name, workflow_id=workflow.workflow_id, result_details=msg
@@ -878,7 +885,8 @@ class ContextManager(EngineScoped):
         registry entry. Exactly one of the arguments names the workflow.
 
         A push onto an empty stack opens the workflow's runtime. A push onto a non-empty stack
-        opens nothing.
+        opens nothing. A library-provided workflow is never opened itself: its file opens as a
+        new unsaved copy (`register_unsaved_copy`), and naming it by id or name is refused.
 
         Args:
             workflow_name: The legacy registry name of a registered Workflow.
@@ -892,11 +900,14 @@ class ContextManager(EngineScoped):
                 It stays on the entry after `pop_workflow()`.
 
         Returns:
-            The name of the Workflow that was entered.
+            The name of the Workflow that was entered: the copy's "unsaved:<id>" name when a
+            library workflow's file opened as a copy.
 
         Raises:
             ValueError: If not exactly one of the arguments is provided.
             UnknownWorkflowError: If no registered workflow has that name or id.
+            LibraryWorkflowOpenError: If the push would open a library-provided workflow named by
+                id or name.
         """
         provided = [argument for argument in (workflow_name, file_path, workflow_id) if argument is not None]
         if len(provided) != 1:
@@ -917,9 +928,21 @@ class ContextManager(EngineScoped):
         else:
             workflow = self._find_or_register_open_file(str(file_path))
 
+        opens_workflow = not self._workflow_stack
+        if opens_workflow and workflow.metadata.is_griptape_provided:
+            if file_path is None:
+                msg = (
+                    f"Attempted to open workflow '{workflow.name}'. Failed because a library provides it, and "
+                    "library workflows open only as copies so the library's file is never changed. "
+                    "Open it from the workflow list to work on a copy, or create a workflow from it."
+                )
+                raise self.LibraryWorkflowOpenError(msg)
+            # A library workflow file run on its own, as a script does, opens as a copy too.
+            workflow = registry.register_unsaved_copy(workflow)
+
         if working_directory is not None:
             workflow.working_directory = working_directory
-        if not self._workflow_stack:
+        if opens_workflow:
             # The workflow at the bottom of the stack is the open one. A push onto it opens
             # nothing: its objects keep going to the workflow already open.
             self.engine.open_workflows.open(workflow.workflow_id)

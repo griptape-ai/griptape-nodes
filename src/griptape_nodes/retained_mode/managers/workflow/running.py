@@ -172,6 +172,7 @@ class WorkflowRunner(EngineScoped):
                 return RunWorkflowFromScratchResultSuccess(
                     status=execution_result.status,
                     workflow_id=self._current_workflow_id(),
+                    seeded_from_workflow_id=self._current_seeded_from_workflow_id(),
                     result_details=ResultDetails(*execution_result_details(execution_result, level=logging.DEBUG)),
                 )
 
@@ -206,6 +207,7 @@ class WorkflowRunner(EngineScoped):
             return RunWorkflowWithCurrentStateResultSuccess(
                 status=execution_result.status,
                 workflow_id=self._current_workflow_id(),
+                seeded_from_workflow_id=self._current_seeded_from_workflow_id(),
                 result_details=ResultDetails(*execution_result_details(execution_result, level=logging.DEBUG)),
             )
         return RunWorkflowWithCurrentStateResultFailure(
@@ -257,8 +259,10 @@ class WorkflowRunner(EngineScoped):
                     )
                     return RunWorkflowFromRegistryResultFailure(result_details=details)
 
+            opened_workflow = self._workflow_to_open(workflow)
+
             # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
-            self.engine.context_manager.push_workflow(workflow_id=workflow.workflow_id)
+            self.engine.context_manager.push_workflow(workflow_id=opened_workflow.workflow_id)
             # run file
             execution_result = await self.run_workflow(relative_file_path=relative_file_path)
 
@@ -273,6 +277,9 @@ class WorkflowRunner(EngineScoped):
                 clear_all_result = await self.engine.ahandle_request(clear_all_request)
 
                 # The clear-all above here wipes the ContextManager, so no need to do a pop_workflow().
+                # It also closed the copy, which nothing else refers to.
+                if opened_workflow is not workflow and clear_all_result.succeeded():
+                    self.engine.workflow_registry.remove(opened_workflow.workflow_id)
                 return RunWorkflowFromRegistryResultFailure(result_details=ResultDetails(*result_messages))
 
         # Success!
@@ -282,7 +289,8 @@ class WorkflowRunner(EngineScoped):
         result_messages.extend(execution_result_details(execution_result, level=logging.DEBUG))
         return RunWorkflowFromRegistryResultSuccess(
             status=execution_result.status,
-            workflow_id=workflow.workflow_id,
+            workflow_id=opened_workflow.workflow_id,
+            seeded_from_workflow_id=opened_workflow.seeded_from_workflow_id,
             result_details=ResultDetails(*result_messages),
         )
 
@@ -405,12 +413,28 @@ class WorkflowRunner(EngineScoped):
             result_details=ResultDetails(message=f"Run command: {run_command}", level=logging.DEBUG),
         )
 
+    def _workflow_to_open(self, workflow: Workflow) -> Workflow:
+        """The workflow that opens when `workflow` is run from the registry: a new unsaved copy of a library workflow, else itself.
+
+        The library workflow's file then runs into the copy, and the library entry is left as it is.
+        """
+        if not workflow.metadata.is_griptape_provided:
+            return workflow
+        return self.engine.workflow_registry.register_unsaved_copy(workflow)
+
     def _current_workflow_id(self) -> str | None:
         """The id of the workflow a load left in context, or None if it left none."""
         context_manager = self.engine.context_manager
         if not context_manager.has_current_workflow():
             return None
         return context_manager.get_current_workflow_id()
+
+    def _current_seeded_from_workflow_id(self) -> str | None:
+        """The library workflow the workflow a load left in context is a copy of, or None."""
+        context_manager = self.engine.context_manager
+        if not context_manager.has_current_workflow():
+            return None
+        return context_manager.get_current_workflow().seeded_from_workflow_id
 
     async def _ensure_workflow_context_established(self) -> None:
         """Ensure there's a current workflow and flow context after workflow execution."""

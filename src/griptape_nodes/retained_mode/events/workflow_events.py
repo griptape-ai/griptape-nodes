@@ -60,11 +60,15 @@ class RunWorkflowFromScratchResultSuccess(ResultPayloadSuccess):
             standing in for nodes whose library could not be registered -- editable, but not
             runnable until that library is available. Callers that need a whole graph (the
             headless executor, publishing) should refuse anything but GOOD.
-        workflow_id: Permanent id of the workflow now open.
+        workflow_id: Permanent id of the workflow now open. A workflow a library provides opens as a
+            new unsaved copy, so this is the copy's id, not the library workflow's.
+        seeded_from_workflow_id: Id of the library workflow the open workflow is a copy of, or None
+            when it is not such a copy.
     """
 
     status: WorkflowStatus = WorkflowStatus.GOOD
     workflow_id: str | None = None
+    seeded_from_workflow_id: str | None = None
 
 
 @dataclass
@@ -107,11 +111,15 @@ class RunWorkflowWithCurrentStateResultSuccess(WorkflowAlteredMixin, ResultPaylo
             standing in for nodes whose library could not be registered -- editable, but not
             runnable until that library is available. Callers that need a whole graph (the
             headless executor, publishing) should refuse anything but GOOD.
-        workflow_id: Permanent id of the workflow now open.
+        workflow_id: Permanent id of the workflow now open. A workflow a library provides opens as a
+            new unsaved copy, so this is the copy's id, not the library workflow's.
+        seeded_from_workflow_id: Id of the library workflow the open workflow is a copy of, or None
+            when it is not such a copy.
     """
 
     status: WorkflowStatus = WorkflowStatus.GOOD
     workflow_id: str | None = None
+    seeded_from_workflow_id: str | None = None
 
 
 @dataclass
@@ -155,11 +163,15 @@ class RunWorkflowFromRegistryResultSuccess(ResultPayloadSuccess):
             standing in for nodes whose library could not be registered -- editable, but not
             runnable until that library is available. Callers that need a whole graph (the
             headless executor, publishing) should refuse anything but GOOD.
-        workflow_id: Permanent id of the workflow now open.
+        workflow_id: Permanent id of the workflow now open. A workflow a library provides opens as a
+            new unsaved copy, so this is the copy's id, not the library workflow's.
+        seeded_from_workflow_id: Id of the library workflow the open workflow is a copy of, or None
+            when it is not such a copy.
     """
 
     status: WorkflowStatus = WorkflowStatus.GOOD
     workflow_id: str | None = None
+    seeded_from_workflow_id: str | None = None
 
 
 @dataclass
