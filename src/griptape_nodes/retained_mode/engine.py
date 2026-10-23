@@ -560,8 +560,8 @@ class Engine:
         Engine requests that close the open workflow (ClearAll, Delete) come through here. The
         `GriptapeNodes.clear_current_workflow_data()` facade and a bare `pop_workflow()` close it
         without awaiting a cancel or telling the workers. The runtime leaves the open workflows with
-        its context, objects and variables when `pop_workflow()` closes it. The workers are told to release their held objects even when the teardown fails, since
-        nothing retries it.
+        its context, objects and variables when `pop_workflow()` closes it. The workers are told to
+        release their held objects even when the teardown fails, since nothing retries it.
 
         Raises:
             OpenWorkflowError: `workflow` is not the open workflow.
@@ -617,9 +617,8 @@ class Engine:
         flow_manager = self._flow_manager
 
         # Delete all orphan (top-level) flows. We can't rely on
-        # `ListFlowsInCurrentContextRequest` here because the caller may only have a
-        # workflow on the context stack (no child flow), and that request requires a
-        # current flow. Instead, repeatedly find a flow with no parent and delete it;
+        # `ListFlowsInCurrentContextRequest` here because the open workflow may have no
+        # current flow, and that request requires one. Instead, repeatedly find a flow with no parent and delete it;
         # `on_delete_flow_request` cascades into its children and nodes.
         more_flows = True
         while more_flows:

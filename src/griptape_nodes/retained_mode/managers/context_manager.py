@@ -70,7 +70,7 @@ class ContextManager(EngineScoped):
     Workflows own Flows, Flows own Nodes, and Nodes own Elements. The Workflow context is the open
     workflow, and its Flow, Node and Element contexts live on its runtime. A worker opens no workflow:
     it mirrors the one its orchestrator has open (`mirror_workflow_context`). An engine never has both.
-    Clients can push/pop Workflow contexts, Flow contexts, Node contexts, and Element contexts.
+    Clients open and close the Workflow context, and push/pop Flow, Node, and Element contexts.
     """
 
     _mirror: MirroredWorkflowContext | None
@@ -669,7 +669,7 @@ class ContextManager(EngineScoped):
         Raises:
             NoActiveFlowError: If no Flow context is active.
         """
-        return self._context_for_read().get_current_flow()
+        return self._context_with_flow().get_current_flow()
 
     def get_current_node(self) -> BaseNode:
         """Get the current Node within the current Flow.
@@ -681,7 +681,7 @@ class ContextManager(EngineScoped):
             NoActiveFlowError: If no Flow context is active.
             EmptyStackError: If the current Flow has no active Nodes.
         """
-        return self._context_for_read().get_current_node()
+        return self._context_with_flow().get_current_node()
 
     def get_current_element(self) -> BaseNodeElement:
         """Get the current element within the current node.
@@ -693,7 +693,7 @@ class ContextManager(EngineScoped):
             NoActiveFlowError: If no Flow context is active.
             EmptyStackError: If the current Flow has no active Nodes or Elements.
         """
-        return self._context_for_read().get_current_element()
+        return self._context_with_flow().get_current_element()
 
     def push_workflow(
         self,
@@ -874,7 +874,7 @@ class ContextManager(EngineScoped):
         Raises:
             NoActiveFlowError: If no Flow context is active.
         """
-        return self._context_for_read().push_node(node)
+        return self._context_with_flow().push_node(node)
 
     def pop_node(self) -> BaseNode:
         """Pop the current Node context from the stack for the current Flow.
@@ -886,7 +886,7 @@ class ContextManager(EngineScoped):
             NoActiveFlowError: If no Flow context is active.
             EmptyStackError: If the current Flow has no active Nodes.
         """
-        return self._context_for_read().pop_node()
+        return self._context_with_flow().pop_node()
 
     def push_element(self, element: BaseNodeElement) -> BaseNodeElement:
         """Push a new element onto the stack for the current node.
@@ -901,7 +901,7 @@ class ContextManager(EngineScoped):
             NoActiveFlowError: If no Flow context is active.
             EmptyStackError: If the current Flow has no active Nodes.
         """
-        return self._context_for_read().push_element(element)
+        return self._context_with_flow().push_element(element)
 
     def pop_element(self) -> BaseNodeElement:
         """Pop the current element from the stack for the current node.
@@ -913,9 +913,9 @@ class ContextManager(EngineScoped):
             NoActiveFlowError: If no Flow context is active.
             EmptyStackError: If the current Flow has no active Nodes or Elements.
         """
-        return self._context_for_read().pop_element()
+        return self._context_with_flow().pop_element()
 
-    def _context_for_read(self) -> WorkflowContextStack:
+    def _context_with_flow(self) -> WorkflowContextStack:
         """The context stack the current work means, for work that needs a current Flow.
 
         Raises:
