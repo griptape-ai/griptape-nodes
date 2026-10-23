@@ -16,7 +16,11 @@ class ValidateFlowDependenciesRequest(RequestPayload):
     """Validate that a flow has all required dependencies before execution.
 
     Use when: Pre-flight checks before flow execution, preventing runtime failures,
-    debugging dependency issues, validating flow readiness.
+    debugging dependency issues, validating flow readiness. Runs the checks StartFlowRequest runs,
+    without running any node; pass the flow's start node as flow_node_name to check the same nodes a
+    run from it would. Not read-only: nodes with success/failure outputs reset was_successful to False
+    and clear result_details, and nodes whose values use variable substitution may be marked unresolved.
+    Call it while no flow is running.
 
     Args:
         flow_name: Name of the flow to validate dependencies for

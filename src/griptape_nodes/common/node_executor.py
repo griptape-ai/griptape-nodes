@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
+from contextlib import AbstractContextManager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
@@ -12,6 +14,13 @@ import anyio
 
 from griptape_nodes.bootstrap.utils.subprocess_websocket_base import SubprocessWebSocketUnavailableError
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
+from griptape_nodes.common.isolated_execution_scope import isolated_execution_scope
+from griptape_nodes.common.loop_body_scope import (
+    LoopBodyScope,
+    current_loop_body_scope,
+    entered_loop_body_scope,
+    loop_body_scope_for,
+)
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types import node_types
 from griptape_nodes.exe_types.base_iterative_nodes import (
@@ -28,8 +37,8 @@ from griptape_nodes.exe_types.node_groups import (
 )
 from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
+    ISOLATED_EXECUTION,
     LOCAL_EXECUTION,
-    PRIVATE_EXECUTION,
     BaseNode,
     EndNode,
     NodeResolutionState,
@@ -39,9 +48,16 @@ from griptape_nodes.exe_types.variable_resolver import VariableResolver
 from griptape_nodes.files.path_utils import derive_registry_key
 from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
+from griptape_nodes.retained_mode.beta_features import ISOLATED_EXECUTION_IN_WORKER, is_beta_enabled
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
-from griptape_nodes.retained_mode.events.base_events import ForwardedException, ProgressEvent
+from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
+    ExecutionPayload,
+    ForwardedException,
+    ProgressEvent,
+)
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
@@ -60,6 +76,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     InvolvedNodesEvent,
     NodeFinishProcessEvent,
     NodeMetadata,
+    NodeProcessOutcome,
     NodeResolvedEvent,
     NodeStartProcessEvent,
     NodeUnresolvedEvent,
@@ -83,7 +100,11 @@ from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodesAsSerializedFlowRequest,
     PackageNodesAsSerializedFlowResultSuccess,
 )
-from griptape_nodes.retained_mode.events.node_error_details import NodeErrorDetails, build_engine_error_details
+from griptape_nodes.retained_mode.events.node_error_details import (
+    NodeErrorDetails,
+    build_engine_error_details,
+    build_node_error_details,
+)
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeResultFailure,
     CreateNodeResultSuccess,
@@ -133,6 +154,10 @@ logger = logging.getLogger("griptape_nodes")
 # Tracks the name of the node currently being executed in this async context.
 # Each asyncio task gets its own copy, so parallel node execution is safe.
 current_executing_node_name: ContextVar[str | None] = ContextVar("current_executing_node_name", default=None)
+
+# The execution_id of the node run in progress in this async context, sent as parent_execution_id
+# on the node events of every run nested inside it.
+current_node_execution_id: ContextVar[str | None] = ContextVar("current_node_execution_id", default=None)
 
 
 class IterationControlAction(StrEnum):
@@ -211,7 +236,7 @@ LOOP_EVENTS_TO_SUPPRESS = {
 # kept as the record of intent: the aim is to stop parallel iterations from flooding the websocket
 # with per-node execution traffic. Wiring put_event up to suppression would also silence the node
 # highlighting that EventTranslationContext exists to provide, so it needs its own design rather
-# than a one-line change.
+# than a one-line change. Execution-event listeners hear every parallel iteration either way.
 #
 # Only ExecutionPayload members belong here. A ResultPayload in this set is a live transport change
 # wearing the costume of a no-op: put it in LOOP_EVENTS_TO_SUPPRESS deliberately, or leave it out.
@@ -282,6 +307,13 @@ class ExecuteNodeFailedError(RuntimeError):
         self.details = details
 
 
+def node_error_details_for(node_name: str, exc: BaseException) -> NodeErrorDetails:
+    """Use the details built where the node failed, or build them from an engine exception that never became a result."""
+    if isinstance(exc, ExecuteNodeFailedError):
+        return exc.details
+    return build_node_error_details(node_name, exc)
+
+
 class NodeExecutor(EngineScoped):
     """Executes nodes dynamically. One instance per engine, owned by FlowManager."""
 
@@ -295,11 +327,43 @@ class NodeExecutor(EngineScoped):
         raise ValueError(msg)
 
     async def execute(self, node: BaseNode) -> None:
-        """Execute the given node.
+        """Execute the given node, sending NodeStartProcessEvent before it runs and NodeFinishProcessEvent after.
+
+        The events use the synchronous put_event so the finish event still goes out from a cancelled
+        task. Nodes the engine added to a loop body run without either event.
 
         Args:
             node: The BaseNode to execute
-            library_name: The library that the execute method should come from.
+        """
+        loop_body_scope = current_loop_body_scope.get()
+        if loop_body_scope is not None and loop_body_scope.is_engine_node(node.name):
+            await self._run_node(node)
+            return
+
+        start_event = self._node_start_process_event(node, loop_body_scope)
+        self._put_execution_event(start_event)
+        outcome = NodeProcessOutcome.FAILED
+        failure: Exception | None = None
+        token = current_node_execution_id.set(start_event.execution_id)
+        try:
+            await self._run_node(node)
+            outcome = self._outcome_after_return(node)
+        except asyncio.CancelledError:
+            outcome = NodeProcessOutcome.CANCELLED
+            raise
+        except Exception as err:
+            # Broad by design: only recorded for the finish event, then re-raised unchanged.
+            failure = err
+            raise
+        finally:
+            current_node_execution_id.reset(token)
+            self._put_execution_event(self._node_finish_process_event(start_event, outcome=outcome, failure=failure))
+
+    async def _run_node(self, node: BaseNode) -> None:
+        """Run the given node by the path its type and execution environment call for.
+
+        Args:
+            node: The BaseNode to execute
         """
         token = current_executing_node_name.set(node.name)
         try:
@@ -317,13 +381,16 @@ class NodeExecutor(EngineScoped):
 
             if isinstance(node, SubflowNodeGroup):
                 execution_type = node.get_parameter_value(node.execution_environment.name)
-                if execution_type == LOCAL_EXECUTION:
-                    # Just execute the node normally! This means we aren't doing any special packaging.
-                    await node.aprocess()
+                if self._runs_locally(execution_type):
+                    # Just execute the node normally! This means we aren't doing any special packaging,
+                    # so there is no subprocess state to clear. Isolated Execution in the worker runs here
+                    # too, inside the scope that sends each of the group's nodes to the worker.
+                    with self._local_execution_scope(execution_type, node.name):
+                        await node.aprocess()
                     return
                 # Clear execution state before subprocess execution starts
                 node.subflow_execution_component.clear_execution_state()
-                if execution_type == PRIVATE_EXECUTION:
+                if execution_type == ISOLATED_EXECUTION:
                     # Package the flow and run it in a subprocess.
                     await self._execute_private_workflow(node)
                     return
@@ -346,7 +413,7 @@ class NodeExecutor(EngineScoped):
             result = await self.engine.ahandle_request(
                 ExecuteNodeRequest(
                     node_name=node.name,
-                    parameter_values=dict(node.parameter_values),
+                    parameter_values=node._list_rows.values_for_dispatch(),
                     node_metadata=cast("NodeMetadata", dict(node.metadata)),
                     variables=self._resolve_variables_for_node(node.name),
                     local_object_source=node.local_object_source,
@@ -377,6 +444,68 @@ class NodeExecutor(EngineScoped):
             # A connection torn down while this node was running left its input value in place so the
             # node could finish on it. Now that it has, drop it.
             node.reset_deferred_input_values()
+
+    def _node_start_process_event(self, node: BaseNode, loop_body_scope: LoopBodyScope | None) -> NodeStartProcessEvent:
+        """Describe the node about to run as the artist placed it, with a fresh execution_id.
+
+        Everything is captured here, before the run, so the finish event can describe a node that
+        was deleted while it ran.
+        """
+        canvas_node_name = node.name
+        if loop_body_scope is not None:
+            scoped_node_name = loop_body_scope.canvas_name_for(node.name)
+            if scoped_node_name is not None:
+                canvas_node_name = scoped_node_name
+        return NodeStartProcessEvent(
+            node_name=canvas_node_name,
+            node_type=node.__class__.__name__,
+            specific_library_name=node.metadata.get("library"),
+            flow_name=self._parent_flow_name(canvas_node_name),
+            execution_id=uuid.uuid4().hex,
+            parent_execution_id=current_node_execution_id.get(),
+        )
+
+    def _node_finish_process_event(
+        self,
+        start_event: NodeStartProcessEvent,
+        *,
+        outcome: NodeProcessOutcome,
+        failure: Exception | None,
+    ) -> NodeFinishProcessEvent:
+        """Describe how the run that start_event announced ended."""
+        error_message = None
+        error = None
+        if failure is not None:
+            error_message = str(failure)
+            error = node_error_details_for(start_event.node_name, failure)
+        return NodeFinishProcessEvent(
+            node_name=start_event.node_name,
+            node_type=start_event.node_type,
+            specific_library_name=start_event.specific_library_name,
+            flow_name=start_event.flow_name,
+            execution_id=start_event.execution_id,
+            parent_execution_id=start_event.parent_execution_id,
+            outcome=outcome,
+            error_message=error_message,
+            error=error,
+        )
+
+    def _parent_flow_name(self, node_name: str) -> str | None:
+        """The flow the node is in, or None when no node by that name exists."""
+        try:
+            return self.engine.node_manager.get_node_parent_flow_by_name(node_name)
+        except KeyError:
+            return None
+
+    def _put_execution_event(self, payload: ExecutionPayload) -> None:
+        self.engine.event_manager.put_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+
+    @staticmethod
+    def _outcome_after_return(node: BaseNode) -> NodeProcessOutcome:
+        """A node that returned after a cancel was requested stopped early on purpose: it was cancelled."""
+        if node.is_cancellation_requested:
+            return NodeProcessOutcome.CANCELLED
+        return NodeProcessOutcome.SUCCEEDED
 
     def _execute_node_failed_error(self, node_name: str, result: Any, exc: Exception | None) -> ExecuteNodeFailedError:
         message = self._format_node_failure_message(node_name, result, exc)
@@ -584,6 +713,24 @@ class NodeExecutor(EngineScoped):
         my_subprocess_result = await self._execute_subprocess(workflow_path, file_name, node=subflow_node)
         parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
         self._apply_parameter_values_to_node(node, parameter_output_values, package_result)
+
+    def _runs_isolated_execution_in_worker(self, execution_type: str) -> bool:
+        """Whether an Isolated Execution run sends its nodes to the worker rather than starting a process."""
+        if execution_type != ISOLATED_EXECUTION:
+            return False
+        return is_beta_enabled(ISOLATED_EXECUTION_IN_WORKER, self.engine.config_manager)
+
+    def _runs_locally(self, execution_type: str) -> bool:
+        """Whether a run goes through the local path: Local Execution, or Isolated Execution in the worker."""
+        if execution_type == LOCAL_EXECUTION:
+            return True
+        return self._runs_isolated_execution_in_worker(execution_type)
+
+    def _local_execution_scope(self, execution_type: str, owner_name: str) -> AbstractContextManager[None]:
+        """The scope a local run executes in: for Isolated Execution, the one sending its nodes to the worker."""
+        if execution_type == ISOLATED_EXECUTION:
+            return isolated_execution_scope(owner_name)
+        return nullcontext()
 
     async def _execute_private_workflow(self, node: BaseNode) -> None:
         """Execute node in private subprocess environment.
@@ -1009,7 +1156,7 @@ class NodeExecutor(EngineScoped):
         entry_control_parameter_name = entry_node_parameter.entry_parameter
         # Determine library and node types based on execution_type
         library = None
-        if execution_type not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
+        if execution_type not in (LOCAL_EXECUTION, ISOLATED_EXECUTION):
             try:
                 library = LibraryRegistry.get_library(name=execution_type)
             except KeyError:
@@ -1314,6 +1461,7 @@ class NodeExecutor(EngineScoped):
             reverse_node_mapping = {
                 packaged_name: original_name for original_name, packaged_name in node_name_mappings.items()
             }
+            loop_body_scope = self._loop_body_scope(package_result, node_name_mappings)
 
             if packaged_start_node_name is None:
                 msg = f"Could not find deserialized Start node (original: '{start_node_name}') for sequential loop"
@@ -1354,7 +1502,10 @@ class NodeExecutor(EngineScoped):
                     flow_name,
                     packaged_start_node_name,
                 )
-                with EventTranslationContext(event_manager, reverse_node_mapping):
+                with (
+                    EventTranslationContext(event_manager, reverse_node_mapping),
+                    entered_loop_body_scope(loop_body_scope),
+                ):
                     start_subflow_request = StartLocalSubflowRequest(
                         flow_name=flow_name,
                         start_node=packaged_start_node_name,
@@ -1500,21 +1651,22 @@ class NodeExecutor(EngineScoped):
         # Execute iterations sequentially based on execution environment
         break_occurred = False
         iteration_failures: list[IterationFailure] = []
-        if execution_type == LOCAL_EXECUTION:
-            (
-                iteration_results,
-                successful_iterations,
-                last_iteration_values,
-                _skipped_count,
-                break_occurred,
-                iteration_failures,
-            ) = await self._execute_loop_iterations_sequentially(
-                package_result=package_result,
-                total_iterations=total_iterations,
-                parameter_values_per_iteration=parameter_values_per_iteration,
-                end_loop_node=end_node,
-            )
-        elif execution_type == PRIVATE_EXECUTION:
+        if self._runs_locally(execution_type):
+            with self._local_execution_scope(execution_type, end_node.name):
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                    _skipped_count,
+                    break_occurred,
+                    iteration_failures,
+                ) = await self._execute_loop_iterations_sequentially(
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_per_iteration,
+                    end_loop_node=end_node,
+                )
+        elif execution_type == ISOLATED_EXECUTION:
             (
                 iteration_results,
                 successful_iterations,
@@ -1670,18 +1822,19 @@ class NodeExecutor(EngineScoped):
         )
 
         # Step 5: Execute all iterations based on execution environment
-        if execution_type == LOCAL_EXECUTION:
-            (
-                iteration_results,
-                successful_iterations,
-                last_iteration_values,
-            ) = await self._execute_loop_iterations_locally(
-                package_result=package_result,
-                total_iterations=total_iterations,
-                parameter_values_per_iteration=parameter_values_to_set_before_run,
-                end_loop_node=node,
-            )
-        elif execution_type == PRIVATE_EXECUTION:
+        if self._runs_locally(execution_type):
+            with self._local_execution_scope(execution_type, node.name):
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_loop_iterations_locally(
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_to_set_before_run,
+                    end_loop_node=node,
+                )
+        elif execution_type == ISOLATED_EXECUTION:
             (
                 iteration_results,
                 successful_iterations,
@@ -1812,6 +1965,7 @@ class NodeExecutor(EngineScoped):
                 resolved_upstream_values=resolved_upstream_values,
                 iteration_startflow_params=iteration_startflow_params,
                 reverse_node_mapping=reverse_node_mapping,
+                loop_body_scope=self._loop_body_scope(package_result, node_name_mappings),
                 event_manager=event_manager,
                 max_iterations=max_iterations,
                 total_iterations=total_iterations,
@@ -1902,6 +2056,7 @@ class NodeExecutor(EngineScoped):
         resolved_upstream_values: dict[str, Any],
         iteration_startflow_params: list[str],
         reverse_node_mapping: dict[str, str],
+        loop_body_scope: LoopBodyScope,
         event_manager: Any,
         max_iterations: int,
         total_iterations: int,
@@ -1931,7 +2086,10 @@ class NodeExecutor(EngineScoped):
             )
 
             # Execute the subflow
-            with EventTranslationContext(event_manager, reverse_node_mapping):
+            with (
+                EventTranslationContext(event_manager, reverse_node_mapping),
+                entered_loop_body_scope(loop_body_scope),
+            ):
                 start_subflow_request = StartLocalSubflowRequest(
                     flow_name=flow_name,
                     start_node=packaged_start_node_name,
@@ -2295,7 +2453,7 @@ class NodeExecutor(EngineScoped):
         execution_type = node.get_parameter_value(node.execution_environment.name)
 
         library = None
-        if execution_type not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
+        if execution_type not in (LOCAL_EXECUTION, ISOLATED_EXECUTION):
             try:
                 library = LibraryRegistry.get_library(name=execution_type)
             except KeyError as err:
@@ -2393,18 +2551,19 @@ class NodeExecutor(EngineScoped):
 
         # Execute all iterations based on execution environment
         match execution_type:
-            case node_types.LOCAL_EXECUTION:
-                (
-                    iteration_results,
-                    successful_iterations,
-                    last_iteration_values,
-                ) = await self._execute_loop_iterations_locally(
-                    package_result=package_result,
-                    total_iterations=total_iterations,
-                    parameter_values_per_iteration=parameter_values_to_set_before_run,
-                    end_loop_node=node,
-                )
-            case node_types.PRIVATE_EXECUTION:
+            case _ if self._runs_locally(execution_type):
+                with self._local_execution_scope(execution_type, node.name):
+                    (
+                        iteration_results,
+                        successful_iterations,
+                        last_iteration_values,
+                    ) = await self._execute_loop_iterations_locally(
+                        package_result=package_result,
+                        total_iterations=total_iterations,
+                        parameter_values_per_iteration=parameter_values_to_set_before_run,
+                        end_loop_node=node,
+                    )
+            case node_types.ISOLATED_EXECUTION:
                 (
                     iteration_results,
                     successful_iterations,
@@ -2493,21 +2652,22 @@ class NodeExecutor(EngineScoped):
         break_occurred = False
         iteration_failures: list[IterationFailure] = []
         match execution_type:
-            case node_types.LOCAL_EXECUTION:
-                (
-                    iteration_results,
-                    successful_iterations,
-                    last_iteration_values,
-                    _skipped_count,
-                    break_occurred,
-                    iteration_failures,
-                ) = await self._execute_loop_iterations_sequentially(
-                    package_result=package_result,
-                    total_iterations=total_iterations,
-                    parameter_values_per_iteration=parameter_values_per_iteration,
-                    end_loop_node=node,
-                )
-            case node_types.PRIVATE_EXECUTION:
+            case _ if self._runs_locally(execution_type):
+                with self._local_execution_scope(execution_type, node.name):
+                    (
+                        iteration_results,
+                        successful_iterations,
+                        last_iteration_values,
+                        _skipped_count,
+                        break_occurred,
+                        iteration_failures,
+                    ) = await self._execute_loop_iterations_sequentially(
+                        package_result=package_result,
+                        total_iterations=total_iterations,
+                        parameter_values_per_iteration=parameter_values_per_iteration,
+                        end_loop_node=node,
+                    )
+            case node_types.ISOLATED_EXECUTION:
                 (
                     iteration_results,
                     successful_iterations,
@@ -2976,6 +3136,24 @@ class NodeExecutor(EngineScoped):
         msg = f"start_or_end must be 'start' or 'end', got {start_or_end}"
         raise ValueError(msg)
 
+    def _loop_body_scope(
+        self, package_result: PackageNodesAsSerializedFlowResultSuccess, node_name_mappings: dict[str, str]
+    ) -> LoopBodyScope:
+        """The scope naming one deserialized copy of a loop body by the canvas nodes it stands for.
+
+        Entered around each iteration, so the node events it sends name canvas nodes rather than
+        the copies, and leave out the Start and End nodes the engine adds to the body.
+        """
+        engine_made_node_names = {
+            self.get_node_parameter_mappings(package_result, "start").node_name,
+            self.get_node_parameter_mappings(package_result, "end").node_name,
+        }
+        return loop_body_scope_for(
+            node_name_mappings,
+            engine_made_node_names=engine_made_node_names,
+            enclosing_scope=current_loop_body_scope.get(),
+        )
+
     def get_parameter_values_from_iterations(
         self,
         end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
@@ -3237,11 +3415,14 @@ class NodeExecutor(EngineScoped):
             packaged_start_node_name = self.get_node_parameter_mappings(package_result, "start").node_name
 
             async def run_single_iteration(
-                flow_name: str, iteration_index: int, start_node_name: str
+                flow_name: str, iteration_index: int, start_node_name: str, loop_body_scope: LoopBodyScope
             ) -> IterationOutcome:
                 """Run a single iteration flow and report whether it finished, and why not."""
                 # Suppress execution events during parallel iteration to prevent flooding websockets
-                with EventSuppressionContext(event_manager, EXECUTION_EVENTS_TO_SUPPRESS):
+                with (
+                    entered_loop_body_scope(loop_body_scope),
+                    EventSuppressionContext(event_manager, EXECUTION_EVENTS_TO_SUPPRESS),
+                ):
                     start_subflow_request = StartLocalSubflowRequest(
                         flow_name=flow_name,
                         start_node=start_node_name,
@@ -3312,6 +3493,7 @@ class NodeExecutor(EngineScoped):
                         flow_name,
                         iteration_index,
                         node_name_mappings.get(packaged_start_node_name),
+                        self._loop_body_scope(package_result, node_name_mappings),
                     )
                 )
                 for iteration_index, flow_name, node_name_mappings in deserialized_flows
@@ -3419,9 +3601,9 @@ class NodeExecutor(EngineScoped):
         Returns:
             Tuple of (iteration_results, successful_iterations, last_iteration_values)
         """
-        # if it's private execution, we aren't republishing it in a library.
+        # if it's isolated execution, we aren't republishing it in a library.
         # So our original package is what is running, and we can count on using these mappings
-        if execution_type == PRIVATE_EXECUTION:
+        if execution_type == ISOLATED_EXECUTION:
             start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
             start_node_name = start_node_mapping.node_name
         # For published libraries, we need to get the new Start Node name, based on what their registered nodes are.
@@ -3548,7 +3730,7 @@ class NodeExecutor(EngineScoped):
                 workflow_path=workflow_path,
                 workflow_result=workflow_result,
                 file_name_prefix=file_name_prefix,
-                execution_type=PRIVATE_EXECUTION,
+                execution_type=ISOLATED_EXECUTION,
                 run_sequentially=True,
             )
         finally:
@@ -3581,7 +3763,7 @@ class NodeExecutor(EngineScoped):
                 workflow_path=workflow_path,
                 workflow_result=workflow_result,
                 file_name_prefix=file_name_prefix,
-                execution_type=PRIVATE_EXECUTION,
+                execution_type=ISOLATED_EXECUTION,
                 run_sequentially=False,
             )
         finally:
@@ -4059,7 +4241,14 @@ class NodeExecutor(EngineScoped):
             # parameter_values would destroy the template the user typed rather than
             # merely hiding it. The output value below still reflects the last
             # iteration for downstream consumers and artifacts.
-            if not target_node.should_preserve_stored_template(target_param_name, param_value):
+            #
+            # Skip it as well for a list whose rows are connected to other nodes. A whole
+            # list written to a node becomes its rows, and replacing a connected row would
+            # remove its connection, which the list refuses. Those rows belong to their
+            # connections; the output value below still carries the iteration's list.
+            preserves_template = target_node.should_preserve_stored_template(target_param_name, param_value)
+            rows_are_connected = target_node._list_rows.has_connected_rows(target_param)
+            if not preserves_template and not rows_are_connected:
                 target_node.set_parameter_value(target_param_name, param_value)
             target_node.parameter_output_values[target_param_name] = param_value
 

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from griptape_nodes.exe_types.workflow_node import WorkflowNode
     from griptape_nodes.node_library.library_registry import (
         LibrarySchema,
     )
@@ -109,3 +110,6 @@ class LibraryInfo:
     # -- the spawn refusal reads THIS field, so a failure recorded at registration must survive
     # that clearing.
     execution_env_failure: str | None = None
+    # Node types this library registered from its `workflow_nodes` entries. Every workflow registry
+    # refresh lists their backing workflows again, keyed for the current workspace.
+    workflow_node_classes: list[type[WorkflowNode]] = field(default_factory=list)

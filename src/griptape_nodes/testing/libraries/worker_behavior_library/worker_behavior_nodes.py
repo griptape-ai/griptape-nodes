@@ -27,10 +27,15 @@ the minimal fixtures did not cover:
 - ``EditorBehaviorNode``: converters, validators, and parameters added and removed from
   ``after_value_set`` -- all of which now run orchestrator-side on the real class instead of
   being lost to a schema stub.
+- ``ReportsHydrationNode``: reports whether its value hook and its ``process`` ran inside the
+  rebuild a worker does before running a node, during which graph edits are refused.
+- ``ProcessInfoNode``: reports the process that ran it and that process's parent, so a test
+  driving real engine processes can tell which process executed the node.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from griptape_nodes.common.project_templates.situation import BuiltInSituation
@@ -38,6 +43,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterList, Parame
 from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
 from griptape_nodes.files.file import File
 from griptape_nodes.files.project_file import ProjectFileDestination
+from griptape_nodes.retained_mode.engine import current_engine
 from griptape_nodes.retained_mode.events.config_events import GetConfigValueRequest, GetConfigValueResultSuccess
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
@@ -274,6 +280,26 @@ class GrowsAnOutputListNode(DataNode):
             self.set_parameter_value(child.name, item)
 
 
+class ReadsAnInputListNode(DataNode):
+    """Echoes an input `ParameterList`, the shape of a node reading `reference_images`."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata=metadata)
+        self.add_parameter(
+            ParameterList(
+                name="items",
+                input_types=["str"],
+                type="str",
+                tooltip="",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+        self.add_parameter(Parameter(name="echo", type="list", tooltip="", allowed_modes={ParameterMode.OUTPUT}))
+
+    def process(self) -> None:
+        self.parameter_output_values["echo"] = self.get_parameter_list_value("items")
+
+
 def _shout(value: Any) -> Any:
     """Converter: proves converters run where the node object is real."""
     if isinstance(value, str):
@@ -393,6 +419,35 @@ class ReadSecretNode(DataNode):
         )
         value = result.value if isinstance(result, GetSecretValueResultSuccess) else None
         self.parameter_output_values["secret_value"] = value or ""
+
+
+class ProcessInfoNode(DataNode):
+    """Outputs the ids of the process that executed it and of that process's parent."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata=metadata)
+        self.add_parameter(
+            Parameter(
+                name="pid",
+                type="int",
+                default_value=0,
+                tooltip="Id of the process that executed this node",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="parent_pid",
+                type="int",
+                default_value=0,
+                tooltip="Id of that process's parent",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
+
+    def process(self) -> None:
+        self.parameter_output_values["pid"] = os.getpid()
+        self.parameter_output_values["parent_pid"] = os.getppid()
 
 
 class UnshippableOutputNode(DataNode):
@@ -553,6 +608,47 @@ class DerivedStructureNode(DataNode):
         self.parameter_output_values["echo"] = derived
         deep = self.get_parameter_value("derived_deep") if self.get_parameter_by_name("derived_deep") else ""
         self.parameter_output_values["deep_echo"] = deep
+
+
+class ReportsHydrationNode(DataNode):
+    """Reports whether its value hook and its process() each ran while the node was being rebuilt.
+
+    A worker refuses graph edits only while it rebuilds a node from the values it was sent, so the
+    rebuild has to cover the value hooks and end before process() runs.
+    """
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata=metadata)
+        self._hook_saw_hydration = False
+        self.add_parameter(
+            Parameter(
+                name="trigger",
+                type="str",
+                default_value="",
+                tooltip="Any value runs the hook",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+        for output_name in ("hook_saw_hydration", "process_saw_hydration"):
+            self.add_parameter(
+                Parameter(
+                    name=output_name,
+                    type="bool",
+                    default_value=False,
+                    tooltip="",
+                    allowed_modes={ParameterMode.OUTPUT},
+                )
+            )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: ARG002
+        if parameter.name == "trigger":
+            self._hook_saw_hydration = current_engine().event_manager.hydrating_node_name() == self.name
+
+    def process(self) -> None:
+        self.parameter_output_values["hook_saw_hydration"] = self._hook_saw_hydration
+        self.parameter_output_values["process_saw_hydration"] = (
+            current_engine().event_manager.hydrating_node_name() is not None
+        )
 
 
 class WriteProjectFileNode(DataNode):
