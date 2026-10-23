@@ -53,6 +53,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_prov
 from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
     ImageArtifactProvider,
 )
+from griptape_nodes.retained_mode.managers.event_manager import RegisteredRequestHandler
 from griptape_nodes.retained_mode.managers.os_manager import StagingFailedError
 
 # Mirrors the constant in tests/unit/retained_mode/managers/test_os_manager.py.
@@ -1258,8 +1259,10 @@ class TestOSWritePermissionVet:
             )
 
         event_manager = engine.event_manager
-        registry = event_manager._request_type_to_manager
-        monkeypatch.setitem(registry, DeleteFileRequest, spy_delete_handler)
+        registry = event_manager._request_handlers
+        monkeypatch.setitem(
+            registry, DeleteFileRequest, RegisteredRequestHandler(callback=spy_delete_handler, scope=None)
+        )
 
         requested_path = temp_dir / "image.png"
         request = WriteFileRequest(file_path=str(requested_path), content=_png_bytes())
@@ -2194,8 +2197,10 @@ class TestWriteTempFileRequest:
             return GetSituationResultFailure(result_details="situation missing (test)")
 
         event_manager = engine.event_manager
-        registry = event_manager._request_type_to_manager
-        monkeypatch.setitem(registry, GetSituationRequest, situation_missing_handler)
+        registry = event_manager._request_handlers
+        monkeypatch.setitem(
+            registry, GetSituationRequest, RegisteredRequestHandler(callback=situation_missing_handler, scope=None)
+        )
 
         os_manager = engine.os_manager
         result = os_manager.on_write_temp_file_request(

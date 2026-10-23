@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -110,8 +111,8 @@ class TestRegisterRequestHandlers:
 
         event_manager.register_request_handlers(owner)
 
-        assert event_manager._request_type_to_manager[_PingRequest] == owner.on_either
-        assert event_manager._request_type_to_manager[_PongRequest] == owner.on_either
+        assert event_manager.get_manager_for_request_type(_PingRequest) == owner.on_either
+        assert event_manager.get_manager_for_request_type(_PongRequest) == owner.on_either
 
     def test_subclass_override_registers_once(self) -> None:
         event_manager = EventManager()
@@ -119,8 +120,8 @@ class TestRegisterRequestHandlers:
 
         event_manager.register_request_handlers(owner)
 
-        assert event_manager._request_type_to_manager[_PingRequest] == owner.on_ping
-        assert event_manager._request_type_to_manager[_PongRequest] == owner.on_pong
+        assert event_manager.get_manager_for_request_type(_PingRequest) == owner.on_ping
+        assert event_manager.get_manager_for_request_type(_PongRequest) == owner.on_pong
 
     def test_unmarked_override_inherits_parent_mark(self) -> None:
         event_manager = EventManager()
@@ -128,7 +129,7 @@ class TestRegisterRequestHandlers:
 
         event_manager.register_request_handlers(owner)
 
-        assert event_manager._request_type_to_manager[_PingRequest] == owner.on_ping
+        assert event_manager.get_manager_for_request_type(_PingRequest) == owner.on_ping
 
     def test_remarked_override_replaces_parent_marks(self) -> None:
         event_manager = EventManager()
@@ -136,8 +137,8 @@ class TestRegisterRequestHandlers:
 
         event_manager.register_request_handlers(owner)
 
-        assert _PingRequest not in event_manager._request_type_to_manager
-        assert event_manager._request_type_to_manager[_PongRequest] == owner.on_ping
+        assert event_manager.get_manager_for_request_type(_PingRequest) is None
+        assert event_manager.get_manager_for_request_type(_PongRequest) == owner.on_ping
 
     def test_registers_staticmethod_and_classmethod_handlers(self) -> None:
         event_manager = EventManager()
@@ -145,8 +146,8 @@ class TestRegisterRequestHandlers:
 
         event_manager.register_request_handlers(owner)
 
-        assert event_manager._request_type_to_manager[_PingRequest] == owner.on_ping
-        assert event_manager._request_type_to_manager[_PongRequest] == owner.on_pong
+        assert event_manager.get_manager_for_request_type(_PingRequest) == owner.on_ping
+        assert event_manager.get_manager_for_request_type(_PongRequest) == owner.on_pong
 
     def test_second_owner_for_same_type_raises(self) -> None:
         event_manager = EventManager()
@@ -219,3 +220,25 @@ class TestRegistrationChecksTheWorkflowParameter:
 
         with pytest.raises(TypeError, match="has a `workflow` parameter"):
             EventManager().register_request_handlers(_Misdeclared())
+
+
+class TestReplaceManagerForRequestType:
+    def test_keeps_the_registered_scope(self) -> None:
+        event_manager = EventManager()
+
+        def on_ping(request: _PingRequest, workflow: object) -> ResultPayload:  # noqa: ARG001
+            return GenericResultFailure(result_details="unused")
+
+        def wrapper(request: _PingRequest, **kwargs: object) -> ResultPayload:
+            return on_ping(request, **kwargs)
+
+        event_manager.assign_manager_to_request_type(_PingRequest, on_ping, scope=RequestScope.WORKFLOW)
+
+        event_manager.replace_manager_for_request_type(_PingRequest, wrapper)
+
+        assert event_manager.get_manager_for_request_type(_PingRequest) is wrapper
+        assert event_manager.get_scope_for_request_type(_PingRequest) is RequestScope.WORKFLOW
+
+    def test_needs_a_registered_handler(self) -> None:
+        with pytest.raises(ValueError, match="has none"):
+            EventManager().replace_manager_for_request_type(_PingRequest, MagicMock())

@@ -5,11 +5,10 @@ import contextvars
 import inspect
 import logging
 import threading
-from collections import defaultdict
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import fields
-from typing import TYPE_CHECKING, Any, cast
+from dataclasses import dataclass, fields
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
@@ -186,11 +185,32 @@ class ResultContext(TypedDict, total=False):
     workflow_id: str | None
 
 
+@dataclass(frozen=True)
+class RegisteredRequestHandler:
+    """A request type's handler and the scope dispatch calls it with."""
+
+    callback: Callable[..., Any]
+    scope: RequestScope | None
+
+
+@runtime_checkable
+class ForwardingRequestHandler(Protocol):
+    """A handler that may send its request to another engine instead of handling it here.
+
+    Dispatch resolves no workflow for a call it forwards: the engine it forwards to resolves it from the
+    envelope id the forward carries.
+    """
+
+    def forwards_now(self) -> bool:
+        """Whether a call made now is forwarded rather than handled here."""
+        ...
+
+
 class EventManager(EngineScoped):
     def __init__(self, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
-        # Dictionary to store the SPECIFIC manager for each request type
-        self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
+        # The one handler for each request type, with the scope it was registered with
+        self._request_handlers: dict[type[RequestPayload], RegisteredRequestHandler] = {}
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
         # Dictionary to store ALL SUBSCRIBERS to execution events (the live feed of
@@ -825,12 +845,27 @@ class EventManager(EngineScoped):
             ValueError: The request type already has a handler.
             TypeError: The callback's `workflow` parameter does not match `scope`.
         """
-        existing_manager = self._request_type_to_manager.get(request_type)
-        if existing_manager is not None:
-            msg = f"Attempted to assign an event of type {request_type} to manager {callback.__name__}, but that request is already assigned to manager {existing_manager.__name__}."
+        existing = self._request_handlers.get(request_type)
+        if existing is not None:
+            msg = f"Attempted to assign an event of type {request_type} to manager {callback.__name__}, but that request is already assigned to manager {existing.callback.__name__}."
             raise ValueError(msg)
         check_handler_signature(callback, scope, request_type)
-        self._request_type_to_manager[request_type] = callback
+        self._request_handlers[request_type] = RegisteredRequestHandler(callback=callback, scope=scope)
+
+    def replace_manager_for_request_type(self, request_type: type[RP], callback: Callable[..., Any]) -> None:
+        """Swap in a callback that wraps the registered handler, keeping the scope it was registered with.
+
+        Dispatch calls the new callback as it called the old one, so a wrapper passes any keyword
+        arguments it receives (the `workflow` its scope passes) through to the handler it wraps.
+
+        Raises:
+            ValueError: The request type has no handler to replace.
+        """
+        existing = self._request_handlers.get(request_type)
+        if existing is None:
+            msg = f"Attempted to replace the handler for {request_type.__name__}. Failed because it has none."
+            raise ValueError(msg)
+        self._request_handlers[request_type] = RegisteredRequestHandler(callback=callback, scope=existing.scope)
 
     def register_request_handlers(self, owner: object) -> None:
         """Assign each `@handles` method on `owner`. An unmarked override keeps its parent's marks."""
@@ -932,7 +967,17 @@ class EventManager(EngineScoped):
 
     def get_manager_for_request_type(self, request_type: type[RP]) -> Callable | None:
         """Return the currently-registered handler callback for a request type, or None."""
-        return self._request_type_to_manager.get(request_type)
+        registered = self._request_handlers.get(request_type)
+        if registered is None:
+            return None
+        return registered.callback
+
+    def get_scope_for_request_type(self, request_type: type[RP]) -> RequestScope | None:
+        """Return the scope a request type's handler was registered with, or None for no scope or no handler."""
+        registered = self._request_handlers.get(request_type)
+        if registered is None:
+            return None
+        return registered.scope
 
     def registered_request_types(self) -> list[type[RequestPayload]]:
         """Every request type that currently has a handler.
@@ -941,7 +986,7 @@ class EventManager(EngineScoped):
         by default, rather than maintaining a list of types to forward that silently goes
         stale whenever a new request type is added.
         """
-        return list(self._request_type_to_manager.keys())
+        return list(self._request_handlers.keys())
 
     async def forward_to_orchestrator(
         self,
@@ -1013,8 +1058,7 @@ class EventManager(EngineScoped):
         Args:
             request_type: The type of request to unsubscribe from
         """
-        if request_type in self._request_type_to_manager:
-            del self._request_type_to_manager[request_type]
+        self._request_handlers.pop(request_type, None)
 
     def _override_result_log_level(self, result: ResultPayload, level: int) -> None:
         """Override the log level on all result details.
@@ -1170,10 +1214,11 @@ class EventManager(EngineScoped):
 
         # Notify the manager of the event type
         request_type = type(request)
-        callback = self._request_type_to_manager.get(request_type)
-        if not callback:
+        registered = self._request_handlers.get(request_type)
+        if registered is None:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
+        callback = registered.callback
 
         # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
         # the manager callback runs.
@@ -1226,10 +1271,11 @@ class EventManager(EngineScoped):
 
         # Notify the manager of the event type
         request_type = type(request)
-        callback = self._request_type_to_manager.get(request_type)
-        if not callback:
+        registered = self._request_handlers.get(request_type)
+        if registered is None:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
+        callback = registered.callback
 
         # Pre-dispatch hooks (e.g. PermissionManager) may short-circuit before
         # the manager callback runs.
