@@ -507,22 +507,24 @@ class TestWritePathsStampAnId:
         assert project_engine.context_manager.get_current_workflow_name() == "after"
         assert project_engine.context_manager.get_current_flow().name == flow_name
 
-    def test_rename_of_an_open_library_workflow_is_refused(self, project_engine: Engine) -> None:
-        library_id = _open_new_workflow(project_engine, "library_workflow")
-        library_saved = _save(project_engine)
-        project_engine.workflow_registry.get(library_id).metadata.is_griptape_provided = True
+    def test_rename_of_an_open_library_workflow_copy_saves_the_copy(
+        self, project_engine: Engine, tmp_path: Path, workspace: Path
+    ) -> None:
+        library = _library_workflow(project_engine, tmp_path / "library")
+        library_file = library.absolute_path
+        assert library_file is not None
+        library_content = library_file.read_bytes()
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
 
-        renamed = _run(
-            project_engine, RenameWorkflowRequest(workflow_name=library_saved.workflow_name, requested_name="mine")
-        )
+        renamed = _run(project_engine, RenameWorkflowRequest(workflow_id=opened.workflow_id, requested_name="mine"))
 
-        assert isinstance(renamed, RenameWorkflowResultFailure)
-        assert "a library provides it" in str(renamed.result_details)
-        assert Path(library_saved.file_path).is_file()
-        assert _header_id(library_saved.file_path) == library_id
-        assert project_engine.workflow_registry.get(library_id).absolute_path == Path(library_saved.file_path)
-        assert project_engine.workflow_registry.find_by_name("mine") is None
-        assert project_engine.context_manager.get_current_workflow_id() == library_id
+        assert isinstance(renamed, RenameWorkflowResultSuccess), renamed.result_details
+        assert renamed.workflow_id == opened.workflow_id
+        assert _header_id(workspace / "mine.py") == opened.workflow_id
+        assert project_engine.context_manager.get_current_workflow_id() == opened.workflow_id
+        assert library_file.read_bytes() == library_content
+        assert project_engine.workflow_registry.get(LIBRARY_ID).absolute_path == library_file
 
     def test_renaming_only_the_letter_case_keeps_the_file(self, project_engine: Engine, workspace: Path) -> None:
         """On a case-insensitive filesystem the new name is the same file, which must not be deleted."""
