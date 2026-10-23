@@ -26,7 +26,6 @@ from griptape_nodes.retained_mode.events.object_events import (
 )
 from griptape_nodes.retained_mode.events.variable_events import (
     CreateVariableRequest,
-    CreateVariableResultFailure,
     CreateVariableResultSuccess,
     GetVariableValueRequest,
     GetVariableValueResultFailure,
@@ -35,7 +34,6 @@ from griptape_nodes.retained_mode.events.worker_events import WorkerGoneError
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     SetVariableSubstitutionEnabledRequest,
-    SetVariableSubstitutionEnabledResultFailure,
 )
 from griptape_nodes.retained_mode.managers.context_manager import MirroredWorkflowContext
 from griptape_nodes.retained_mode.runtime.context import (
@@ -64,7 +62,7 @@ if TYPE_CHECKING:
 
 class TestOpenWorkflowSet:
     def test_open_returns_an_empty_runtime_under_the_id(self) -> None:
-        workflows = OpenWorkflowSet()
+        workflows = OpenWorkflowSet(MagicMock())
 
         workflow = workflows.open("abc")
 
@@ -73,14 +71,14 @@ class TestOpenWorkflowSet:
         assert workflows.get("abc") is workflow
 
     def test_opening_the_same_id_twice_is_refused(self) -> None:
-        workflows = OpenWorkflowSet()
+        workflows = OpenWorkflowSet(MagicMock())
         workflows.open("abc")
 
         with pytest.raises(OpenWorkflowError, match="already open"):
             workflows.open("abc")
 
     def test_opening_a_second_workflow_is_refused(self) -> None:
-        workflows = OpenWorkflowSet()
+        workflows = OpenWorkflowSet(MagicMock())
         first = workflows.open("abc")
 
         with pytest.raises(OpenWorkflowError, match="'abc' is already open"):
@@ -89,13 +87,13 @@ class TestOpenWorkflowSet:
         assert workflows.sole_workflow() is first
 
     def test_get_of_a_closed_workflow_raises(self) -> None:
-        workflows = OpenWorkflowSet()
+        workflows = OpenWorkflowSet(MagicMock())
 
         with pytest.raises(OpenWorkflowError, match="not open"):
             workflows.get("abc")
 
     def test_close_forgets_the_workflow(self) -> None:
-        workflows = OpenWorkflowSet()
+        workflows = OpenWorkflowSet(MagicMock())
         workflow = workflows.open("abc")
 
         workflows.close(workflow)
@@ -105,7 +103,7 @@ class TestOpenWorkflowSet:
             workflows.get("abc")
 
     def test_close_refuses_a_runtime_that_is_not_open(self) -> None:
-        workflows = OpenWorkflowSet()
+        workflows = OpenWorkflowSet(MagicMock())
         workflow = workflows.open("abc")
         workflows.close(workflow)
         reopened = workflows.open("abc")
@@ -115,24 +113,24 @@ class TestOpenWorkflowSet:
         assert workflows.sole_workflow() is reopened
 
     def test_sole_workflow_with_none_open(self) -> None:
-        workflows = OpenWorkflowSet()
+        workflows = OpenWorkflowSet(MagicMock())
 
         assert workflows.sole_workflow_or_none() is None
         with pytest.raises(NoOpenWorkflowError, match="no workflow is open"):
             workflows.sole_workflow()
 
     def test_sole_workflow_with_one_open(self) -> None:
-        workflows = OpenWorkflowSet()
+        workflows = OpenWorkflowSet(MagicMock())
         workflow = workflows.open("abc")
 
         assert workflows.sole_workflow() is workflow
         assert workflows.sole_workflow_or_none() is workflow
 
     def test_sole_workflow_never_picks_one_of_several(self) -> None:
-        workflows = OpenWorkflowSet()
+        workflows = OpenWorkflowSet(MagicMock())
         workflows.open("abc")
         # Several open cannot happen through `open`; force it to check the read refuses to guess.
-        workflows._by_id["def"] = WorkflowRuntime("def")
+        workflows._by_id["def"] = WorkflowRuntime("def", MagicMock())
 
         with pytest.raises(OpenWorkflowError, match="2 workflows are open"):
             workflows.sole_workflow_or_none()
@@ -140,7 +138,7 @@ class TestOpenWorkflowSet:
             workflows.sole_workflow()
 
     def test_reads_never_open_a_workflow(self) -> None:
-        workflows = OpenWorkflowSet()
+        workflows = OpenWorkflowSet(MagicMock())
 
         workflows.sole_workflow_or_none()
         with pytest.raises(OpenWorkflowError):
@@ -153,7 +151,7 @@ class TestOpenWorkflowSet:
 
 class TestWorkflowContextStack:
     def test_a_new_runtimes_context_is_empty(self) -> None:
-        context = WorkflowRuntime("abc").context
+        context = WorkflowRuntime("abc", MagicMock()).context
 
         assert not context.has_current_flow()
         assert not context.has_current_node()
@@ -187,8 +185,8 @@ class TestWorkflowContextStack:
             context.get_current_node()
 
     def test_each_runtime_has_its_own_context(self) -> None:
-        first = WorkflowRuntime("first")
-        second = WorkflowRuntime("second")
+        first = WorkflowRuntime("first", MagicMock())
+        second = WorkflowRuntime("second", MagicMock())
 
         first.context.push_flow(MagicMock(name="flow"))
 
@@ -510,7 +508,7 @@ class TestCloseWorkflowState:
         push_unsaved_workflow(engine)
 
         with pytest.raises(OpenWorkflowError, match="not the open workflow"):
-            await engine.close_workflow_state(WorkflowRuntime("stale"))
+            await engine.close_workflow_state(WorkflowRuntime("stale", MagicMock()))
 
         assert engine.context_manager.has_current_workflow()
 
@@ -698,17 +696,18 @@ class TestVariablesOnTheRuntime:
         assert layer is not None
         assert layer.has("greeting")
 
-    def test_lookups_find_no_global_variable_with_no_workflow_open(self, engine: Engine) -> None:
+    def test_lookups_with_no_workflow_open_fail(self, engine: Engine) -> None:
         result = engine.handle_request(GetVariableValueRequest(name="greeting", lookup_scope=VariableScope.GLOBAL_ONLY))
 
-        assert isinstance(result, GetVariableValueResultFailure)
+        assert result.failed()
+        assert "names no workflow and none is open" in str(result.result_details)
         assert engine.open_workflows.sole_workflow_or_none() is None
 
     def test_creating_a_global_variable_needs_an_open_workflow(self, engine: Engine) -> None:
         result = engine.handle_request(CreateVariableRequest(name="greeting", type="str", is_global=True, value="hi"))
 
-        assert isinstance(result, CreateVariableResultFailure)
-        assert "no workflow is open" in str(result.result_details)
+        assert result.failed()
+        assert "names no workflow and none is open" in str(result.result_details)
         assert engine.open_workflows.sole_workflow_or_none() is None
 
     def test_variables_do_not_survive_clearing_and_reopening(self, engine: Engine) -> None:
@@ -738,7 +737,8 @@ class TestSubstitutionFlagOnTheRuntime:
     def test_setting_the_flag_with_no_workflow_open_fails(self, engine: Engine) -> None:
         result = engine.handle_request(SetVariableSubstitutionEnabledRequest(enabled=False))
 
-        assert isinstance(result, SetVariableSubstitutionEnabledResultFailure)
+        assert result.failed()
+        assert "names no workflow and none is open" in str(result.result_details)
 
     def test_the_flag_is_held_by_the_open_workflow(self, engine: Engine) -> None:
         push_unsaved_workflow(engine)

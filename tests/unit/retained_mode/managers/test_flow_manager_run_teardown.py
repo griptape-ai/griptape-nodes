@@ -38,7 +38,7 @@ def _doomed_run(monkeypatch: pytest.MonkeyPatch, *, cancel_also_fails: bool = Fa
     tests can assert on the check itself rather than on the call that is supposed to satisfy it.
     """
     engine = MagicMock()
-    engine.open_workflows = OpenWorkflowSet()
+    engine.open_workflows = OpenWorkflowSet(engine)
     engine.open_workflows.open("workflow")
     flow_manager = FlowManager(MagicMock(spec=EventManager), engine=engine)
 

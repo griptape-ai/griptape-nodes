@@ -721,7 +721,7 @@ class TestProjectManagerBuiltinVariables:
 
         engine = MagicMock()
         engine.config_manager.workspace_path = workspace
-        engine.open_workflows = OpenWorkflowSet()
+        engine.open_workflows = OpenWorkflowSet(engine)
         engine.workflow_registry = _WorkflowRegistry(
             engine.config_manager, is_workflow_open=engine.open_workflows.is_open
         )

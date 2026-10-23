@@ -482,14 +482,31 @@ class RemoteHandler:
     original: Any  # HandlerCallback; typed loosely to avoid a runtime import cycle
     event_manager: EventManager
 
-    async def __call__(self, request: RequestPayload) -> ResultPayload:
-        if self.event_manager.in_node_execution():
-            rebuilding = self.event_manager.hydrating_node_name()
-            if rebuilding is not None and edits_node(request, rebuilding):
-                return self._refuse(request, rebuilding)
-            event_result = await self.event_manager.forward_to_orchestrator(request, ResultContext())
-            return cast("ResultPayload", event_result.result)
-        return await call_function(self.original, request)
+    async def __call__(self, request: RequestPayload, **kwargs: Any) -> ResultPayload:
+        """Forward `request`, or hand it and `kwargs` (the `workflow` its scope passes) to the original handler.
+
+        Dispatch does not come through here: it asks `forwards_now` itself and calls `forward` or
+        `handle_locally`, so it resolves a workflow only for a call that stays local.
+        """
+        if self.forwards_now():
+            return await self.forward(request)
+        return await self.handle_locally(request, **kwargs)
+
+    def forwards_now(self) -> bool:
+        """Whether a call made now goes to the orchestrator: only while this worker runs a node."""
+        return self.event_manager.in_node_execution()
+
+    async def forward(self, request: RequestPayload) -> ResultPayload:
+        """Send `request` to the orchestrator, unless it edits the node this worker is rebuilding."""
+        rebuilding = self.event_manager.hydrating_node_name()
+        if rebuilding is not None and edits_node(request, rebuilding):
+            return self._refuse(request, rebuilding)
+        event_result = await self.event_manager.forward_to_orchestrator(request, ResultContext())
+        return cast("ResultPayload", event_result.result)
+
+    async def handle_locally(self, request: RequestPayload, **kwargs: Any) -> ResultPayload:
+        """Hand `request` and `kwargs` (the `workflow` its scope passes) to the original handler."""
+        return await call_function(self.original, request, **kwargs)
 
     @staticmethod
     def _refuse(request: RequestPayload, node_name: str) -> ResultPayload:
@@ -541,8 +558,7 @@ def register_remote_handlers(event_manager: EventManager) -> None:
         if original is None:
             continue
         remote = RemoteHandler(original=original, event_manager=event_manager)
-        event_manager.remove_manager_from_request_type(request_type)
-        event_manager.assign_manager_to_request_type(request_type, remote)
+        event_manager.replace_manager_for_request_type(request_type, remote)
 
 
 async def _handle_drop_all_local_objects(

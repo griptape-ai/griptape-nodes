@@ -38,6 +38,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     RemoveNodeFromNodeGroupResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+from griptape_nodes.retained_mode.managers.event_manager import RegisteredRequestHandler
 from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
@@ -92,7 +93,11 @@ def _fail_every_move(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
     def refuse_move(request: MoveNodeToNewFlowRequest) -> MoveNodeToNewFlowResultFailure:  # noqa: ARG001
         return MoveNodeToNewFlowResultFailure(result_details="refused for this test")
 
-    monkeypatch.setitem(event_manager._request_type_to_manager, MoveNodeToNewFlowRequest, refuse_move)
+    monkeypatch.setitem(
+        event_manager._request_handlers,
+        MoveNodeToNewFlowRequest,
+        RegisteredRequestHandler(callback=refuse_move, scope=None),
+    )
 
 
 def _fail_the_second_move_into(engine: Engine, target_flow_name: str, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -107,7 +112,7 @@ def _fail_the_second_move_into(engine: Engine, target_flow_name: str, monkeypatc
     fixture: no rollback could complete regardless of whether one was attempted.
     """
     event_manager = engine.event_manager
-    real_handler = event_manager._request_type_to_manager[MoveNodeToNewFlowRequest]
+    real_handler = event_manager._request_handlers[MoveNodeToNewFlowRequest].callback
     moves_into_target = 0
 
     def refuse_the_second_move_in(request: MoveNodeToNewFlowRequest) -> object:
@@ -119,7 +124,11 @@ def _fail_the_second_move_into(engine: Engine, target_flow_name: str, monkeypatc
             return real_handler(request)
         return MoveNodeToNewFlowResultFailure(result_details="refused for this test")
 
-    monkeypatch.setitem(event_manager._request_type_to_manager, MoveNodeToNewFlowRequest, refuse_the_second_move_in)
+    monkeypatch.setitem(
+        event_manager._request_handlers,
+        MoveNodeToNewFlowRequest,
+        RegisteredRequestHandler(callback=refuse_the_second_move_in, scope=None),
+    )
 
 
 class TestFailedAdd:

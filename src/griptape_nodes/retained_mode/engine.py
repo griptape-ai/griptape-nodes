@@ -42,7 +42,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowError, OpenWorkflowSet
 from griptape_nodes.utils.version_utils import engine_version
 
@@ -224,7 +224,7 @@ class Engine:
             WorkflowManager,
         )
 
-        self._open_workflows = OpenWorkflowSet()
+        self._open_workflows = OpenWorkflowSet(self)
         self._event_manager = EventManager(engine=self)
         self._resource_manager = ResourceManager(self._event_manager, engine=self)
         self._config_manager = ConfigManager(self._event_manager, engine=self)
@@ -491,12 +491,17 @@ class Engine:
         """Back-compat for callers that reach for the instance through an instance."""
         return self
 
-    def handle_request(self, request: RequestPayload) -> ResultPayload:
-        """Synchronous request handler."""
+    def handle_request(self, request: RequestPayload, *, workflow_id: str | None = None) -> ResultPayload:
+        """Synchronous request handler.
+
+        Args:
+            request: The request payload to handle.
+            workflow_id: The workflow the request is addressed to, as a request envelope names it.
+        """
         event_mgr = self._event_manager
 
         try:
-            result_event = event_mgr.handle_request(request=request)
+            result_event = event_mgr.handle_request(request=request, workflow_id=workflow_id)
             # Only queue result event if broadcasting is enabled and not suppressed
             if request.broadcast_result and not event_mgr.should_suppress_event(result_event):
                 event_mgr.put_event(GriptapeNodeEvent(wrapped_event=result_event))
@@ -515,16 +520,17 @@ class Engine:
         else:
             return result_event.result
 
-    async def ahandle_request(self, request: RequestPayload) -> ResultPayload:
+    async def ahandle_request(self, request: RequestPayload, *, workflow_id: str | None = None) -> ResultPayload:
         """Asynchronous request handler.
 
         Args:
             request: The request payload to handle.
+            workflow_id: The workflow the request is addressed to, as a request envelope names it.
         """
         event_mgr = self._event_manager
 
         try:
-            result_event = await event_mgr.ahandle_request(request=request)
+            result_event = await event_mgr.ahandle_request(request=request, workflow_id=workflow_id)
             # Only queue result event if broadcasting is enabled and not suppressed
             if request.broadcast_result and not event_mgr.should_suppress_event(result_event):
                 await event_mgr.aput_event(GriptapeNodeEvent(wrapped_event=result_event))
@@ -659,7 +665,7 @@ class Engine:
             details = f"Attempted to get engine version. Failed due to '{err}'."
             return GetEngineVersionResultFailure(result_details=details)
 
-    @handles(EngineHeartbeatRequest)
+    @handles(EngineHeartbeatRequest, scope=RequestScope.HOST)
     def handle_engine_heartbeat_request(self, request: EngineHeartbeatRequest) -> ResultPayload:
         """Handle engine heartbeat requests.
 

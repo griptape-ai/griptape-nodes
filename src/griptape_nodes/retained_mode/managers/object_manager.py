@@ -28,8 +28,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handles
 from griptape_nodes.retained_mode.runtime.objects import WorkflowObjects
+from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -49,8 +50,8 @@ class ObjectManager(EngineScoped):
         self._nodes_with_queued_changes = {}
         _event_manager.register_request_handlers(self)
 
-    @handles(RenameObjectRequest)
-    def on_rename_object_request(self, request: RenameObjectRequest) -> ResultPayload:
+    @handles(RenameObjectRequest, scope=RequestScope.WORKFLOW)
+    def on_rename_object_request(self, request: RenameObjectRequest, workflow: WorkflowRuntime) -> ResultPayload:
         # Does the source object exist?
         if request.object_name == request.requested_name:
             unchanged = RenameObjectResultSuccess(
@@ -61,18 +62,18 @@ class ObjectManager(EngineScoped):
             # undo slot that would replay as a no-op.
             unchanged.altered_workflow_state = False
             return unchanged
-        source_obj = self.attempt_get_object_by_name(request.object_name)
+        source_obj = workflow.objects.get(request.object_name)
         if source_obj is None:
             details = f"Attempted to rename object '{request.object_name}', but no object of that name could be found."
             return RenameObjectResultFailure(next_available_name=None, result_details=details)
 
         # Is there a collision?
-        requested_name_obj = self.attempt_get_object_by_name(request.requested_name)
+        requested_name_obj = workflow.objects.get(request.requested_name)
         if requested_name_obj is None:
             final_name = request.requested_name
         else:
             # Collision. Decide what to do.
-            next_name = self.generate_name_for_object(
+            next_name = workflow.objects.generate_name(
                 type_name=source_obj.__class__.__name__, requested_name=request.requested_name
             )
 
@@ -96,7 +97,7 @@ class ObjectManager(EngineScoped):
                 return RenameObjectResultFailure(next_available_name=None, result_details=details)
 
         # Update the object table.
-        self.engine.open_workflows.sole_workflow().objects.rename(request.object_name, final_name)
+        workflow.objects.rename(request.object_name, final_name)
 
         details = f"Successfully renamed object '{request.object_name}' to '{final_name}'."
         log_level = logging.DEBUG
@@ -109,8 +110,11 @@ class ObjectManager(EngineScoped):
             result_details = details
         return RenameObjectResultSuccess(final_name=final_name, result_details=result_details)
 
-    @handles(ClearAllObjectStateRequest)
-    async def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:
+    @handles(ClearAllObjectStateRequest, scope=RequestScope.OPTIONAL_WORKFLOW)
+    async def on_clear_all_object_state_request(
+        self, request: ClearAllObjectStateRequest, workflow: WorkflowRuntime | None = None
+    ) -> ResultPayload:
+        """Close the workflow, or with none, clear a worker's mirror and what this process holds."""
         if not request.i_know_what_im_doing:
             details = "Attempted to clear all object state and delete everything. Failed because they didn't know what they were doing."
             return ClearAllObjectStateResultFailure(result_details=details)
@@ -127,7 +131,6 @@ class ObjectManager(EngineScoped):
             details = f"Attempted to reset global execution state. Failed with exception: {e}"
             return ClearAllObjectStateResultFailure(result_details=details)
 
-        workflow = self.engine.open_workflows.sole_workflow_or_none()
         if workflow is None:
             try:
                 context_manager = self.engine.context_manager

@@ -385,7 +385,7 @@ class TestExecuteNodeWorkerPathStateless:
         node_manager = _make_node_manager(object_manager=_make_mock_obj_mgr(), library_manager=lib_mgr)
         engine = cast("MagicMock", node_manager.engine)
         engine.config_manager.workspace_path = tmp_path
-        engine.open_workflows = OpenWorkflowSet()
+        engine.open_workflows = OpenWorkflowSet(engine)
         engine.context_manager = ContextManager(event_manager=MagicMock(), engine=engine)
         engine.workflow_registry = _WorkflowRegistry(
             engine.config_manager, is_workflow_open=engine.open_workflows.is_open
