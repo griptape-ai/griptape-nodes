@@ -246,6 +246,7 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointDenial,
     CheckpointSubjectType,
 )
+from griptape_nodes.retained_mode.managers.context_manager import ContextManager
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.request_handlers import handles
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
@@ -3667,11 +3668,19 @@ class NodeManager(EngineScoped):
             # stays narrow so its mutation detector fires only inside aprocess. Worker-only: on the
             # orchestrator route this process already owns the context it just sent.
             if self.engine.library_manager.is_worker:
-                self.engine.context_manager.mirror_workflow_context(
-                    request.workflow_name,
-                    request.workflow_file_path,
-                    request.workflow_working_directory,
-                )
+                try:
+                    self.engine.context_manager.mirror_workflow_context(
+                        request.orchestrator_workflow_id,
+                        request.workflow_name,
+                        request.workflow_file_path,
+                        request.workflow_working_directory,
+                    )
+                except ContextManager.MirroredWorkflowError as err:
+                    return ExecuteNodeResultFailure(
+                        result_details=str(err),
+                        exception=err,
+                        error=build_node_error_details(request.node_name, err),
+                    )
             return await self._hydrate_and_run_node_inner(node, request)
         finally:
             if tracked_request_id:

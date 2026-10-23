@@ -23,6 +23,7 @@ from griptape_nodes.node_library.workflow_registry import (
     LibraryNameAndNodeType,
     WorkflowMetadata,
     WorkflowShape,
+    new_workflow_id,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
@@ -68,6 +69,7 @@ def _package_result(*node_names: str) -> PackageNodesAsSerializedFlowResultSucce
 
 def _generate(engine: Engine, serialized_flow_commands: SerializedFlowCommands) -> str:
     metadata = WorkflowMetadata(
+        workflow_id=new_workflow_id(),
         name="broadcast_flag_workflow",
         schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
         engine_version_created_with="1.0.0",

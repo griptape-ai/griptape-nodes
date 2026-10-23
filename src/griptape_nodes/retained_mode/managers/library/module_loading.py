@@ -1079,7 +1079,6 @@ class LibraryModuleLoading(EngineScoped):
             )
         try:
             ensure_workflow_registered(
-                workspace_path,
                 self.engine.workflow_registry,
                 node_class.workflow_file_path,
                 node_class.workflow_metadata,

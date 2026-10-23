@@ -33,7 +33,7 @@ from griptape_nodes.exe_types.node_types import ErrorProxyNode
 from griptape_nodes.files.path_utils import derive_registry_key
 from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.node_library.library_registry import LibraryRegistry
-from griptape_nodes.node_library.workflow_registry import read_workflow_metadata
+from griptape_nodes.node_library.workflow_registry import new_workflow_id, read_workflow_metadata
 from griptape_nodes.retained_mode.engine import current_engine, reset_root_engine
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.connection_events import (
@@ -85,6 +85,7 @@ from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.managers.workflow.loading import LoadProblemFrame
 from griptape_nodes.retained_mode.managers.workflow.running import collate_problems_by_type
 from griptape_nodes.utils.version_utils import engine_version
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -235,7 +236,7 @@ def _save_two_library_workflow(tmp_path: Path, file_stem: str = "two_library_wor
     _register(engine, available_json)
     _register(engine, unavailable_json)
 
-    engine.context_manager.push_workflow(workflow_name=file_stem)
+    push_unsaved_workflow(engine, file_stem)
     flow_result = engine.handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name=_FLOW_NAME, set_as_new_context=False)
     )
@@ -263,6 +264,7 @@ def _save_two_library_workflow(tmp_path: Path, file_stem: str = "two_library_wor
         destination=ProjectFileDestination(str(tmp_path / f"{file_stem}.py")),
         serialized_flow_commands=serialize_result.serialized_flow_commands,
         file_name=file_stem,
+        workflow_id=new_workflow_id(),
         creation_date=None,
         display_name=None,
         image_path=None,
@@ -283,6 +285,7 @@ def _save_flow_as_workflow(engine: Engine, tmp_path: Path, flow_name: str, file_
         destination=ProjectFileDestination(str(tmp_path / f"{file_stem}.py")),
         serialized_flow_commands=serialized.serialized_flow_commands,
         file_name=file_stem,
+        workflow_id=new_workflow_id(),
         creation_date=None,
         display_name=None,
         image_path=None,
@@ -299,7 +302,7 @@ def _save_host_importing_subflow(
     tmp_path: Path, engine: Engine, inner_name: str, file_stem: str = "host_workflow"
 ) -> str:
     """Build and save a workflow whose only content is an import of `inner_name` as a subflow."""
-    engine.context_manager.push_workflow(workflow_name=file_stem)
+    push_unsaved_workflow(engine, file_stem)
     host_flow = engine.handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name=f"{file_stem}_HostFlow", set_as_new_context=False)
     )
@@ -629,7 +632,7 @@ class TestImportAsReferencedSubFlow:
         workflow_name = _register_workflow(reopened, tmp_path, relative_path)
 
         # Somewhere to import into.
-        reopened.context_manager.push_workflow(workflow_name="host_workflow")
+        push_unsaved_workflow(reopened, "host_workflow")
         host_flow = reopened.handle_request(
             CreateFlowRequest(parent_flow_name=None, flow_name="HostFlow", set_as_new_context=False)
         )
@@ -854,7 +857,7 @@ class TestNestedSubflowProblemsReachTheOuterLoad:
 
         # The host holds its own node from the unavailable library AND imports the subflow, so the
         # same library arrives from the header and from the nested load.
-        building.context_manager.push_workflow(workflow_name="host_workflow")
+        push_unsaved_workflow(building, "host_workflow")
         host_flow = building.handle_request(
             CreateFlowRequest(parent_flow_name=None, flow_name="HostFlow", set_as_new_context=False)
         )
@@ -970,7 +973,7 @@ class TestWorkflowNodeRefusesAFlawedSubflow:
         reopened = _rebuild_engine_without_library(tmp_path, disabled=True)
         inner_name = _register_workflow(reopened, tmp_path, inner_path)
 
-        reopened.context_manager.push_workflow(workflow_name="host_workflow")
+        push_unsaved_workflow(reopened, "host_workflow")
         host_flow = reopened.handle_request(
             CreateFlowRequest(parent_flow_name=None, flow_name="HostFlow", set_as_new_context=False)
         )
@@ -995,7 +998,7 @@ class TestWorkflowNodeRefusesAFlawedSubflow:
         _register(restored, tmp_path / "libraries" / "UnavailableNode" / "griptape_nodes_library.json")
         inner_name = _register_workflow(restored, tmp_path, inner_path)
 
-        restored.context_manager.push_workflow(workflow_name="host_workflow")
+        push_unsaved_workflow(restored, "host_workflow")
         host_flow = restored.handle_request(
             CreateFlowRequest(parent_flow_name=None, flow_name="HostFlow", set_as_new_context=False)
         )
@@ -1072,7 +1075,7 @@ class TestRefusedSubflowIsNotOrphaned:
         reopened = _rebuild_engine_without_library(tmp_path, disabled=True)
         _register_workflow(reopened, tmp_path, relative_path)
 
-        reopened.context_manager.push_workflow(workflow_name="host_workflow")
+        push_unsaved_workflow(reopened, "host_workflow")
         host_flow = reopened.handle_request(
             CreateFlowRequest(parent_flow_name=None, flow_name="HostFlow", set_as_new_context=False)
         )

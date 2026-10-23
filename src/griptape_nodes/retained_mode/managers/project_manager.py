@@ -4981,6 +4981,7 @@ class ProjectManager(EngineScoped):
             return WorkflowContextSnapshot()
 
         return WorkflowContextSnapshot(
+            workflow_id=context_manager.get_current_workflow_id(),
             name=context_manager.get_current_workflow_name(),
             file_path=context_manager.get_current_workflow_file_path(),
             working_directory=context_manager.get_current_workflow_working_directory(),
@@ -4998,20 +4999,15 @@ class ProjectManager(EngineScoped):
     def _resolve_workflow_dir(self, project_info: ProjectInfo) -> str:
         """Resolve the `workflow_dir` builtin: the folder the current workflow belongs to.
 
-        Four sources, in descending order of authority:
+        Three sources, in descending order of authority:
 
-        1. The file path retained on the context. The registry key is derived against the
-           workspace that was active at push time, so a project switch -- which re-registers
-           every workflow under the new workspace -- leaves the name pointing at a key that no
-           longer exists. The lookup then raises, `{workflow_dir?:/}` swallows it as an
-           optional reference, and `{outputs}` silently degrades from the workflow's own folder
-           to a workspace-relative path, so saved media resolves somewhere it was never written.
-        2. The registry entry for the context's name. Missing entries fall through.
-        3. The folder the workflow was created in, for a workflow that has never been saved and
-           so has no file to answer from. Below the two above because a saved workflow's own
-           location always beats the folder it was created in -- the two differ as soon as the
-           user saves somewhere else.
-        4. The folder the workflow WOULD be saved into, for a never-saved workflow whose creator
+        1. The folder of the workflow's file, read from its registry entry. Saves, renames and
+           moves keep the entry's path current, and a project switch keeps the absolute path.
+        2. The folder the workflow was created in, for a workflow that has never been saved and
+           so has no file to answer from. Below the file because a saved workflow's own location
+           always beats the folder it was created in -- the two differ as soon as the user saves
+           somewhere else.
+        3. The folder the workflow WOULD be saved into, for a never-saved workflow whose creator
            named no folder, read from the `save_workflow` situation with no sub-directories so a
            template that anchors saves outside the workspace root is answered with its folder
            rather than the root. Where the user later chooses to save is a choice at save time,
@@ -5025,28 +5021,18 @@ class ProjectManager(EngineScoped):
             msg = "No current workflow"
             raise RuntimeError(msg)
 
-        context_file_path = context_manager.get_current_workflow_file_path()
-        if context_file_path is not None:
-            return str(Path(context_file_path).parent)
-
-        workflow_name = context_manager.get_current_workflow_name()
+        file_path = context_manager.get_current_workflow_file_path()
+        if file_path is not None:
+            return str(Path(file_path).parent)
         working_directory = context_manager.get_current_workflow_working_directory()
-        workflow = None
-        if self.engine.workflow_registry.has_workflow_with_name(workflow_name):
-            workflow = self.engine.workflow_registry.get_workflow_by_name(workflow_name)
-
-        if workflow is None or workflow.file_path is None:
-            if working_directory is not None:
-                return working_directory
-            return self._resolve_default_workflow_save_dir(project_info)
-
-        workflow_file_path = Path(self.engine.workflow_registry.get_complete_file_path(workflow.file_path))
-        return str(workflow_file_path.parent)
+        if working_directory is not None:
+            return working_directory
+        return self._resolve_default_workflow_save_dir(project_info)
 
     def _resolve_default_workflow_save_dir(self, project_info: ProjectInfo) -> str:
         """The folder `save_workflow` would put a workflow in when the save names no sub-directory.
 
-        Rung 4 of `_resolve_workflow_dir`. Resolves the situation through
+        Rung 3 of `_resolve_workflow_dir`. Resolves the situation through
         `on_get_path_for_macro_request`, the same handler the real save goes through, so the
         answer accounts for derivation rules and stored project variables rather than tracking
         only what this manager's resolver knows. `sub_dirs` is left out so the folder is the one

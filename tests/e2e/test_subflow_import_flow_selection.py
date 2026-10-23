@@ -33,6 +33,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowRequest,
     ImportWorkflowResultSuccess,
 )
+from tests.workflow_context import push_unsaved_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -59,7 +60,7 @@ def _write_grouped_workflow_file(engine: Engine, library_json: Path, workflow_pa
     register_result = engine.handle_request(RegisterLibraryFromFileRequest(file_path=str(library_json)))
     assert isinstance(register_result, RegisterLibraryFromFileResultSuccess), register_result
 
-    engine.context_manager.push_workflow(workflow_name="grouped_inner_workflow")
+    workflow = push_unsaved_workflow(engine, "grouped_inner_workflow")
 
     flow_result = engine.handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name="ControlFlow_1", set_as_new_context=False)
@@ -94,6 +95,7 @@ def _write_grouped_workflow_file(engine: Engine, library_json: Path, workflow_pa
     assert isinstance(serialize_result, SerializeFlowToCommandsResultSuccess), serialize_result
 
     metadata = WorkflowMetadata(
+        workflow_id=workflow.workflow_id,
         name="grouped_inner_workflow",
         schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
         engine_version_created_with="0.0.0",
@@ -131,7 +133,7 @@ async def test_import_binds_to_top_level_flow_not_group_body(
     workflow_name = import_workflow_result.workflow_name
 
     # Fresh parent flow to import into.
-    engine.context_manager.push_workflow(workflow_name="parent_workflow")
+    push_unsaved_workflow(engine, "parent_workflow")
     parent_result = engine.handle_request(
         CreateFlowRequest(parent_flow_name=None, flow_name="ParentFlow", set_as_new_context=False)
     )

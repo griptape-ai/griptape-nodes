@@ -47,7 +47,7 @@ class ReferencedWorkflowImport(EngineScoped):
             return validation_error
 
         # Get the workflow (validation passed, so we know it exists)
-        workflow = self._get_workflow_by_name(request.workflow_name)
+        workflow = self.engine.workflow_registry.get_workflow_by_name(request.workflow_name)
 
         # Determine target flow name
         if request.flow_name is not None:
@@ -61,9 +61,8 @@ class ReferencedWorkflowImport(EngineScoped):
     def _validate_import_prerequisites(self, request: ImportWorkflowAsReferencedSubFlowRequest) -> ResultPayload | None:  # noqa: PLR0911
         """Validate all prerequisites for import. Returns error result or None if valid."""
         # Check workflow exists and get it
-        try:
-            workflow = self._get_workflow_by_name(request.workflow_name)
-        except KeyError:
+        workflow = self.engine.workflow_registry.find_by_name(request.workflow_name)
+        if workflow is None:
             details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow is not registered"
             return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
@@ -104,10 +103,6 @@ class ReferencedWorkflowImport(EngineScoped):
                 return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         return None
-
-    def _get_workflow_by_name(self, workflow_name: str) -> Workflow:
-        """Get workflow by name from the registry."""
-        return self.engine.workflow_registry.get_workflow_by_name(workflow_name)
 
     async def _execute_workflow_import(
         self, request: ImportWorkflowAsReferencedSubFlowRequest, workflow: Workflow, flow_name: str

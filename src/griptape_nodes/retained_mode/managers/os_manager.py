@@ -62,6 +62,7 @@ from griptape_nodes.files.file_driver import FileDriverNotFoundError, FileDriver
 from griptape_nodes.files.path_utils import (
     canonicalize_for_identity,
     canonicalize_to_posix,
+    is_same_file,
     normalize_path_for_platform,
     path_needs_expansion,
     resolve_path_safely,
@@ -4021,8 +4022,9 @@ class OSManager(EngineScoped):
             msg = f"Source path does not exist: {old_path}"
             return RenameFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
 
-        # Check if new path already exists
-        if new_path.exists():
+        # Check if new path already exists. On a case-insensitive filesystem a rename that changes
+        # only the letter case finds its own file there, which is not a conflict.
+        if new_path.exists() and not is_same_file(old_path, new_path):
             msg = f"Destination path already exists: {new_path}"
             return RenameFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -23,7 +24,7 @@ from griptape.artifacts import ImageUrlArtifact
 from griptape.mixins.serializable_mixin import SerializableMixin
 from griptape.rules import Rule, Ruleset
 
-from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, new_workflow_id
 from griptape_nodes.retained_mode.events.flow_events import (
     ExtractFlowCommandsFromImageMetadataRequest,
     ExtractFlowCommandsFromImageMetadataResultSuccess,
@@ -37,6 +38,7 @@ from griptape_nodes.retained_mode.events.node_events import (
 from tests.unit.serialization.fixture_paths import FIXTURES
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from types import ModuleType
 
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -119,7 +121,7 @@ class TestPickleEraFormats:
         _assert_holder_restored(engine.node_manager.get_node_by_name("Holder"))
 
     @pytest.mark.usefixtures("library_name")
-    def test_saved_workflow_keeps_every_value_after_saving_again(self, engine: Engine) -> None:
+    def test_saved_workflow_keeps_every_value_after_saving_again(self, engine: Engine, tmp_path: Path) -> None:
         """The first save after upgrading rewrites the file in plain data, so nothing may drop there."""
         workflow_path = FIXTURES / "pickle_era_workflow.py"
         _run_workflow_source(workflow_path.read_text(), str(workflow_path))
@@ -128,6 +130,7 @@ class TestPickleEraFormats:
         resaved_source = engine.workflow_manager.codegen.generate_workflow_file_content(
             serialized_flow_commands=serialized.serialized_flow_commands,
             workflow_metadata=WorkflowMetadata(
+                workflow_id=new_workflow_id(),
                 name="resaved",
                 schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
                 engine_version_created_with="0.0.0",
@@ -137,7 +140,10 @@ class TestPickleEraFormats:
         assert "pickle.loads" not in resaved_source
         engine.clear_current_workflow_data()
 
-        _run_workflow_source(resaved_source, "resaved_workflow.py")
+        # build_workflow opens the file it runs from, so it has to be on disk.
+        resaved_path = tmp_path / "resaved_workflow.py"
+        resaved_path.write_text(resaved_source, encoding="utf-8")
+        _run_workflow_source(resaved_source, str(resaved_path))
 
         _assert_holder_restored(engine.node_manager.get_node_by_name("Holder"))
 

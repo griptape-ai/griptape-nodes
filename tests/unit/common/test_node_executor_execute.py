@@ -95,6 +95,30 @@ class TestExecuteDispatchContract:
         assert request.node_name == "Greeter"
 
     @pytest.mark.asyncio
+    async def test_dispatches_the_open_workflows_context_and_id(self) -> None:
+        """A worker mirrors the orchestrator's workflow under the id the request carries."""
+        from griptape_nodes.common.workflow_context_handoff import WorkflowContextSnapshot
+
+        node = _make_node()
+        executor = _make_executor()
+        mock_engine = cast("MagicMock", executor.engine)
+        mock_engine.ahandle_request = AsyncMock(return_value=_success_result())
+        mock_engine.project_manager.workflow_context_for_dispatch.return_value = WorkflowContextSnapshot(
+            workflow_id="open-workflow-id",
+            name="shots/lighting",
+            file_path="/workspace/shots/lighting.py",
+            working_directory=None,
+        )
+
+        await executor.execute(node)
+
+        request = mock_engine.ahandle_request.call_args.args[0]
+        assert request.orchestrator_workflow_id == "open-workflow-id"
+        assert request.workflow_name == "shots/lighting"
+        assert request.workflow_file_path == "/workspace/shots/lighting.py"
+        assert request.workflow_working_directory is None
+
+    @pytest.mark.asyncio
     async def test_dispatches_current_parameter_values(self) -> None:
         node = _make_node(parameter_values={"in": "hi", "n": 3})
 

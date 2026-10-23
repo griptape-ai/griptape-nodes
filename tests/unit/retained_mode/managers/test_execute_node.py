@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -371,6 +372,45 @@ class TestExecuteNodeWorkerPathStateless:
         )
         mock_node.set_parameter_value.assert_called_once_with("input_param", "value")
         mock_node.aprocess.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_workflow_file_gone_since_dispatch_fails_the_node_readably(self, tmp_path: Path) -> None:
+        """The worker cannot open the orchestrator's workflow; the node fails with its own error, not an engine one."""
+        from griptape_nodes.node_library.workflow_registry import _WorkflowRegistry
+        from griptape_nodes.retained_mode.managers.context_manager import ContextManager
+
+        mock_node = _make_mock_node()
+        lib_mgr = _make_mock_library_manager(is_worker=True)
+        node_manager = _make_node_manager(object_manager=_make_mock_obj_mgr(), library_manager=lib_mgr)
+        engine = cast("MagicMock", node_manager.engine)
+        engine.config_manager.workspace_path = tmp_path
+        context_manager = ContextManager(event_manager=MagicMock(), engine=engine)
+        engine.context_manager = context_manager
+        engine.workflow_registry = _WorkflowRegistry(
+            engine.config_manager, is_workflow_open=context_manager.is_workflow_in_context
+        )
+        moved_away = tmp_path / "shots" / "lighting.py"
+
+        with patch(_LIBRARY_REGISTRY_CREATE_NODE_PATH, return_value=mock_node):
+            result = await node_manager.on_execute_node_request(
+                ExecuteNodeRequest(
+                    node_name="test_node",
+                    node_metadata={"node_type": "SomeNodeType", "library": "some_library"},
+                    orchestrator_workflow_id="lighting-id",
+                    workflow_name="shots/lighting",
+                    workflow_file_path=str(moved_away),
+                )
+            )
+
+        assert isinstance(result, ExecuteNodeResultFailure)
+        message = str(result.result_details)
+        assert message == (
+            "Attempted to run a node of workflow 'shots/lighting'. Failed because the workflow's file "
+            f"'{moved_away}' could not be opened: it was moved or deleted while the node was starting. Run it again."
+        )
+        assert result.error is not None
+        assert isinstance(result.exception, ContextManager.MirroredWorkflowError)
+        mock_node.aprocess.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_never_persists_node_in_object_manager(self) -> None:
