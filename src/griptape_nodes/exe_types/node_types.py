@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar
 
 from griptape_nodes.common.strict_mode import STRICT_MODE
 from griptape_nodes.common.strict_mode_checks import RULES
@@ -66,6 +66,7 @@ from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
+    from griptape_nodes.exe_types.validators.base import NodeValidator
     from griptape_nodes.retained_mode.engine import Engine
 
 logger = logging.getLogger("griptape_nodes")
@@ -344,6 +345,9 @@ class BaseNode(ABC):
     _parameters_added_after_construction: set[str]
     _parameters_added_during_execution: set[str]
     _engine: Engine | None
+    # Rules across several inputs, checked at the node's turn after each parameter's
+    # `pre_run_validators`. See `griptape_nodes.exe_types.validators`.
+    node_validators: ClassVar[list[NodeValidator]] = []
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -1416,6 +1420,14 @@ class BaseNode(ABC):
                     break
         return None
 
+    def input_limits_url(self) -> str | None:
+        """The page documenting this node's input limits, linked from each pre-run validator's error.
+
+        None by default. Override it in a node whose limits a provider documents, returning the page
+        for the current settings when it depends on them, such as the selected model.
+        """
+        return None
+
     def validate_before_node_run(self) -> list[Exception] | None:
         """Runs on the ORCHESTRATOR, immediately before this node is dispatched.
 
@@ -1424,10 +1436,12 @@ class BaseNode(ABC):
         execute in a worker is installed here with its edit-time dependencies only, and a value produced
         by a worker is held there and cannot be read from here.
 
-        The one exception is a media input's file limits: `griptape_nodes.exe_types.input_checks` reads
-        files and data URIs on this machine and skips any value it can't read here. A file costs a header
-        read (a full read for WebP and AVIF), and each video or audio probe is time-limited; an image
-        passed as a data URI or in memory is decoded in full, so its cost grows with its size.
+        The one exception is a media input's file limits. Declare those on the parameter with
+        `pre_run_validators=` (see `griptape_nodes.exe_types.validators`); the engine checks them just
+        before this method, and reports their errors with this method's. They read files and data URIs
+        on this machine and skip any value they can't read here. A file costs a header read (a full read
+        for WebP and AVIF), and each video or audio probe is time-limited; an image passed as a data URI
+        or in memory is decoded in full, so its cost grows with its size.
 
         For anything that needs the real thing -- a loaded model, a tensor an upstream node produced --
         use `validate_in_execution_environment`, which runs where the node runs.

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.utils.media_values import MediaKind
 
-__all__ = ["MediaInfo", "MediaNeed", "NodeValidator", "PreRunValidator", "media_kind_of"]
+__all__ = ["MediaInfo", "MediaNeed", "NodeValidator", "PreRunValidator", "media_kind_of", "require_validators_fit"]
 
 
 class MediaNeed(StrEnum):
@@ -171,3 +171,38 @@ def needs_for_kind(validators: Iterable[PreRunValidator], kind: MediaKind | None
             needs.add(_NEED_FOR_KIND[kind])
     return frozenset(needs)
 
+
+def require_validators_fit(parameter: Parameter) -> None:
+    """Raise when a parameter declares a pre-run validator its type can't be checked with.
+
+    Raises:
+        TypeError: If a media validator is on a parameter that holds no media, or none of the media
+            it reads is the kind the parameter holds; or a whole-list validator is on a single input.
+    """
+    kind = media_kind_of(parameter)
+    is_list = holds_list(parameter)
+    for declared in parameter.pre_run_validators:
+        for validator in declared.candidates():
+            name = type(validator).__name__
+            if validator.checks_whole_list and not is_list:
+                msg = (
+                    f"Attempted to add {name} to parameter '{parameter.name}'. "
+                    "Failed because it checks a list, and the parameter holds a single value."
+                )
+                raise TypeError(msg)
+            if not validator.needs:
+                continue
+            if kind is None:
+                msg = (
+                    f"Attempted to add {name} to parameter '{parameter.name}'. Failed because it checks media, "
+                    f"and the parameter's type, {parameter.type}, isn't an image, video or audio artifact."
+                )
+                raise TypeError(msg)
+            media_needs = validator.needs - {MediaNeed.SIZE}
+            if media_needs and _NEED_FOR_KIND[kind] not in media_needs:
+                readable = " or ".join(sorted(need.value for need in media_needs))
+                msg = (
+                    f"Attempted to add {name} to parameter '{parameter.name}'. "
+                    f"Failed because it checks {readable}, and the parameter holds {kind}."
+                )
+                raise TypeError(msg)
