@@ -101,6 +101,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RunWorkflowFromRegistryResultFailure,
     RunWorkflowFromRegistryResultSuccess,
     RunWorkflowFromScratchRequest,
+    RunWorkflowFromScratchResultFailure,
     RunWorkflowFromScratchResultSuccess,
     RunWorkflowWithCurrentStateRequest,
     RunWorkflowWithCurrentStateResultSuccess,
@@ -1785,6 +1786,30 @@ class TestLibraryWorkflowsOpenAsUnsavedCopies:
         assert opened.seeded_from_workflow_id == LIBRARY_ID
         assert project_engine.context_manager.get_current_workflow_id() == opened.workflow_id
         assert not project_engine.workflow_registry.is_open(LIBRARY_ID)
+
+    def test_a_failed_run_from_scratch_on_a_library_file_leaves_no_copy_behind(
+        self, project_engine: Engine, tmp_path: Path
+    ) -> None:
+        library = _library_workflow(project_engine, tmp_path / "library")
+        library_file = library.absolute_path
+        assert library_file is not None
+        # The copy opens and the graph builds; then the file fails.
+        library_file.write_text(
+            library_file.read_text(encoding="utf-8")
+            + "\n_build_library_workflow = build_workflow\n\n"
+            + "async def build_workflow():\n"
+            + "    await _build_library_workflow()\n"
+            + "    raise RuntimeError('The library workflow is broken.')\n",
+            encoding="utf-8",
+        )
+        listed_before = set(_listed(project_engine))
+
+        failed = _run(project_engine, RunWorkflowFromScratchRequest(file_path=str(library_file)))
+
+        assert isinstance(failed, RunWorkflowFromScratchResultFailure)
+        assert "The library workflow is broken." in str(failed.result_details)
+        assert not project_engine.context_manager.has_current_workflow()
+        assert set(_listed(project_engine)) == listed_before
 
     def test_run_with_current_state_and_nothing_open_opens_a_copy(self, project_engine: Engine, tmp_path: Path) -> None:
         library = _library_workflow(project_engine, tmp_path / "library")

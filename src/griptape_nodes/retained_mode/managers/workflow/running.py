@@ -176,6 +176,15 @@ class WorkflowRunner(EngineScoped):
                     result_details=ResultDetails(*execution_result_details(execution_result, level=logging.DEBUG)),
                 )
 
+            # A library workflow's file opened as a new unsaved copy, which nothing else refers to.
+            # Close and forget it, as a failed run from the registry does.
+            failed_copy = self._open_library_workflow_copy()
+            if failed_copy is not None:
+                clear_all_result = await self.engine.ahandle_request(
+                    ClearAllObjectStateRequest(i_know_what_im_doing=True)
+                )
+                if clear_all_result.succeeded():
+                    self.engine.workflow_registry.remove(failed_copy.workflow_id)
             return RunWorkflowFromScratchResultFailure(
                 result_details=ResultDetails(*execution_result_details(execution_result, level=logging.ERROR))
             )
@@ -421,6 +430,16 @@ class WorkflowRunner(EngineScoped):
         if not workflow.metadata.is_griptape_provided:
             return workflow
         return self.engine.workflow_registry.register_unsaved_copy(workflow)
+
+    def _open_library_workflow_copy(self) -> Workflow | None:
+        """The open workflow if it is an unsaved copy of a library workflow, else None."""
+        open_workflow = self.engine.open_workflows.sole_workflow_or_none()
+        if open_workflow is None:
+            return None
+        workflow = self.engine.workflow_registry.get(open_workflow.workflow_id)
+        if workflow.seeded_from_workflow_id is None:
+            return None
+        return workflow
 
     def _current_workflow_id(self) -> str | None:
         """The id of the workflow a load left in context, or None if it left none."""
