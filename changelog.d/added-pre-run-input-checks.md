@@ -1,8 +1,9 @@
-- Node libraries can refuse an image, video or audio input a provider will reject before the node
-  runs, with `image_errors`, `video_errors`, `audio_errors` and `check_count` from
-  `griptape_nodes.exe_types.input_checks`. They read the file's format, codec, size, pixel size,
-  length, frame rate and frame count locally, and return an error that names the
-  parameter, the value and the limit, and links the provider's page; anything they can't read
-  locally, such as a remote URL, is left for the provider. See
+- Node libraries can declare the limits a provider puts on an image, video or audio input with
+  `pre_run_validators=` on the parameter, such as `AllowedFormats`, `MaxFileSize`, `SideRange`,
+  `Duration` or `MaxCount` from `griptape_nodes.exe_types.validators`. The engine checks them at the
+  node's turn and fails the node before it runs, with an error that names the parameter, the value
+  and the limit, and links the page from the node's new `input_limits_url()`. It reads each input's
+  format, codec, size, pixel size, length, frame rate and frame count locally, once; anything it
+  can't read locally, such as a remote URL, is left for the provider. See
   [Checking inputs before a run](https://docs.griptapenodes.com/en/stable/development/custom_nodes/error_handling/#checking-inputs-before-a-run).
   [#5960](https://github.com/griptape-ai/griptape-nodes-engine/issues/5960)

@@ -330,86 +330,173 @@ including a list of validation problems. Otherwise it is a plain sentence for th
 #### Checking inputs before a run
 
 A provider that rejects an input still costs the user an upload and a wait, and sometimes credits.
-When its documentation gives limits on the files it accepts, check them in
-`validate_before_node_run` so the node fails before it starts. `griptape_nodes.exe_types.input_checks`
-reads what it needs locally and builds the `NodeError` for you:
+When its documentation gives limits on the files it accepts, declare them on the parameter with
+`pre_run_validators=`. The engine checks them at the node's turn, just before
+`validate_before_node_run`, and fails the node with every limit its inputs break, together with
+anything `validate_before_node_run` returns. The node never starts.
 
-| Helper                                    | Use it when                                                                                                 |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `image_errors(image, subject=..., ...)`   | An image input has limits on its format, file size, pixel size, or aspect ratio (a range or exact ones).    |
-| `video_errors(video, subject=..., ...)`   | A video input has limits on its container, codec, file size, length, frame size, frame rate or frame count. |
-| `audio_errors(audio, subject=..., ...)`   | An audio input has limits on its container, codec, file size, or length.                                    |
-| `check_count(count, maximum=..., ...)`    | A list parameter accepts only so many items.                                                                |
-| `input_subject(parameter, noun=..., ...)` | You need the start of the message, such as "Image 2 in 'reference images'".                                 |
+```python
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.validators.media import (
+    AllowedFormats,
+    AspectRatioRange,
+    MaxFileSize,
+    SideRange,
+)
 
-Each takes only the limits you pass and returns a list of errors, empty when the input is within
-them. The single checks they use (`check_size`, `check_dimensions`, `check_duration` and the rest)
-are there too for a limit that isn't about one file.
+MB = 1024 * 1024
+INPUT_LIMITS_URL = "https://provider.example.com/docs/image-to-video#limits"
+
+START_FRAME_LIMITS = (
+    AllowedFormats("image/jpeg", "image/png"),
+    MaxFileSize(10 * MB),
+    SideRange(min=300),
+    AspectRatioRange("1:2.5", "2.5:1"),
+)
+
+
+class ImageToVideo(SuccessFailureNode):
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.add_parameter(
+            ParameterImage(
+                name="image",
+                display_name="Start Frame",
+                pre_run_validators=START_FRAME_LIMITS,
+            )
+        )
+        # The end frame has the same limits except the aspect ratio.
+        self.add_parameter(
+            ParameterImage(
+                name="image_tail",
+                display_name="End Frame",
+                pre_run_validators=START_FRAME_LIMITS[:3],
+            )
+        )
+
+    def input_limits_url(self) -> str | None:
+        return INPUT_LIMITS_URL
+```
+
+A too-small start frame then fails with "The image in 'Start Frame' is 200x300 and each side must be
+at least 300 pixels. Use a larger one." and a "Provider limits" link to `input_limits_url()`.
+
+The validators are in `griptape_nodes.exe_types.validators.media`, and the last two in
+`griptape_nodes.exe_types.validators.common`:
+
+| Validator                                  | Checks                                                                               |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `AllowedFormats("image/png", ...)`         | The format, read from the file: an image's, a video's container, an audio container. |
+| `MaxFileSize(maximum_bytes, strict=False)` | The file size. With `strict=True`, for "less than 30 MB", exactly 30 MB is refused.  |
+| `SideRange(min=..., max=...)`              | Each side of an image or video frame, in pixels.                                     |
+| `PixelArea(min_megapixels=..., ...)`       | The pixels in an image or video frame, in millions.                                  |
+| `AspectRatioRange(tallest, widest)`        | The aspect ratio, between two written the way providers write them, such as `"1:3"`. |
+| `ExactAspectRatios("16:9", "9:16")`        | The aspect ratio, for a provider that takes only certain shapes.                     |
+| `Duration(min=..., max=..., fix=...)`      | A video's or audio clip's length, in seconds.                                        |
+| `FrameRate(min=..., max=...)`              | A video's frame rate.                                                                |
+| `FrameCount(min=..., max=...)`             | A video's frame count.                                                               |
+| `VideoCodecs("h264", ...)`                 | A video's codec.                                                                     |
+| `AudioCodecs("mp3", ...)`                  | An audio clip's codec.                                                               |
+| `MaxCount(maximum, noun="images")`         | How many items a list parameter holds.                                               |
+| `ByParameter(parameter, {...}, default=)`  | Picks one of several lists of validators by another parameter's value.               |
+
+A validator that fits more than one kind of media, such as `SideRange`, checks the kind its
+parameter holds: a `ParameterImage`'s image, a `ParameterVideo`'s video, a `ParameterAudio`'s
+audio. A media validator on a parameter of another type raises a `TypeError` when the parameter is
+built, and a ratio that isn't one or a codec name the checks don't know raises a `ValueError` when
+the validator is.
 
 Formats are read from the file, not its name: a MOV renamed to `.mp4` is still refused as a MOV,
 and an MP3 renamed to `.wav` as an MP3. HEIC and HEIF photos can't be read, so their checks are
-skipped and the provider judges them. For a provider that writes "less than 30 MB", pass
-`strict_maximum_bytes=True` so a file of exactly 30 MB is refused too.
+skipped and the provider judges them. Codecs are given as ffprobe names them, such as `"h264"`,
+`"hevc"`, `"mp3"` or `"pcm_s16le"`. The names the messages show (`"H.264"`, `"AC-3"`) and `"AVC"`
+work too, so translate the provider's wording into these names in your limits table.
 
-Codecs are given as ffprobe names them, such as `("h264", "hevc")` or `("mp3", "pcm_s16le")`. The
-names the messages show ("H.264", "AC-3") and "AVC" work too, and any other name raises a
-`ValueError`, so translate the provider's wording into these names in your limits table.
+**Messages name the input.** Each message starts with the parameter's display name and what it
+holds: "The image in 'Start Frame'", "The video in 'Reference Video'", "The audio clip in 'Voice'".
+Pass `pre_run_noun="mask"` to call it something else. On a `ParameterList`, each item is checked on
+its own and named by its position, "Image 2 in 'reference images'", while `MaxCount` checks the
+list's length.
+
+**Limits that depend on a setting.** When the limits change with the selected model, wrap them in
+`ByParameter`. At the node's turn it picks the list for the other parameter's current value, or
+`default` for any other value. Override `input_limits_url()` to return the page for the current
+model too.
 
 ```python
-from griptape_nodes.exe_types.input_checks import check_count, image_errors, input_subject
+from griptape_nodes.exe_types.validators.common import ByParameter, MaxCount
 
-MAX_IMAGES = 4
-MAX_BYTES = 10 * 1024 * 1024
-
-
-def validate_before_node_run(self) -> list[Exception] | None:
-    exceptions = super().validate_before_node_run() or []
-    model = self.get_parameter_value("model")
-    docs_url = MODEL_LIMITS_URLS[model]
-    images = self.get_parameter_list_value("reference_images") or []
-
-    too_many = check_count(
-        len(images), maximum=MAX_IMAGES, parameter="reference images", noun="images", docs_url=docs_url
-    )
-    if too_many:
-        exceptions.append(too_many)
-    for position, image in enumerate(images, start=1):
-        exceptions.extend(
-            image_errors(
-                image,
-                subject=input_subject("reference images", noun="image", position=position),
-                allowed_mime_types=("image/jpeg", "image/png"),
-                maximum_bytes=MAX_BYTES,
-                min_side=300,
-                docs_url=docs_url,
-            )
-        )
-    return exceptions or None
+ParameterList(
+    name="reference_images",
+    tooltip="Up to 4 reference images with the pro model, 1 with the others",
+    input_types=["ImageUrlArtifact"],
+    type="ImageUrlArtifact",
+    display_name="reference images",
+    pre_run_validators=[
+        AllowedFormats("image/jpeg", "image/png"),
+        ByParameter(
+            "model",
+            {"pro": [MaxCount(4, noun="images"), SideRange(min=300)]},
+            default=[MaxCount(1, noun="images"), SideRange(min=512)],
+        ),
+    ],
+)
 ```
 
-A too-small image then fails with "Image 2 in 'reference images' is 200x1000 and each side must be
-at least 300 pixels. Use a larger one." and a "Provider limits" link.
+**Rules across several inputs.** For a limit that involves more than one input, such as a total
+length across several clips, write a `NodeValidator` and list it in the node's `node_validators`.
+It runs after every parameter's validators, and gets what they read, by parameter name, so it
+doesn't read any file again.
+
+```python
+from typing import ClassVar
+
+from griptape_nodes.exe_types.node_error import NodeError
+from griptape_nodes.exe_types.validators.base import NodeValidator
+
+
+class TotalLength(NodeValidator):
+    def check(self, node, *, media, docs_url) -> list[NodeError]:
+        seconds = [info.video.shortest_seconds for info in media.get("reference_videos", []) if info.video]
+        total = sum(s for s in seconds if s is not None)
+        if total <= 30:
+            return []
+        return [NodeError(f"'Reference Videos' are {total:.1f} seconds long together and the limit is 30.")]
+
+
+class ReferenceToVideo(SuccessFailureNode):
+    node_validators: ClassVar[list[NodeValidator]] = [TotalLength()]
+```
+
+**Your own validator.** Subclass `PreRunValidator`, set `needs` to the readings it uses
+(`MediaNeed.SIZE`, `IMAGE`, `VIDEO` or `AUDIO`), and return a `NodeError` from `check`, or None. The
+engine reads the input once for all the validators on a parameter and hands each the same
+`MediaInfo`. The readers (`local_size_bytes`, `local_image_info`, `local_video_probe`,
+`local_audio_probe`) and single checks (`check_size`, `check_dimensions`, `check_duration` and the
+rest) in `griptape_nodes.exe_types.input_checks` are there to build it from, and a reader called
+during the node's checks returns what was already read.
 
 The checks follow these rules:
 
 - **Skip what can't be read locally, don't fail it.** A remote URL, a format Pillow can't open, an
     image over Pillow's decompression-bomb limit (about 179 megapixels), a video or audio input when
     ffprobe isn't installed, or a probe that runs out of time (see "No network calls, and a cap on blocking"
-    below) is left for the provider to judge. A check refuses only an input it has read and found
-    outside the limit.
-- **Pass the provider's limits and a docs link for the selected model.** The checks know nothing
-    about any provider. Your node passes the limits the provider documents, only for the inputs its
-    request sends, and `docs_url` for the page that documents them, so the user can see the rule.
-- **No network calls, and a cap on blocking.** Validation runs before every run, on the engine's
-    event loop. The checks never download an input or a tool: they measure files on this machine
-    and data URIs, and use ffprobe only when it is already installed. A local probe takes tens of
-    milliseconds. Each one is given at most 2 seconds, and no probe starts more than 5 seconds after
-    the node's validation began, so its video and audio probes together block for at most that long;
-    an input left when the time runs out is skipped. The 5 seconds count the node's other checks too, and apply per
-    node: when the engine starts several nodes at once, each can block for that long. An image given as a
-    file path costs only a header read, except a WebP or AVIF file, which Pillow reads in full
-    without decoding its pixels. One given as a data URI or an in-memory artifact is decoded in
-    full, so its check takes longer the larger it is; pass file paths where you can.
+    below) is left for the provider to judge. A validator refuses only an input it has read and
+    found outside the limit.
+- **Declare the provider's limits and a docs link.** The validators know nothing about any provider.
+    Your node declares the limits the provider documents, only on the inputs its request sends, and
+    `input_limits_url()` returns the page that documents them, so the user can see the rule.
+- **No network calls, and a cap on blocking.** The checks run before every run, on the engine's
+    event loop. They never download an input or a tool: they measure files on this machine and data
+    URIs, and use ffprobe only when it is already installed. Each input is read once per run, however
+    many validators it has. A local probe takes tens of milliseconds. Each one is given at most 2
+    seconds, and no probe starts more than 5 seconds after the node's checks began, so its video and
+    audio probes together block for at most that long; an input left when the time runs out is
+    skipped. The 5 seconds count `validate_before_node_run` too, and apply per node: when the engine
+    starts several nodes at once, each can block for that long. An image given as a file path costs
+    only a header read, except a WebP or AVIF file, which Pillow reads in full without decoding its
+    pixels. One given as a data URI or an in-memory artifact is decoded in full, so its check takes
+    longer the larger it is; pass file paths where you can.
 - **Where a limit is ambiguous, refuse less.** Sizes are in MiB. A maximum length is checked
     against the shorter of the video stream and the whole file, and a minimum against the longer.
     Frame rates work the same way, with 1% leeway so 23.976 fps passes a 24 fps minimum.
@@ -441,22 +528,18 @@ request, an unsupported input, a missing API key, a plain `KeyError`, and valida
 
 ### Comprehensive Validation
 
-Use `validate_before_node_run()` for complex validation:
+Use `validate_before_node_run()` for checks that aren't limits on a file, such as settings that
+can't be used together. Declare file limits with `pre_run_validators=` instead (see "Checking
+inputs before a run" above).
 
 ```python
-from griptape_nodes.exe_types.input_checks import check_count
-
-
 def validate_before_node_run(self) -> list[Exception] | None:
     """Validate parameters before running the node."""
     exceptions = []
 
-    model = self.get_parameter_value("model")
-    if model == "advanced":
-        images = self.get_parameter_list_value("images") or []
-        too_many = check_count(len(images), maximum=MAX_IMAGES, parameter="images", noun="images")
-        if too_many:
-            exceptions.append(too_many)
+    mode = self.get_parameter_value("mode")
+    if mode == "loop" and not self.get_parameter_value("image_tail"):
+        exceptions.append(NodeError("Loop mode needs an 'End Frame'. Connect one, or pick another mode."))
 
     return exceptions if exceptions else None
 ```
