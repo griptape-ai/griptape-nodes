@@ -717,9 +717,11 @@ class TestProjectManagerBuiltinVariables:
         """A real ContextManager and registry with an empty stack: exactly a worker before adopting."""
         from griptape_nodes.node_library.workflow_registry import _WorkflowRegistry
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
+        from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowSet
 
         engine = MagicMock()
         engine.config_manager.workspace_path = workspace
+        engine.open_workflows = OpenWorkflowSet()
         context_manager = ContextManager(event_manager=MagicMock(), engine=engine)
         engine.workflow_registry = _WorkflowRegistry(
             engine.config_manager, is_workflow_open=context_manager.is_workflow_in_context

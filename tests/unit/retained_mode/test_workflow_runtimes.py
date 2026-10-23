@@ -236,6 +236,35 @@ class TestRuntimeLifecycle:
         assert engine.open_workflows.sole_workflow_or_none() is None
 
 
+class TestContextOnTheRuntime:
+    def test_a_flow_entered_through_the_front_is_on_the_open_workflows_context(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
+        flow = MagicMock(name="flow")
+
+        with engine.context_manager.flow(flow):
+            assert engine.open_workflows.sole_workflow().context.get_current_flow() is flow
+            assert engine.context_manager.get_current_flow() is flow
+
+        assert not engine.open_workflows.sole_workflow().context.has_current_flow()
+
+    def test_the_context_does_not_survive_closing_the_workflow(self, engine: Engine) -> None:
+        workflow = push_unsaved_workflow(engine)
+        engine.context_manager.push_flow(MagicMock(name="flow"))
+
+        engine.context_manager.pop_workflow()
+        engine.context_manager.push_workflow(workflow_id=workflow.workflow_id)
+
+        assert not engine.context_manager.has_current_flow()
+
+    def test_reads_find_no_flow_with_no_workflow_open(self, engine: Engine) -> None:
+        assert not engine.context_manager.has_current_flow()
+        assert not engine.context_manager.has_current_node()
+        with pytest.raises(engine.context_manager.NoActiveFlowError):
+            engine.context_manager.get_current_flow()
+        with pytest.raises(engine.context_manager.NoActiveWorkflowError):
+            engine.context_manager.flow(MagicMock(name="flow"))
+
+
 class TestCloseWorkflowState:
     @pytest.mark.asyncio
     async def test_cancels_the_running_flow_before_tearing_down(self, engine: Engine) -> None:
