@@ -240,7 +240,8 @@ LOOP_EVENTS_TO_SUPPRESS = {
 
 # Execution events from a parallel loop's iteration flows. The editor has no node by those names.
 # Don't use in the sequential path: it relies on EventTranslationContext to highlight the real node.
-# Execution-event listeners hear every parallel iteration either way.
+# Execution-event listeners hear every parallel iteration either way. NodeStartProcessEvent and
+# NodeFinishProcessEvent are not here: the loop body scope reports them under canvas names (#5950).
 # Only ExecutionPayload members belong here; request results go in LOOP_EVENTS_TO_SUPPRESS.
 EXECUTION_EVENTS_TO_SUPPRESS = {
     CurrentControlNodeEvent,
@@ -252,8 +253,6 @@ EXECUTION_EVENTS_TO_SUPPRESS = {
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
     NodeUnresolvedEvent,
-    NodeStartProcessEvent,
-    NodeFinishProcessEvent,
     InvolvedNodesEvent,
     GriptapeEvent,
     PublishWorkflowProgressEvent,
