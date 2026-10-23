@@ -211,9 +211,9 @@ Every workflow has a permanent id, saved in the header at the top of its
 file. It stays the same when you save, rename, or move the workflow, and
 when you reopen it later. **Save As**, **Save As New Version**, branching,
 creating a workflow from a template, and opening a workflow a library
-provides make a new workflow, so it gets an id of its own. If you copy a workflow file yourself, outside the
-editor, the first time the engine finds both files one of them, usually
-the copy, gets a new id.
+provides make a new workflow, so it gets an id of its own. If you copy a
+workflow file yourself, outside the editor, the first time the engine finds
+both files one of them, usually the copy, gets a new id.
 
 A workflow file saved by an earlier version of Griptape Nodes has no id
 yet. It gets one the next time you save it.
