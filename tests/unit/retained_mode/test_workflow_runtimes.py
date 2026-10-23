@@ -35,6 +35,14 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SetVariableSubstitutionEnabledRequest,
     SetVariableSubstitutionEnabledResultFailure,
 )
+from griptape_nodes.retained_mode.runtime.context import (
+    ElementContext,
+    EmptyStackError,
+    FlowContext,
+    NoActiveFlowError,
+    NodeContext,
+    WorkflowContextStack,
+)
 from griptape_nodes.retained_mode.runtime.open_workflow_set import (
     NoOpenWorkflowError,
     OpenWorkflowError,
@@ -135,6 +143,50 @@ class TestOpenWorkflowSet:
             workflows.sole_workflow()
 
         assert workflows.sole_workflow_or_none() is None
+
+
+class TestWorkflowContextStack:
+    def test_a_new_runtimes_context_is_empty(self) -> None:
+        context = WorkflowRuntime("abc").context
+
+        assert not context.has_current_flow()
+        assert not context.has_current_node()
+        assert not context.has_current_element()
+
+    def test_flows_nodes_and_elements_nest(self) -> None:
+        context = WorkflowContextStack()
+        flow = MagicMock(name="flow")
+        node = MagicMock()
+        element = MagicMock()
+
+        with FlowContext(context, flow), NodeContext(context, node), ElementContext(context, element):
+            assert context.get_current_flow() is flow
+            assert context.get_current_node() is node
+            assert context.get_current_element() is element
+
+        assert not context.has_current_flow()
+
+    def test_each_level_needs_the_one_above(self) -> None:
+        context = WorkflowContextStack()
+
+        with pytest.raises(NoActiveFlowError):
+            context.push_node(MagicMock())
+        with pytest.raises(EmptyStackError):
+            context.pop_flow()
+
+        context.push_flow(MagicMock(name="flow"))
+        with pytest.raises(EmptyStackError):
+            context.push_element(MagicMock())
+        with pytest.raises(EmptyStackError):
+            context.get_current_node()
+
+    def test_each_runtime_has_its_own_context(self) -> None:
+        first = WorkflowRuntime("first")
+        second = WorkflowRuntime("second")
+
+        first.context.push_flow(MagicMock(name="flow"))
+
+        assert not second.context.has_current_flow()
 
 
 class TestRuntimeLifecycle:
