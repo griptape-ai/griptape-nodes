@@ -57,9 +57,10 @@ class AppStartSessionRequest(RequestPayload):
     """
 
     # A client that names itself is listed on the session (see SessionClient) so engine
-    # discovery can show who is attached. Blank keeps today's anonymous join.
+    # discovery can show who is attached. Blank client_id keeps today's anonymous join.
     client_id: str = ""
     client_type: str = ""
+    client_label: str = ""
 
 
 @dataclass
@@ -428,22 +429,22 @@ class AppEndSessionResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class AppDetachSessionClientRequest(RequestPayload):
-    """Delist a client from the active session, e.g. a host displaced by another one."""
+class AppLeaveSessionRequest(RequestPayload):
+    """Delist a client from the active session without ending it."""
 
     client_id: str
 
 
 @dataclass
 @PayloadRegistry.register
-class AppDetachSessionClientResultSuccess(ResultPayloadSuccess):
-    """The client is no longer listed; detaching an unknown client succeeds too."""
+class AppLeaveSessionResultSuccess(ResultPayloadSuccess):
+    """The client is no longer listed; leaving when never listed succeeds too."""
 
 
 @dataclass
 @PayloadRegistry.register
-class AppDetachSessionClientResultFailure(ResultPayloadFailure):
-    """Detach failed because no session is active."""
+class AppLeaveSessionResultFailure(ResultPayloadFailure):
+    """Leave failed because no session is active."""
 
 
 @dataclass
@@ -479,11 +480,12 @@ class EngineHeartbeatRequest(RequestPayload, SkipTheLineMixin):
 
 @dataclass
 class SessionClient:
-    """A client that identified itself to the active session, e.g. a Nuke host."""
+    """A client registered on the active session: an opaque id the client minted, its kind, and a display label."""
 
     client_id: str
     client_type: str
     connected_at: str
+    client_label: str = ""
 
 
 @dataclass

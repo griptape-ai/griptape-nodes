@@ -8,11 +8,11 @@ from unittest.mock import Mock
 import pytest
 
 from griptape_nodes.retained_mode.events.app_events import (
-    AppDetachSessionClientRequest,
-    AppDetachSessionClientResultFailure,
-    AppDetachSessionClientResultSuccess,
     AppEndSessionRequest,
     AppEndSessionResultSuccess,
+    AppLeaveSessionRequest,
+    AppLeaveSessionResultFailure,
+    AppLeaveSessionResultSuccess,
     AppStartSessionRequest,
     AppStartSessionResultSuccess,
 )
@@ -82,6 +82,15 @@ class TestSessionClients:
         assert [(c.client_id, c.client_type) for c in manager.clients] == [("nuke:shot010", "nuke")]
 
     @pytest.mark.asyncio
+    async def test_a_client_label_is_kept_for_display(self, manager: SessionManager) -> None:
+        await manager.handle_session_start_request(
+            AppStartSessionRequest(client_id="tab-1", client_type="editor", client_label="Kate (Chrome)")
+        )
+
+        (client,) = manager.clients
+        assert (client.client_type, client.client_label) == ("editor", "Kate (Chrome)")
+
+    @pytest.mark.asyncio
     async def test_joining_with_a_client_id_adds_to_the_existing_session(self, manager: SessionManager) -> None:
         manager.save_session("session-a")
 
@@ -101,23 +110,19 @@ class TestSessionClients:
         assert manager.clients == []
 
     @pytest.mark.asyncio
-    async def test_detach_request_delists_the_client(self, manager: SessionManager) -> None:
+    async def test_leave_request_delists_the_client(self, manager: SessionManager) -> None:
         await manager.handle_session_start_request(AppStartSessionRequest(client_id="nuke:shot010", client_type="nuke"))
 
-        result = await manager.handle_detach_session_client_request(
-            AppDetachSessionClientRequest(client_id="nuke:shot010")
-        )
+        result = await manager.handle_leave_session_request(AppLeaveSessionRequest(client_id="nuke:shot010"))
 
-        assert isinstance(result, AppDetachSessionClientResultSuccess)
+        assert isinstance(result, AppLeaveSessionResultSuccess)
         assert manager.clients == []
 
     @pytest.mark.asyncio
-    async def test_detach_request_fails_without_a_session(self, manager: SessionManager) -> None:
-        result = await manager.handle_detach_session_client_request(
-            AppDetachSessionClientRequest(client_id="nuke:shot010")
-        )
+    async def test_leave_request_fails_without_a_session(self, manager: SessionManager) -> None:
+        result = await manager.handle_leave_session_request(AppLeaveSessionRequest(client_id="nuke:shot010"))
 
-        assert isinstance(result, AppDetachSessionClientResultFailure)
+        assert isinstance(result, AppLeaveSessionResultFailure)
 
     @pytest.mark.asyncio
     async def test_ending_the_session_clears_its_clients(self, manager: SessionManager) -> None:

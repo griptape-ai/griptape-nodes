@@ -17,14 +17,14 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from griptape_nodes.retained_mode.events.app_events import (
-    AppDetachSessionClientRequest,
-    AppDetachSessionClientResultFailure,
-    AppDetachSessionClientResultSuccess,
     AppEndSessionRequest,
     AppEndSessionResultFailure,
     AppEndSessionResultSuccess,
     AppGetSessionRequest,
     AppGetSessionResultSuccess,
+    AppLeaveSessionRequest,
+    AppLeaveSessionResultFailure,
+    AppLeaveSessionResultSuccess,
     AppStartSessionRequest,
     AppStartSessionResultSuccess,
     SessionClient,
@@ -115,7 +115,7 @@ class SessionManager:
         """Clients attached to the active session, in attach order."""
         return list(self._clients.values())
 
-    def attach_client(self, client_id: str, client_type: str) -> bool:
+    def attach_client(self, client_id: str, client_type: str, client_label: str = "") -> bool:
         """Attach a client to the active session; re-attaching refreshes connected_at. False when no session is active."""
         if self._active_session_id is None:
             logger.debug("Refused to attach client %s: no active session", client_id)
@@ -124,6 +124,7 @@ class SessionManager:
             client_id=client_id,
             client_type=client_type,
             connected_at=datetime.now(tz=UTC).isoformat(),
+            client_label=client_label,
         )
         logger.debug("Attached client %s (%s) to session %s", client_id, client_type, self._active_session_id)
         return True
@@ -309,18 +310,18 @@ class SessionManager:
             details = f"Session '{current_session_id}' already active. Joining..."
 
         if request.client_id:
-            self.attach_client(request.client_id, request.client_type)
+            self.attach_client(request.client_id, request.client_type, request.client_label)
 
         return AppStartSessionResultSuccess(current_session_id, result_details="Session started successfully.")
 
-    @handles(AppDetachSessionClientRequest)
-    async def handle_detach_session_client_request(self, request: AppDetachSessionClientRequest) -> ResultPayload:
+    @handles(AppLeaveSessionRequest)
+    async def handle_leave_session_request(self, request: AppLeaveSessionRequest) -> ResultPayload:
         if self.active_session_id is None:
-            return AppDetachSessionClientResultFailure(
-                result_details=f"Attempted to detach client '{request.client_id}'. Failed because no session is active."
+            return AppLeaveSessionResultFailure(
+                result_details=f"Attempted to delist client '{request.client_id}'. Failed because no session is active."
             )
         self.detach_client(request.client_id)
-        return AppDetachSessionClientResultSuccess(result_details=f"Client '{request.client_id}' detached.")
+        return AppLeaveSessionResultSuccess(result_details=f"Client '{request.client_id}' left the session.")
 
     @handles(AppEndSessionRequest)
     async def handle_session_end_request(self, _: AppEndSessionRequest) -> ResultPayload:
