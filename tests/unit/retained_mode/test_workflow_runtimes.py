@@ -26,7 +26,6 @@ from griptape_nodes.retained_mode.events.object_events import (
 )
 from griptape_nodes.retained_mode.events.variable_events import (
     CreateVariableRequest,
-    CreateVariableResultFailure,
     CreateVariableResultSuccess,
     GetVariableValueRequest,
     GetVariableValueResultFailure,
@@ -35,7 +34,6 @@ from griptape_nodes.retained_mode.events.worker_events import WorkerGoneError
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     SetVariableSubstitutionEnabledRequest,
-    SetVariableSubstitutionEnabledResultFailure,
 )
 from griptape_nodes.retained_mode.managers.context_manager import MirroredWorkflowContext
 from griptape_nodes.retained_mode.runtime.context import (
@@ -698,17 +696,18 @@ class TestVariablesOnTheRuntime:
         assert layer is not None
         assert layer.has("greeting")
 
-    def test_lookups_find_no_global_variable_with_no_workflow_open(self, engine: Engine) -> None:
+    def test_lookups_with_no_workflow_open_fail(self, engine: Engine) -> None:
         result = engine.handle_request(GetVariableValueRequest(name="greeting", lookup_scope=VariableScope.GLOBAL_ONLY))
 
-        assert isinstance(result, GetVariableValueResultFailure)
+        assert result.failed()
+        assert "names no workflow and none is open" in str(result.result_details)
         assert engine.open_workflows.sole_workflow_or_none() is None
 
     def test_creating_a_global_variable_needs_an_open_workflow(self, engine: Engine) -> None:
         result = engine.handle_request(CreateVariableRequest(name="greeting", type="str", is_global=True, value="hi"))
 
-        assert isinstance(result, CreateVariableResultFailure)
-        assert "no workflow is open" in str(result.result_details)
+        assert result.failed()
+        assert "names no workflow and none is open" in str(result.result_details)
         assert engine.open_workflows.sole_workflow_or_none() is None
 
     def test_variables_do_not_survive_clearing_and_reopening(self, engine: Engine) -> None:
@@ -738,7 +737,8 @@ class TestSubstitutionFlagOnTheRuntime:
     def test_setting_the_flag_with_no_workflow_open_fails(self, engine: Engine) -> None:
         result = engine.handle_request(SetVariableSubstitutionEnabledRequest(enabled=False))
 
-        assert isinstance(result, SetVariableSubstitutionEnabledResultFailure)
+        assert result.failed()
+        assert "names no workflow and none is open" in str(result.result_details)
 
     def test_the_flag_is_held_by_the_open_workflow(self, engine: Engine) -> None:
         push_unsaved_workflow(engine)
