@@ -480,7 +480,7 @@ class TestNestedRequests:
 
 
 class _RecordingRequestClient:
-    """Stands in for a worker's RequestClient: records what it is asked to send and answers success."""
+    """Stands in for a worker's RequestClient: records what it is asked to send and answers with a failure."""
 
     def __init__(self) -> None:
         self.sent: list[EventRequest] = []
@@ -494,7 +494,7 @@ class _RecordingRequestClient:
     ) -> dict[str, Any]:
         self.sent.append(event_request)
         return {
-            "event_type": "EventResultSuccess",
+            "event_type": "EventResultFailure",
             "result_type": "GenericResultFailure",
             "result": {"result_details": "answered by the orchestrator"},
         }

@@ -902,17 +902,17 @@ class EventManager(EngineScoped):
     def register_request_handlers(self, owner: object) -> None:
         """Assign each `@handles` method on `owner`. An unmarked override keeps its parent's marks."""
         # Later classes in this walk are subclasses, so an override's marks replace its parent's.
-        marked_attrs = {
-            name: attr
-            for klass in reversed(type(owner).__mro__)
-            for name, attr in vars(klass).items()
-            if handled_request_types(attr)
-        }
-        for name, attr in marked_attrs.items():
-            for request_type in handled_request_types(attr):
-                self.assign_manager_to_request_type(
-                    request_type, getattr(owner, name), scope=handled_request_scope(attr)
-                )
+        marks: dict[str, tuple[type[RequestPayload], ...]] = {}
+        scopes: dict[str, RequestScope | None] = {}
+        for klass in reversed(type(owner).__mro__):
+            for name, attr in vars(klass).items():
+                request_types = handled_request_types(attr)
+                if request_types:
+                    marks[name] = request_types
+                    scopes[name] = handled_request_scope(attr)
+        for name, request_types in marks.items():
+            for request_type in request_types:
+                self.assign_manager_to_request_type(request_type, getattr(owner, name), scope=scopes[name])
 
     def configure_worker_forwarding(
         self,
