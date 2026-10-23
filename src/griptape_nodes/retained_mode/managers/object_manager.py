@@ -132,8 +132,8 @@ class ObjectManager(EngineScoped):
             try:
                 context_manager = self.engine.context_manager
                 if context_manager.has_current_workflow():
-                    # With none open, only a worker's mirror of the orchestrator's workflow is on the
-                    # stack, e.g. a worker reloading its libraries. Clear it and release what this
+                    # With none open, the workflow in context is a worker's mirror of the orchestrator's,
+                    # e.g. a worker reloading its libraries. Clear it and release what this
                     # process holds, as closing a workflow does.
                     context_manager.mirror_workflow_context(None, None, None, None)
                     self.engine.resource_manager.drop_all_local_objects()

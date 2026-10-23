@@ -229,12 +229,8 @@ class Engine:
         self._resource_manager = ResourceManager(self._event_manager, engine=self)
         self._config_manager = ConfigManager(self._event_manager, engine=self)
         self._os_manager = OSManager(self._event_manager, engine=self)
-        # Ahead of the registry, which asks it whether a workflow is open.
         self._context_manager = ContextManager(self._event_manager, engine=self)
-        self._workflow_registry = _WorkflowRegistry(
-            self._config_manager,
-            is_workflow_open=self._context_manager.is_workflow_in_context,
-        )
+        self._workflow_registry = _WorkflowRegistry(self._config_manager, is_workflow_open=self._open_workflows.is_open)
         self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
         self._object_manager = ObjectManager(self._event_manager, engine=self)
         self._node_manager = NodeManager(self._event_manager, engine=self)
@@ -562,10 +558,9 @@ class Engine:
         """Close the open workflow: cancel its run, delete its flows, and release what it held.
 
         Engine requests that close the open workflow (ClearAll, Delete) come through here. The
-        `GriptapeNodes.clear_current_workflow_data()` facade and a bare pop of the last context
-        entry close it without awaiting a cancel or telling the workers. The runtime leaves the
-        open workflows with its objects and variables when its last context entry is popped. The
-        workers are told to release their held objects even when the teardown fails, since
+        `GriptapeNodes.clear_current_workflow_data()` facade and a bare `pop_workflow()` close it
+        without awaiting a cancel or telling the workers. The runtime leaves the open workflows with
+        its context, objects and variables when `pop_workflow()` closes it. The workers are told to release their held objects even when the teardown fails, since
         nothing retries it.
 
         Raises:
@@ -591,15 +586,15 @@ class Engine:
             await self._worker_manager.broadcast_local_object_teardown()
 
     def clear_current_workflow_data(self) -> None:
-        """Tear down the workflow in context, requesting cancellation of its run.
+        """Tear down the open workflow, requesting cancellation of its run.
 
         The target of `GriptapeNodes.clear_current_workflow_data()`. Engine code awaits
         `close_workflow_state` instead, which awaits the cancellation and tells the workers.
 
         Raises:
-            RuntimeError: No workflow is in the context.
+            RuntimeError: No workflow is open.
         """
-        if not self._context_manager.has_current_workflow():
+        if self._open_workflows.sole_workflow_or_none() is None:
             msg = "Cannot clear current workflow data without an active workflow context."
             raise RuntimeError(msg)
 

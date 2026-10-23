@@ -43,7 +43,7 @@ from griptape_nodes.testing.offline_wheels import build_wheel, offline_install_f
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.utils.version_utils import engine_version
 from tests.e2e.fixtures.behavior_preservation_library.behavior_preservation_node import CLICK_ACKNOWLEDGEMENT
-from tests.workflow_context import push_unsaved_workflow
+from tests.workflow_context import as_worker_process, push_unsaved_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -365,12 +365,13 @@ class TestUnshippableOutputIsKept:
         push_unsaved_workflow(current_engine())
         current_engine().object_manager.add_object_by_name("Producer", node)
 
-        result = await current_engine().ahandle_request(
-            ExecuteNodeRequest(
-                node_name="Producer",
-                node_metadata={"node_type": "ProducerNode", "library": "Guardrail Library"},
+        with as_worker_process(current_engine()):
+            result = await current_engine().ahandle_request(
+                ExecuteNodeRequest(
+                    node_name="Producer",
+                    node_metadata={"node_type": "ProducerNode", "library": "Guardrail Library"},
+                )
             )
-        )
 
         assert isinstance(result, ExecuteNodeResultSuccess), result.result_details
         sent = result.parameter_output_values["session"]

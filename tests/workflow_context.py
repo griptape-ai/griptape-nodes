@@ -35,3 +35,14 @@ def empty_workflow_registry(engine: Engine) -> Iterator[None]:
         patch.dict(registry._id_by_name, {}, clear=True),
     ):
         yield
+
+
+@contextmanager
+def as_worker_process(engine: Engine) -> Iterator[None]:
+    """Run with the engine's open workflow set aside, as a worker process, which opens none.
+
+    For tests where one engine plays both roles: it opens a workflow to build nodes as the
+    orchestrator, then runs one of them as a worker would, and a worker never has a workflow open.
+    """
+    with patch.dict(engine.open_workflows._by_id, {}, clear=True):
+        yield

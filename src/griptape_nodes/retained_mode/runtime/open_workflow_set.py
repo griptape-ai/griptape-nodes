@@ -51,6 +51,9 @@ class OpenWorkflowSet:
             raise OpenWorkflowError(msg)
         del self._by_id[workflow.workflow_id]
 
+    def is_open(self, workflow_id: str) -> bool:
+        return workflow_id in self._by_id
+
     def get(self, workflow_id: str) -> WorkflowRuntime:
         """The runtime of the open workflow with this id.
 

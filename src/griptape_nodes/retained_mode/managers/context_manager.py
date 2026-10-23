@@ -46,19 +46,34 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
 
 logger = logging.getLogger("griptape_nodes")
 
 
-class ContextManager(EngineScoped):
-    """Context manager for Workflow, Flow, Node, and Element contexts.
+class MirroredWorkflowContext:
+    """A peer engine's open workflow, as a worker mirrors it to run that engine's nodes.
 
-    Workflows own Flows, Flows own Nodes, and Nodes own Elements.
-    There must always be a Workflow context active.
+    Holds the peer's workflow id, which names this engine's registry entry for it, and the flows,
+    nodes and elements entered while the worker runs them. Worker namespaces replace it once several
+    workflows can be open.
+    """
+
+    def __init__(self, workflow_id: str) -> None:
+        self.workflow_id = workflow_id
+        self.context = WorkflowContextStack()
+
+
+class ContextManager(EngineScoped):
+    """Front for the Workflow, Flow, Node, and Element contexts.
+
+    Workflows own Flows, Flows own Nodes, and Nodes own Elements. The Workflow context is the open
+    workflow, and its Flow, Node and Element contexts live on its runtime. A worker opens no workflow:
+    it mirrors the one its orchestrator has open (`mirror_workflow_context`). An engine never has both.
     Clients can push/pop Workflow contexts, Flow contexts, Node contexts, and Element contexts.
     """
 
-    _workflow_stack: list[ContextManager.WorkflowContextState]
+    _mirror: MirroredWorkflowContext | None
 
     WorkflowContextError = runtime_context.WorkflowContextError
     NoActiveFlowError = runtime_context.NoActiveFlowError
@@ -79,24 +94,8 @@ class ContextManager(EngineScoped):
     class WorkflowAlreadyOpenError(WorkflowContextError):
         """A push asked to open a workflow while another one is open."""
 
-    class WorkflowContextState:
-        """Internal class that represents a Workflow's place on the stack.
-
-        Holds only the workflow's id. Its name, file and folder live on its registry entry, so a
-        save, rename, or move updates them in one place and the context never goes stale. A
-        worker's mirror keeps its flows, nodes and elements in `context`; an open workflow keeps
-        them on its runtime.
-        """
-
-        workflow_id: str
-        context: WorkflowContextStack
-
-        def __init__(self, workflow_id: str):
-            self.workflow_id = workflow_id
-            self.context = WorkflowContextStack()
-
     class WorkflowContext:
-        """A context manager for a Workflow."""
+        """Opens a Workflow for the length of a `with` block, closing it on exit."""
 
         _manager: ContextManager
         _workflow_name: str
@@ -117,9 +116,9 @@ class ContextManager(EngineScoped):
             self._manager.pop_workflow()
 
     def __init__(self, event_manager: EventManager, *, engine: Engine | None = None) -> None:
-        """Initialize the context manager with empty workflow and flow stacks."""
+        """Initialize the context manager with no mirrored workflow."""
         super().__init__(engine)
-        self._workflow_stack = []
+        self._mirror = None
         event_manager.register_request_handlers(self)
 
     @handles(SetWorkflowContextRequest)
@@ -344,10 +343,12 @@ class ContextManager(EngineScoped):
         )
 
     def workflow(self, workflow_name: str) -> ContextManager.WorkflowContext:
-        """Create a context manager for a Workflow context.
+        """Create a context manager that opens a Workflow and closes it on exit.
+
+        Entering it refuses while a workflow is open, as `push_workflow` does: workflows do not nest.
 
         Args:
-            workflow_name: The name of the Workflow to enter.
+            workflow_name: The name of the Workflow to open.
 
         Returns:
             A context manager for the Workflow context.
@@ -434,10 +435,9 @@ class ContextManager(EngineScoped):
     ) -> None:
         """Adopt another engine's workflow context as this engine's own.
 
-        A real stack entry rather than an override of the getters, because `has_current_workflow()`
-        answers two questions at once -- "is identity resolvable" and "is there an entry to index"
-        -- and satisfying only the first raises IndexError in `has_current_flow`, `push_flow`,
-        `pop_flow`, and the context setters.
+        The mirror is what `has_current_workflow()` and the other getters read on a worker, and it
+        has its own Flow, Node and Element stacks, so readers that index the context work as they do
+        on an engine with a workflow open.
 
         The entry it points at is this engine's registry entry under the peer's workflow id,
         registered unlisted when this engine does not know the workflow, and moved when the peer
@@ -445,33 +445,38 @@ class ContextManager(EngineScoped):
         entry an earlier mirror registered is dropped once another workflow is mirrored.
 
         Idempotent and never popped: this MIRRORS a peer's context rather than nesting under it, so
-        one entry is replaced in place. There is no push/pop pair whose ordering could interleave
+        the mirror is replaced in place. There is no push/pop pair whose ordering could interleave
         while a worker runs nodes concurrently.
 
         Never opens a workflow: the peer has it open, and a worker opens none of its own.
+
+        Raises:
+            WorkflowContextError: A workflow is open in this engine, which then mirrors no other.
+            MirroredWorkflowError: The peer's workflow could not be registered here.
         """
+        if self.engine.open_workflows.sole_workflow_or_none() is not None:
+            msg = "Attempted to mirror another engine's workflow. Failed because a workflow is open in this engine."
+            raise self.WorkflowContextError(msg)
+
         previous_id = None
-        if self._workflow_stack:
-            previous_id = self._workflow_stack[-1].workflow_id
+        if self._mirror is not None:
+            previous_id = self._mirror.workflow_id
 
         if workflow_id is None:
             # The peer has no workflow, so this engine must have none either. A mirror left from an
             # earlier execution would resolve paths against that workflow's folder while the peer
             # resolves them workspace-relative -- the divergence this mirror exists to prevent,
-            # reached from the other direction. Only a mirror is ever on a worker's stack.
-            self._workflow_stack.clear()
+            # reached from the other direction.
+            self._mirror = None
             if previous_id is not None:
                 self._drop_mirror_entry(previous_id)
             return
 
         mirrored_id = self._mirror_registry_entry(workflow_id, name, file_path, working_directory)
-        state = self.WorkflowContextState(mirrored_id)
-        if not self._workflow_stack:
-            self._workflow_stack.append(state)
-        elif self._workflow_stack[-1].workflow_id != mirrored_id:
-            # Replace rather than append: a mirror tracks one peer context, and stacking would leave
-            # the previous workflow's entry to be read by whatever runs next.
-            self._workflow_stack[-1] = state
+        if self._mirror is None or self._mirror.workflow_id != mirrored_id:
+            # Replaced rather than kept: a mirror tracks one peer context, and keeping the previous
+            # one would leave its flows to be read by whatever runs next.
+            self._mirror = MirroredWorkflowContext(mirrored_id)
 
         if previous_id is not None and previous_id != mirrored_id:
             self._drop_mirror_entry(previous_id)
@@ -516,7 +521,7 @@ class ContextManager(EngineScoped):
             )
             if self.is_workflow_in_context(known.workflow_id):
                 # The stale entry is the current mirror; the caller puts the peer's id in its place.
-                self._workflow_stack.clear()
+                self._mirror = None
             registry.remove(known.workflow_id)
 
         try:
@@ -557,8 +562,8 @@ class ContextManager(EngineScoped):
         registry.remove(workflow_id)
 
     def has_current_workflow(self) -> bool:
-        """Check if there is an active Workflow context."""
-        return len(self._workflow_stack) > 0
+        """Check if there is an active Workflow context: the open workflow, or a worker's mirror."""
+        return self._current_or_none() is not None
 
     def has_current_flow(self) -> bool:
         """Check if there is an active Flow context within the current Workflow."""
@@ -582,8 +587,11 @@ class ContextManager(EngineScoped):
         return context.has_current_element()
 
     def is_workflow_in_context(self, workflow_id: str) -> bool:
-        """Whether the workflow with this id is anywhere on the context stack."""
-        return any(state.workflow_id == workflow_id for state in self._workflow_stack)
+        """Whether the workflow with this id is the Workflow context."""
+        current = self._current_or_none()
+        if current is None:
+            return False
+        return current.workflow_id == workflow_id
 
     def get_current_workflow_id(self) -> str:
         """Get the id of the current Workflow context.
@@ -591,11 +599,12 @@ class ContextManager(EngineScoped):
         Raises:
             NoActiveWorkflowError: If no Workflow context is active.
         """
-        if not self.has_current_workflow():
+        current = self._current_or_none()
+        if current is None:
             msg = "No active Workflow context"
             raise self.NoActiveWorkflowError(msg)
 
-        return self._workflow_stack[-1].workflow_id
+        return current.workflow_id
 
     def get_current_workflow(self) -> Workflow:
         """Get the registry entry of the current Workflow context.
@@ -765,7 +774,6 @@ class ContextManager(EngineScoped):
         if working_directory is not None:
             workflow.working_directory = working_directory
         self.engine.open_workflows.open(workflow.workflow_id)
-        self._workflow_stack.append(self.WorkflowContextState(workflow.workflow_id))
         return workflow.name
 
     def _find_or_register_open_file(self, file_path: str) -> Workflow:
@@ -801,7 +809,7 @@ class ContextManager(EngineScoped):
             )
 
     def pop_workflow(self) -> str:
-        """Close the Workflow context: the open workflow closes and its state is dropped.
+        """Close the open workflow: its runtime, with its Flow, Node and Element contexts, is dropped.
 
         A caller tearing a workflow down deletes its flows first.
 
@@ -810,18 +818,15 @@ class ContextManager(EngineScoped):
             beforehand.
 
         Raises:
-            EmptyStackError: If there are no active Workflows.
+            EmptyStackError: If no workflow is open.
         """
-        if not self._workflow_stack:
+        workflow = self.engine.open_workflows.sole_workflow_or_none()
+        if workflow is None:
             msg = "Cannot pop Workflow: no active Workflows"
             raise self.EmptyStackError(msg)
 
-        name = self.get_current_workflow_name()
-        self._workflow_stack.pop()
-        # None when only a worker's mirror was on the stack, e.g. the facade's teardown on a worker.
-        workflow = self.engine.open_workflows.sole_workflow_or_none()
-        if workflow is not None:
-            self.engine.open_workflows.close(workflow)
+        name = self.engine.workflow_registry.get(workflow.workflow_id).name
+        self.engine.open_workflows.close(workflow)
         return name
 
     def push_flow(self, flow: ControlFlow) -> ControlFlow:
@@ -924,13 +929,24 @@ class ContextManager(EngineScoped):
 
     def _context_or_none(self) -> WorkflowContextStack | None:
         """The context stack the current work means: the open workflow's, or a worker's mirror's."""
+        current = self._current_or_none()
+        if current is None:
+            return None
+        return current.context
+
+    def _current_or_none(self) -> WorkflowRuntime | MirroredWorkflowContext | None:
+        """The open workflow, or on a worker the mirrored one, or None. Never one in place of the other.
+
+        Raises:
+            WorkflowContextError: A workflow is open and a peer's is mirrored at once.
+        """
         workflow = self.engine.open_workflows.sole_workflow_or_none()
+        if workflow is not None and self._mirror is not None:
+            msg = "Attempted to find the current workflow. Failed because a workflow is open while another engine's is mirrored."
+            raise self.WorkflowContextError(msg)
         if workflow is not None:
-            return workflow.context
-        if self._workflow_stack:
-            # With none open, only a worker's mirror is on the stack.
-            return self._workflow_stack[-1].context
-        return None
+            return workflow
+        return self._mirror
 
 
 class OpenedFileMetadata(NamedTuple):

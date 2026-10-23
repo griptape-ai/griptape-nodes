@@ -714,7 +714,7 @@ class TestProjectManagerBuiltinVariables:
 
     @staticmethod
     def _mirroring_context_manager(workspace: Path) -> ContextManager:
-        """A real ContextManager and registry with an empty stack: exactly a worker before adopting."""
+        """A real ContextManager and registry with nothing open or mirrored: exactly a worker before adopting."""
         from griptape_nodes.node_library.workflow_registry import _WorkflowRegistry
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
         from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowSet
@@ -722,11 +722,10 @@ class TestProjectManagerBuiltinVariables:
         engine = MagicMock()
         engine.config_manager.workspace_path = workspace
         engine.open_workflows = OpenWorkflowSet()
-        context_manager = ContextManager(event_manager=MagicMock(), engine=engine)
         engine.workflow_registry = _WorkflowRegistry(
-            engine.config_manager, is_workflow_open=context_manager.is_workflow_in_context
+            engine.config_manager, is_workflow_open=engine.open_workflows.is_open
         )
-        return context_manager
+        return ContextManager(event_manager=MagicMock(), engine=engine)
 
     @staticmethod
     def _workflow_file(path: Path) -> Path:
@@ -905,11 +904,7 @@ class TestProjectManagerBuiltinVariables:
         assert registry.find_by_id("00000000000000000000000000000c01") is not None
 
     def test_mirroring_keeps_the_stack_indexable(self, tmp_path: Path) -> None:
-        """Adoption installs a REAL entry, so stack-indexing readers stay safe.
-
-        `has_current_workflow()` also means "there is an entry to index", so answering it True
-        without one raises IndexError in has_current_flow, push_flow, pop_flow and the setters.
-        """
+        """Adoption gives the worker a context stack of its own, so readers that index it stay safe."""
         context_manager = self._mirroring_context_manager(tmp_path)
         workflow_file = self._workflow_file(tmp_path / "w.py")
         context_manager.mirror_workflow_context("w-id", "w", str(workflow_file), None)
@@ -929,7 +924,7 @@ class TestProjectManagerBuiltinVariables:
         # Re-adopting the same context must not grow the stack either.
         context_manager.mirror_workflow_context("second-id", "second", str(second), None)
 
-        assert len(context_manager._workflow_stack) == 1
+        assert context_manager.get_current_workflow_id() == "second-id"
         assert context_manager.get_current_workflow_name() == "second"
 
     def test_mirroring_an_empty_context_drops_the_previous_one(self, tmp_path: Path) -> None:
