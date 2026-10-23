@@ -16,7 +16,7 @@ def _node_with_parameter(name: str) -> tuple[MockNode, Parameter]:
 
 def _object_manager_with_an_open_workflow() -> ObjectManager:
     engine = MagicMock()
-    engine.open_workflows = OpenWorkflowSet()
+    engine.open_workflows = OpenWorkflowSet(engine)
     engine.open_workflows.open("wf")
     return ObjectManager(MagicMock(), engine=engine)
 

@@ -249,7 +249,7 @@ class TestFlowManagerDagBuilderIntegration:
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 
         engine = MagicMock()
-        engine.open_workflows = OpenWorkflowSet()
+        engine.open_workflows = OpenWorkflowSet(engine)
         flows = engine.open_workflows.open("workflow").flows
         flow_manager = FlowManager(MagicMock(spec=EventManager), engine=engine)
         flows.global_dag_builder.node_to_reference["node"] = MagicMock()

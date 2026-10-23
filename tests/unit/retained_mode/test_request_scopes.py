@@ -263,3 +263,33 @@ class TestForwardedRequests:
 
         assert result_event.succeeded()
         assert calls.workflows == [engine.open_workflows.get(workflow.workflow_id)]
+
+
+class TestNestedRequests:
+    """A runtime's requests name that runtime's workflow on their envelope."""
+
+    @pytest.mark.asyncio
+    async def test_a_runtime_addresses_its_requests_to_its_workflow(self, engine: Engine, calls: _Calls) -> None:
+        workflow = engine.open_workflows.get(push_unsaved_workflow(engine).workflow_id)
+        _register(engine, calls, RequestScope.WORKFLOW)
+
+        sync_result = workflow.handle_request(_ScopeProbeRequest())
+        async_result = await workflow.ahandle_request(_ScopeProbeRequest())
+
+        assert sync_result.succeeded()
+        assert async_result.succeeded()
+        assert calls.workflows == [workflow, workflow]
+
+    @pytest.mark.asyncio
+    async def test_a_closed_runtime_does_not_reach_the_open_workflow(self, engine: Engine, calls: _Calls) -> None:
+        """Its requests name its own workflow, so they never fall through to whichever one is open."""
+        closed = engine.open_workflows.get(push_unsaved_workflow(engine).workflow_id)
+        await engine.close_workflow_state(closed)
+        push_unsaved_workflow(engine)
+        _register(engine, calls, RequestScope.WORKFLOW)
+
+        result = await closed.ahandle_request(_ScopeProbeRequest())
+
+        assert isinstance(result, GenericResultFailure)
+        assert f"in workflow '{closed.workflow_id}'" in str(result.result_details)
+        assert calls.workflows == []

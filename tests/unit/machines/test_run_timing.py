@@ -70,7 +70,7 @@ class TestRunSeconds:
     @pytest.mark.asyncio
     async def test_cancelling_a_run_reports_how_long_it_ran(self) -> None:
         engine = MagicMock()
-        engine.open_workflows = OpenWorkflowSet()
+        engine.open_workflows = OpenWorkflowSet(engine)
         workflow = engine.open_workflows.open("workflow")
         flow_manager = FlowManager(MagicMock(spec=EventManager), engine=engine)
         machine = MagicMock()

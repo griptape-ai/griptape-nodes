@@ -9,7 +9,7 @@ from griptape_nodes.retained_mode.runtime.open_workflow_set import OpenWorkflowS
 class TestRenameToTakenName:
     def test_details_name_the_requested_name(self) -> None:
         engine = MagicMock()
-        engine.open_workflows = OpenWorkflowSet()
+        engine.open_workflows = OpenWorkflowSet(engine)
         engine.open_workflows.open("wf")
         object_manager = ObjectManager(MagicMock(), engine=engine)
         object_manager.add_object_by_name("Flow_1", MagicMock(spec=ControlFlow))

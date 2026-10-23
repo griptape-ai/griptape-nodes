@@ -39,7 +39,7 @@ def _flow_manager_with_advancing_machine() -> _AdvancingRun:
 
 def _flow_manager_with_open_workflow() -> FlowManager:
     engine = MagicMock()
-    engine.open_workflows = OpenWorkflowSet()
+    engine.open_workflows = OpenWorkflowSet(engine)
     engine.open_workflows.open("workflow")
     return FlowManager(MagicMock(spec=EventManager), engine=engine)
 

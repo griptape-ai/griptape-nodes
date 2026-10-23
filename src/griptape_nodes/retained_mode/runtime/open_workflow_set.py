@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from griptape_nodes.retained_mode.runtime.workflow_runtime import WorkflowRuntime
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.runtime.workflow_runtime import RequestDispatcher
 
 
 class OpenWorkflowError(Exception):
@@ -19,7 +24,13 @@ class OpenWorkflowSet:
     One workflow is open at a time. Reads never open anything: only `open` adds a runtime.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, dispatcher: RequestDispatcher) -> None:
+        """Make an empty set.
+
+        Args:
+            dispatcher: The engine's request dispatch, handed to each runtime for the requests it sends.
+        """
+        self._dispatcher = dispatcher
         self._by_id: dict[str, WorkflowRuntime] = {}
 
     def open(self, workflow_id: str) -> WorkflowRuntime:
@@ -36,7 +47,7 @@ class OpenWorkflowSet:
             msg = f"Attempted to open workflow '{workflow_id}'. Failed because workflow '{open_id}' is already open."
             raise OpenWorkflowError(msg)
 
-        workflow = WorkflowRuntime(workflow_id)
+        workflow = WorkflowRuntime(workflow_id, self._dispatcher)
         self._by_id[workflow_id] = workflow
         return workflow
 
