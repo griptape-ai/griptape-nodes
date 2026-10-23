@@ -11,10 +11,15 @@ import pytest
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.retained_mode.events.app_events import EngineHeartbeatRequest, EngineHeartbeatResultSuccess
 from griptape_nodes.retained_mode.events.context_events import GetWorkflowContextRequest, GetWorkflowContextSuccess
-from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest, ExecuteNodeResultFailure
+from griptape_nodes.retained_mode.events.execution_events import (
+    CancelFlowRequest,
+    ExecuteNodeRequest,
+    ExecuteNodeResultFailure,
+)
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
     CreateFlowResultSuccess,
+    DeleteFlowRequest,
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
 )
@@ -589,6 +594,23 @@ class TestCloseWorkflowState:
 
         assert result.succeeded()
         assert calls == ["cancel", "teardown"]
+        assert engine.open_workflows.sole_workflow_or_none() is None
+
+    def test_clearing_the_open_workflow_addresses_its_cancel_and_delete_requests_to_it(self, engine: Engine) -> None:
+        workflow = push_unsaved_workflow(engine)
+        engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="canvas"))
+        flow_manager = engine.flow_manager
+
+        with (
+            patch.object(flow_manager, "check_for_existing_running_flow_in", return_value=True),
+            patch.object(flow_manager, "cancel_flow_run"),
+            patch.object(engine, "handle_request", wraps=engine.handle_request) as handle_request,
+        ):
+            engine.clear_current_workflow_data()
+
+        sent = {type(call.args[0]): call.kwargs.get("workflow_id") for call in handle_request.call_args_list}
+        assert sent[CancelFlowRequest] == workflow.workflow_id
+        assert sent[DeleteFlowRequest] == workflow.workflow_id
         assert engine.open_workflows.sole_workflow_or_none() is None
 
     def test_deleting_another_workflow_leaves_the_open_one_alone(self, engine: Engine) -> None:

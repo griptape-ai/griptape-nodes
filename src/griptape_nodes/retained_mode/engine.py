@@ -607,18 +607,17 @@ class Engine:
 
         # Cancel any running flow so the delete path doesn't race with execution.
         flow_manager = self._flow_manager
-        for flow_name in self._object_manager.get_filtered_subset(type=ControlFlow):
+        for flow_name in workflow.objects.get_filtered_subset(type=ControlFlow):
             if flow_manager.check_for_existing_running_flow_in(workflow):
-                self.handle_request(CancelFlowRequest(flow_name=flow_name))
+                workflow.handle_request(CancelFlowRequest(flow_name=flow_name))
 
         self._tear_down_open_workflow(workflow)
 
     def _tear_down_open_workflow(self, workflow: WorkflowRuntime) -> None:
         """Delete the open workflow's orphan flows, then close its context, dropping its state.
 
-        Order matters: `on_delete_flow_request` pushes a flow context via `ContextManager().flow(...)`,
-        which raises `NoActiveWorkflowError` if the workflow has already been closed. So we delete
-        flows first and close the workflow last.
+        Order matters: the delete requests are addressed to `workflow`, and dispatch fails a request
+        whose workflow is no longer open. So we delete flows first and close the workflow last.
         """
         context_manager = self._context_manager
         flow_manager = self._flow_manager
@@ -629,12 +628,12 @@ class Engine:
         # `on_delete_flow_request` cascades into its children and nodes.
         more_flows = True
         while more_flows:
-            flows = self._object_manager.get_filtered_subset(type=ControlFlow)
+            flows = workflow.objects.get_filtered_subset(type=ControlFlow)
             found_orphan = False
             for flow_name in flows:
                 parent = flow_manager.get_parent_flow_in(workflow, flow_name)
                 if not parent:
-                    self.handle_request(DeleteFlowRequest(flow_name=flow_name))
+                    workflow.handle_request(DeleteFlowRequest(flow_name=flow_name))
                     found_orphan = True
                     break
             if not flows or not found_orphan:
