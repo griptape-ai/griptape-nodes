@@ -91,7 +91,7 @@ class ObjectManager(EngineScoped):
             case ControlFlow():
                 self.engine.flow_manager.handle_flow_rename(workflow, old_name=request.object_name, new_name=final_name)
             case BaseNode():
-                self.engine.node_manager.handle_node_rename(old_name=request.object_name, new_name=final_name)
+                self.engine.node_manager.handle_node_rename(workflow, old_name=request.object_name, new_name=final_name)
             case _:
                 details = f"Attempted to rename an object named '{request.object_name}', but that object wasn't of a type supported for rename."
                 return RenameObjectResultFailure(next_available_name=None, result_details=details)
@@ -184,7 +184,11 @@ class ObjectManager(EngineScoped):
         return self._objects_or_empty().generate_name(type_name=type_name, requested_name=requested_name)
 
     def add_object_by_name(self, name: str, obj: object) -> None:
-        self.engine.open_workflows.sole_workflow().objects.add(name, obj)
+        """Edge method for code not handed a workflow; engine code calls `add_object_by_name_in`."""
+        self.add_object_by_name_in(self.engine.open_workflows.sole_workflow(), name, obj)
+
+    def add_object_by_name_in(self, workflow: WorkflowRuntime, name: str, obj: object) -> None:
+        workflow.objects.add(name, obj)
         if isinstance(obj, BaseNode):
             obj.set_change_listener(self._note_queued_changes)
 
@@ -204,7 +208,11 @@ class ObjectManager(EngineScoped):
         return self._objects_or_empty().get_as_type(name, cast_type)
 
     def del_obj_by_name(self, name: str) -> None:
-        objects = self.engine.open_workflows.sole_workflow().objects
+        """Edge method for code not handed a workflow; engine code calls `del_obj_by_name_in`."""
+        self.del_obj_by_name_in(self.engine.open_workflows.sole_workflow(), name)
+
+    def del_obj_by_name_in(self, workflow: WorkflowRuntime, name: str) -> None:
+        objects = workflow.objects
         # Does the object have any children? delete those
         obj = objects.get(name)
         if obj is None:
@@ -214,10 +222,10 @@ class ObjectManager(EngineScoped):
             for child in children:
                 obj.remove_child(child)
                 if isinstance(child, BaseNode):
-                    self.engine.handle_request(DeleteNodeRequest(child.name))
+                    workflow.handle_request(DeleteNodeRequest(child.name))
                     return
                 if isinstance(child, Parameter) and isinstance(obj, BaseNode):
-                    self.engine.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
+                    workflow.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
                     return
         if isinstance(obj, BaseNode):
             obj.set_change_listener(None)
