@@ -153,6 +153,21 @@ class TestWorkflowScopes:
         assert result_event.workflow_id == NOT_OPEN_ID
         assert calls.workflows == []
 
+    @pytest.mark.asyncio
+    async def test_an_addressing_failure_logs_at_the_request_s_failure_log_level(
+        self, engine: Engine, calls: _Calls, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A caller that expects the miss can quiet it, as for any failure its handler returns."""
+        _register(engine, calls, RequestScope.WORKFLOW)
+
+        with caplog.at_level(logging.DEBUG, logger="griptape_nodes"):
+            await engine.event_manager.ahandle_request(
+                _ScopeProbeRequest(failure_log_level=logging.DEBUG), workflow_id=NOT_OPEN_ID
+            )
+
+        records = [record for record in caplog.records if "that workflow isn't open" in record.getMessage()]
+        assert [record.levelno for record in records] == [logging.DEBUG]
+
     @pytest.mark.parametrize("scope", [RequestScope.WORKFLOW, RequestScope.OPTIONAL_WORKFLOW])
     @pytest.mark.asyncio
     async def test_no_envelope_id_gets_the_open_workflow(
