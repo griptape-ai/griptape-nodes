@@ -33,10 +33,10 @@ class RunningFlowStub:
         self.calls = calls
         self.running = True
 
-    def check_for_existing_running_flow(self) -> bool:
+    def check_for_existing_running_flow_in(self, _workflow: object) -> bool:
         return self.running
 
-    async def cancel_flow_run(self) -> None:
+    async def cancel_flow_run(self, _workflow: object) -> None:
         self.calls.append("cancel")
         self.running = False
 
@@ -64,7 +64,7 @@ class TestClearAllObjectStateCancelsFirst:
 
         with (
             patch.object(
-                flow_manager, "check_for_existing_running_flow", side_effect=flow.check_for_existing_running_flow
+                flow_manager, "check_for_existing_running_flow_in", side_effect=flow.check_for_existing_running_flow_in
             ),
             patch.object(flow_manager, "cancel_flow_run", side_effect=flow.cancel_flow_run),
             patch.object(flow_manager, "reset_global_execution_state", side_effect=record_reset),
@@ -73,9 +73,10 @@ class TestClearAllObjectStateCancelsFirst:
             result = engine.handle_request(ClearAllObjectStateRequest(i_know_what_im_doing=True))
 
         assert isinstance(result, ClearAllObjectStateResultSuccess)
-        expected = ["cancel", "reset"]
+        # With no workflow open there is no run to cancel.
+        expected = ["reset"]
         if workflow_open:
-            expected.append("teardown")
+            expected = ["cancel", "reset", "teardown"]
         assert calls == expected, "the reset must not run ahead of the cancel"
         assert engine.open_workflows.sole_workflow_or_none() is None
 
@@ -93,10 +94,11 @@ class TestCancelRunningFlowBeforeTeardown:
 
     @pytest.mark.asyncio
     async def test_running_flow_is_cancelled(self, engine: Engine) -> None:
+        push_unsaved_workflow(engine)
         flow_manager = engine.flow_manager
 
         with (
-            patch.object(flow_manager, "check_for_existing_running_flow", return_value=True),
+            patch.object(flow_manager, "check_for_existing_running_flow_in", return_value=True),
             patch.object(flow_manager, "cancel_flow_run", AsyncMock()) as cancel,
         ):
             await flow_manager.cancel_running_flow_before_teardown()
@@ -107,10 +109,11 @@ class TestCancelRunningFlowBeforeTeardown:
     async def test_a_failed_cancel_does_not_block_the_teardown(
         self, engine: Engine, caplog: pytest.LogCaptureFixture
     ) -> None:
+        push_unsaved_workflow(engine)
         flow_manager = engine.flow_manager
 
         with (
-            patch.object(flow_manager, "check_for_existing_running_flow", return_value=True),
+            patch.object(flow_manager, "check_for_existing_running_flow_in", return_value=True),
             patch.object(flow_manager, "cancel_flow_run", AsyncMock(side_effect=RuntimeError("stuck node"))),
         ):
             await flow_manager.cancel_running_flow_before_teardown()

@@ -250,7 +250,8 @@ class TestFlowManagerDagBuilderIntegration:
 
         engine = MagicMock()
         engine.open_workflows = OpenWorkflowSet(engine)
-        flows = engine.open_workflows.open("workflow").flows
+        workflow = engine.open_workflows.open("workflow")
+        flows = workflow.flows
         flow_manager = FlowManager(MagicMock(spec=EventManager), engine=engine)
         flows.global_dag_builder.node_to_reference["node"] = MagicMock()
 
@@ -259,8 +260,8 @@ class TestFlowManagerDagBuilderIntegration:
         mock_control_flow.context.flow_name = "test_flow"
         flows.global_control_flow_machine = mock_control_flow
 
-        with patch.object(flow_manager, "check_for_existing_running_flow", return_value=True):
-            await flow_manager.cancel_flow_run()
+        with patch.object(flow_manager, "check_for_existing_running_flow_in", return_value=True):
+            await flow_manager.cancel_flow_run(workflow)
 
         assert flows.global_dag_builder.node_to_reference == {}
 

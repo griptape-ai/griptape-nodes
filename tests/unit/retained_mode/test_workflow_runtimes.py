@@ -14,7 +14,6 @@ from griptape_nodes.retained_mode.events.context_events import GetWorkflowContex
 from griptape_nodes.retained_mode.events.execution_events import ExecuteNodeRequest, ExecuteNodeResultFailure
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
-    CreateFlowResultFailure,
     CreateFlowResultSuccess,
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
@@ -572,7 +571,7 @@ class TestCloseWorkflowState:
         running = [True]
         tear_down_open_workflow = engine._tear_down_open_workflow
 
-        async def cancel_flow_run() -> None:
+        async def cancel_flow_run(_workflow: object) -> None:
             await asyncio.sleep(0)
             calls.append("cancel")
             running[0] = False
@@ -582,7 +581,7 @@ class TestCloseWorkflowState:
             tear_down_open_workflow()
 
         with (
-            patch.object(flow_manager, "check_for_existing_running_flow", side_effect=lambda: running[0]),
+            patch.object(flow_manager, "check_for_existing_running_flow_in", side_effect=lambda _workflow: running[0]),
             patch.object(flow_manager, "cancel_flow_run", side_effect=cancel_flow_run),
             patch.object(engine, "_tear_down_open_workflow", side_effect=record_teardown),
         ):
@@ -638,8 +637,8 @@ class TestObjectsOnTheRuntime:
     def test_create_flow_with_no_workflow_open_is_refused_before_it_needs_one(self, engine: Engine) -> None:
         result = engine.handle_request(CreateFlowRequest(parent_flow_name=None, flow_name="canvas"))
 
-        assert isinstance(result, CreateFlowResultFailure)
-        assert "no Workflow was active" in str(result.result_details)
+        assert result.failed()
+        assert "names no workflow and none is open" in str(result.result_details)
 
     def test_rename_moves_the_object_within_the_open_workflow(self, engine: Engine) -> None:
         push_unsaved_workflow(engine)
@@ -830,7 +829,7 @@ class TestFlowsOnTheRuntime:
         flow_name = _create_canvas(engine)
 
         assert engine.open_workflows.sole_workflow().flows.name_to_parent_name == {flow_name: None}
-        assert engine.flow_manager.does_canvas_exist()
+        assert engine.flow_manager.does_canvas_exist(engine.open_workflows.sole_workflow())
 
     def test_the_fronts_read_the_open_workflows_flows(self, engine: Engine) -> None:
         push_unsaved_workflow(engine)
@@ -852,10 +851,8 @@ class TestFlowsOnTheRuntime:
     def test_lookups_find_no_flows_and_no_run_with_no_workflow_open(self, engine: Engine) -> None:
         flow_manager = engine.flow_manager
 
-        assert not flow_manager.does_canvas_exist()
         assert flow_manager.get_connections().connections == {}
         assert not flow_manager.check_for_existing_running_flow()
-        assert not flow_manager.execution_is_advancing()
         assert not flow_manager.global_single_node_resolution
         assert flow_manager.global_flow_queue.empty()
         assert flow_manager.global_dag_builder.node_to_reference == {}
@@ -891,7 +888,7 @@ class TestFlowsOnTheRuntime:
         assert reopened.global_control_flow_machine is None
         assert reopened.global_dag_builder.node_to_reference == {}
         assert not reopened.global_single_node_resolution
-        assert not engine.flow_manager.does_canvas_exist()
+        assert not engine.flow_manager.does_canvas_exist(engine.open_workflows.sole_workflow())
 
     def test_a_bare_pop_of_the_last_entry_leaves_no_canvas_behind(self, engine: Engine) -> None:
         push_unsaved_workflow(engine)
@@ -900,7 +897,7 @@ class TestFlowsOnTheRuntime:
         engine.context_manager.pop_workflow()
         push_unsaved_workflow(engine)
 
-        assert not engine.flow_manager.does_canvas_exist()
+        assert not engine.flow_manager.does_canvas_exist(engine.open_workflows.sole_workflow())
         assert _create_canvas(engine) == "canvas"
 
     def test_a_run_in_one_workflow_is_not_seen_after_it_closes(self, engine: Engine) -> None:
