@@ -56,6 +56,7 @@ from griptape_nodes.retained_mode.events.variable_events import (
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.runtime.variables import WorkflowVariables
 from griptape_nodes.retained_mode.variable_types import (
     FlowVariable,
     VariableLayer,
@@ -124,10 +125,7 @@ class VariablesManager(EngineScoped):
 
     def __init__(self, event_manager: EventManager | None = None, *, engine: Engine | None = None) -> None:
         super().__init__(engine)
-        # Storage for flow-scoped variables: one VariableLayer per flow, lazily created.
-        self._flow_layers: dict[str, VariableLayer] = {}
-        # Storage for global variables: single VariableLayer.
-        self._global_layer: VariableLayer = VariableLayer()
+        # Flow and global variables belong to the open workflow and live on its runtime.
         # Stored (user-defined) project variables: project_id -> layer. Populated by
         # ProjectManager pushing set_project_variables() when a template with variables
         # loads; an absent entry behaves as an empty layer. Computed project names
@@ -136,22 +134,15 @@ class VariablesManager(EngineScoped):
         if event_manager is not None:
             event_manager.register_request_handlers(self)
 
-    def clear_object_state(self) -> None:
-        """Clear all flow and global variables.
+    def _variables_or_empty(self) -> WorkflowVariables:
+        """The open workflow's flow and global variables for a lookup, which finds none when no workflow is open.
 
-        Project variable layers are deliberately NOT cleared: they track project
-        lifecycle (template load/unregister), not workflow state.
+        Only lookups read through here. Creating a variable needs a workflow to hold it.
         """
-        self._flow_layers.clear()
-        self._global_layer.clear()
-
-    def _get_or_create_flow_layer(self, flow_name: str) -> VariableLayer:
-        """Return the flow's VariableLayer, lazily creating an empty one on first touch."""
-        layer = self._flow_layers.get(flow_name)
-        if layer is None:
-            layer = VariableLayer()
-            self._flow_layers[flow_name] = layer
-        return layer
+        workflow = self.engine.open_workflows.sole_workflow_or_none()
+        if workflow is None:
+            return WorkflowVariables()
+        return workflow.variables
 
     def _writable_storage_layer(
         self, variable: FlowVariable, found_layer: VariableLayerKind | None, *, project_id: str | None = None
@@ -170,9 +161,11 @@ class VariablesManager(EngineScoped):
         """
         match found_layer:
             case VariableLayerKind.GLOBAL:
-                return self._global_layer
+                return self.engine.open_workflows.sole_workflow().variables.global_layer
             case VariableLayerKind.FLOW:
-                return self._flow_layers.get(variable.owning_flow_name) if variable.owning_flow_name else None
+                if variable.owning_flow_name is None:
+                    return None
+                return self.engine.open_workflows.sole_workflow().variables.flow_layer(variable.owning_flow_name)
             case VariableLayerKind.PROJECT:
                 effective = self._effective_project_id(project_id)
                 if effective is None:
@@ -222,7 +215,7 @@ class VariablesManager(EngineScoped):
 
     def _find_variable_in_flow(self, flow_name: str, variable_name: str) -> FlowVariable | None:
         """Find a variable in a specific flow."""
-        layer = self._flow_layers.get(flow_name)
+        layer = self._variables_or_empty().flow_layer(flow_name)
         if layer is None:
             return None
         return layer.get(variable_name)
@@ -421,7 +414,7 @@ class VariablesManager(EngineScoped):
                 )
 
             case VariableScope.GLOBAL_ONLY:
-                variable = self._global_layer.get(variable_name)
+                variable = self._variables_or_empty().global_layer.get(variable_name)
                 if variable is None:
                     return VariableLookupResult(variable=None, found_scope=None, found_layer=None)
                 return VariableLookupResult(
@@ -448,7 +441,7 @@ class VariablesManager(EngineScoped):
                         variable=variable, found_scope=VariableScope.PROJECT_ONLY, found_layer=VariableLayerKind.PROJECT
                     )
 
-                variable = self._global_layer.get(variable_name)
+                variable = self._variables_or_empty().global_layer.get(variable_name)
                 if variable is None:
                     return VariableLookupResult(variable=None, found_scope=None, found_layer=None)
                 return VariableLookupResult(
@@ -462,7 +455,7 @@ class VariablesManager(EngineScoped):
                         variable=variable, found_scope=VariableScope.PROJECT_ONLY, found_layer=VariableLayerKind.PROJECT
                     )
 
-                variable = self._global_layer.get(variable_name)
+                variable = self._variables_or_empty().global_layer.get(variable_name)
                 if variable is None:
                     return VariableLookupResult(variable=None, found_scope=None, found_layer=None)
                 return VariableLookupResult(
@@ -544,8 +537,13 @@ class VariablesManager(EngineScoped):
             )
 
         if request.is_global:
+            workflow = self.engine.open_workflows.sole_workflow_or_none()
+            if workflow is None:
+                return CreateVariableResultFailure(
+                    result_details=f"Attempted to create a global variable named '{request.name}'. Failed because no workflow is open."
+                )
             # Check for name collision in global variables
-            if self._global_layer.has(request.name):
+            if workflow.variables.global_layer.has(request.name):
                 return CreateVariableResultFailure(
                     result_details=f"Attempted to create a global variable named '{request.name}'. Failed because a variable with that name already exists."
                 )
@@ -558,7 +556,7 @@ class VariablesManager(EngineScoped):
                 value=request.value,
             )
 
-            self._global_layer.set(variable)
+            workflow.variables.global_layer.set(variable)
             return CreateVariableResultSuccess(result_details=f"Successfully created global variable '{request.name}'.")
 
         # Get the target flow
@@ -569,7 +567,12 @@ class VariablesManager(EngineScoped):
                 result_details=f"Attempted to create variable '{request.name}'. Failed to determine target flow: {e}"
             )
 
-        flow_layer = self._get_or_create_flow_layer(target_flow)
+        workflow = self.engine.open_workflows.sole_workflow_or_none()
+        if workflow is None:
+            return CreateVariableResultFailure(
+                result_details=f"Attempted to create variable '{request.name}' in flow '{target_flow}'. Failed because no workflow is open."
+            )
+        flow_layer = workflow.variables.flow_layer_for_write(target_flow)
 
         # Check for name collision in target flow
         if flow_layer.has(request.name):
@@ -897,7 +900,7 @@ class VariablesManager(EngineScoped):
         match lookup_scope:
             case VariableScope.CURRENT_FLOW_ONLY:
                 # Just this flow's own layer — no ancestors, project, or global.
-                layer = self._flow_layers.get(starting_flow)
+                layer = self._variables_or_empty().flow_layer(starting_flow)
                 if layer is None:
                     return []
                 return [ResolvedVariable(variable=v, layer=VariableLayerKind.FLOW) for v in layer.list()]
@@ -908,7 +911,10 @@ class VariablesManager(EngineScoped):
 
             case VariableScope.GLOBAL_ONLY:
                 # Just the global layer.
-                return [ResolvedVariable(variable=v, layer=VariableLayerKind.GLOBAL) for v in self._global_layer.list()]
+                return [
+                    ResolvedVariable(variable=v, layer=VariableLayerKind.GLOBAL)
+                    for v in self._variables_or_empty().global_layer.list()
+                ]
 
             case VariableScope.HIERARCHICAL:
                 # Full chain: flow ancestry → project → global, with shadowing.
@@ -918,12 +924,12 @@ class VariablesManager(EngineScoped):
                 # Project → global (skips flows). `seen` tracks names already claimed by
                 # the project layer so project shadows global: the helper tags project
                 # entries and fills `seen`; then we add only the globals not shadowed,
-                # tagged GLOBAL because they come from self._global_layer.
+                # tagged GLOBAL because they come from the workflow's global layer.
                 seen: set[str] = set()
                 result = self._collect_resolvable_project_variables(seen, project_id=project_id)
                 result.extend(
                     ResolvedVariable(variable=v, layer=VariableLayerKind.GLOBAL)
-                    for v in self._global_layer.list()
+                    for v in self._variables_or_empty().global_layer.list()
                     if v.name not in seen
                 )
                 return result
@@ -950,7 +956,7 @@ class VariablesManager(EngineScoped):
 
         # Flow ancestry (innermost first)
         for flow_name in hierarchy:
-            flow_layer = self._flow_layers.get(flow_name)
+            flow_layer = self._variables_or_empty().flow_layer(flow_name)
             if flow_layer is None:
                 continue
             for var in flow_layer.list():
@@ -964,7 +970,7 @@ class VariablesManager(EngineScoped):
         # Global layer (lowest priority)
         variables.extend(
             ResolvedVariable(variable=var, layer=VariableLayerKind.GLOBAL)
-            for var in self._global_layer.list()
+            for var in self._variables_or_empty().global_layer.list()
             if var.name not in seen_names
         )
 
@@ -979,14 +985,15 @@ class VariablesManager(EngineScoped):
         """
         variables: list[ResolvedVariable] = []
 
-        for flow_layer in self._flow_layers.values():
+        for flow_layer in self._variables_or_empty().flow_layers.values():
             variables.extend(ResolvedVariable(variable=v, layer=VariableLayerKind.FLOW) for v in flow_layer.list())
 
         # Project layer entries — silent-skip resolution failures for enumeration.
         variables.extend(self._collect_resolvable_project_variables(set(), project_id=project_id))
 
         variables.extend(
-            ResolvedVariable(variable=v, layer=VariableLayerKind.GLOBAL) for v in self._global_layer.list()
+            ResolvedVariable(variable=v, layer=VariableLayerKind.GLOBAL)
+            for v in self._variables_or_empty().global_layer.list()
         )
 
         return variables
@@ -1241,9 +1248,7 @@ class VariablesManager(EngineScoped):
 
         connections = flow_manager.get_connections()
 
-        for obj in list(self.engine.object_manager._name_to_objects.values()):
-            if not isinstance(obj, BaseNode):
-                continue
+        for obj in self.engine.object_manager.get_filtered_subset(type=BaseNode).values():
             if obj.state not in (NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING):
                 continue
             for param in obj.parameters:

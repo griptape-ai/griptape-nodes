@@ -19,6 +19,7 @@ from griptape_nodes.retained_mode.events.node_events import (
 )
 from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest
 from griptape_nodes.serialization.values import UndecodedValue
+from tests.workflow_context import push_unsaved_workflow
 
 
 class TestNodeManagerBatchSetNodeMetadata:
@@ -435,6 +436,7 @@ class TestGetParameterValueOutputPriority:
         mock_node.parameter_output_values = {"result": output_value}
         mock_node.get_parameter_by_name.return_value = param
 
+        push_unsaved_workflow(engine)
         obj_mgr = engine.object_manager
         obj_mgr.add_object_by_name("test_node", mock_node)
 
@@ -465,6 +467,7 @@ class TestGetParameterValueOutputPriority:
         mock_node.parameter_output_values = {}
         mock_node.get_parameter_by_name.return_value = param
 
+        push_unsaved_workflow(engine)
         obj_mgr = engine.object_manager
         obj_mgr.add_object_by_name("test_node", mock_node)
 
@@ -495,6 +498,7 @@ class TestGetParameterValueOutputPriority:
         mock_node.parameter_output_values = {}
         mock_node.get_parameter_by_name.return_value = param
 
+        push_unsaved_workflow(engine)
         obj_mgr = engine.object_manager
         obj_mgr.add_object_by_name("test_node", mock_node)
 

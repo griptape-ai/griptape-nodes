@@ -485,13 +485,11 @@ class WorkflowSaver(EngineScoped):
         another workflow.
         """
         registry = self.engine.workflow_registry
-        variable_substitution = self.engine.workflow_manager.variable_substitution
         displaced = registry.find_by_path(written_path)
 
         if current_workflow is not None and workflow_metadata.workflow_id == current_workflow.workflow_id:
             if displaced is not None and displaced is not current_workflow:
                 registry.remove(displaced.workflow_id)
-                variable_substitution.drop(displaced.workflow_id)
             if displaced is not current_workflow:
                 registry.set_file_path(current_workflow, written_path)
             current_workflow.metadata = workflow_metadata
@@ -499,7 +497,6 @@ class WorkflowSaver(EngineScoped):
 
         if displaced is not None:
             registry.remove(displaced.workflow_id)
-            variable_substitution.drop(displaced.workflow_id)
         saved_workflow = registry.register_file(written_path, workflow_metadata)
 
         # Saving an open library workflow wrote a copy instead of the library's file. Move the
@@ -509,8 +506,6 @@ class WorkflowSaver(EngineScoped):
             and scenario is SaveWorkflowScenario.SAVE_FROM_TEMPLATE
             and current_workflow.metadata.is_griptape_provided
         ):
-            # The library workflow stays registered, so its substitution flag is copied, not moved.
-            variable_substitution.copy(current_workflow.workflow_id, saved_workflow.workflow_id)
             self.engine.context_manager.move_current_workflow_onto(saved_workflow.workflow_id)
         return saved_workflow
 

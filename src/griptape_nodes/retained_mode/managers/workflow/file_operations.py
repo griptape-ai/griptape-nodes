@@ -70,10 +70,7 @@ class WorkflowFileOperations(EngineScoped):
 
         context_manager = self.engine.context_manager
         if context_manager.has_current_workflow() and context_manager.get_current_workflow_id() == workflow.workflow_id:
-            self.engine.clear_current_workflow_data()
-            # clear_current_workflow_data releases what THIS process holds; the worker half must be
-            # awaited, so it belongs here in the async handler rather than in that sync method.
-            await self.engine.worker_manager.broadcast_local_object_teardown()
+            await self.engine.close_workflow_state(self.engine.open_workflows.sole_workflow())
         try:
             registry.remove(workflow.workflow_id)
         except Exception as e:
@@ -83,7 +80,6 @@ class WorkflowFileOperations(EngineScoped):
         # entry is the entire operation.
         workflow_file_path = workflow.file_path
         if workflow_file_path is None or workflow.absolute_path is None:
-            self.engine.workflow_manager.variable_substitution.drop(workflow.workflow_id)
             return DeleteWorkflowResultSuccess(
                 result_details=ResultDetails(
                     message=f"Successfully deleted unsaved workflow: {workflow.name}", level=logging.INFO
@@ -93,7 +89,6 @@ class WorkflowFileOperations(EngineScoped):
         if delete_failure is not None:
             details = f"Failed to delete workflow file with path '{workflow_file_path}'. {delete_failure}"
             return DeleteWorkflowResultFailure(result_details=details)
-        self.engine.workflow_manager.variable_substitution.drop(workflow.workflow_id)
         return DeleteWorkflowResultSuccess(
             result_details=ResultDetails(message=f"Successfully deleted workflow: {workflow.name}", level=logging.INFO)
         )
