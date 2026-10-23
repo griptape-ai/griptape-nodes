@@ -65,3 +65,39 @@ def handled_request_types(attr: object) -> tuple[type[RequestPayload], ...]:
 def handled_request_scope(attr: object) -> RequestScope | None:
     """The scope `@handles` declared, or None when it declared none. Looks through @staticmethod and @classmethod."""
     return getattr(getattr(attr, "__func__", attr), _HANDLED_REQUEST_SCOPE_ATTR, None)
+
+
+def check_handler_signature(
+    handler: Callable[..., Any], scope: RequestScope | None, request_type: type[RequestPayload]
+) -> None:
+    """Check that `handler` takes the `workflow` argument dispatch passes for `scope`, by parameter name.
+
+    Raises:
+        TypeError: The handler's `workflow` parameter does not match its scope.
+    """
+    parameter = inspect.signature(handler).parameters.get("workflow")
+    name = getattr(handler, "__qualname__", repr(handler))
+    declared = "no scope" if scope is None else f"scope {scope.name}"
+    attempt = f"Attempted to register '{name}' as the handler for {request_type.__name__} with {declared}."
+
+    if scope is RequestScope.WORKFLOW:
+        if parameter is None:
+            msg = f"{attempt} Failed because it has no `workflow` parameter. Add `workflow` with no default."
+            raise TypeError(msg)
+        if parameter.default is not inspect.Parameter.empty:
+            msg = f"{attempt} Failed because its `workflow` parameter has a default. Remove the default: dispatch always passes a workflow."
+            raise TypeError(msg)
+        return
+
+    if scope is RequestScope.OPTIONAL_WORKFLOW:
+        if parameter is None or parameter.default is not None:
+            msg = f"{attempt} Failed because it has no `workflow` parameter defaulting to None. Add `workflow=None`."
+            raise TypeError(msg)
+        return
+
+    if parameter is not None:
+        msg = (
+            f"{attempt} Failed because it has a `workflow` parameter, which dispatch passes only to "
+            "WORKFLOW and OPTIONAL_WORKFLOW handlers. Remove it, or declare one of those scopes."
+        )
+        raise TypeError(msg)

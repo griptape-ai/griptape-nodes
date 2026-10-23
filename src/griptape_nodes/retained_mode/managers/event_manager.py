@@ -37,7 +37,12 @@ from griptape_nodes.retained_mode.managers.authorization_checkpoint import (
     CheckpointDenial,
     CheckpointFailure,
 )
-from griptape_nodes.retained_mode.request_handlers import handled_request_types
+from griptape_nodes.retained_mode.request_handlers import (
+    RequestScope,
+    check_handler_signature,
+    handled_request_scope,
+    handled_request_types,
+)
 from griptape_nodes.utils.async_utils import call_function, to_thread
 
 if TYPE_CHECKING:
@@ -805,31 +810,42 @@ class EventManager(EngineScoped):
     def assign_manager_to_request_type(
         self,
         request_type: type[RP],
-        callback: Callable[[RP], ResultPayload] | Callable[[RP], Awaitable[ResultPayload]],
+        callback: Callable[..., ResultPayload] | Callable[..., Awaitable[ResultPayload]],
+        *,
+        scope: RequestScope | None = None,
     ) -> None:
         """Assign a manager to handle a request.
 
         Args:
             request_type: The type of request to assign the manager to
             callback: Function to be called when event occurs
+            scope: What the request acts on. None calls the callback with the request alone.
+
+        Raises:
+            ValueError: The request type already has a handler.
+            TypeError: The callback's `workflow` parameter does not match `scope`.
         """
         existing_manager = self._request_type_to_manager.get(request_type)
         if existing_manager is not None:
             msg = f"Attempted to assign an event of type {request_type} to manager {callback.__name__}, but that request is already assigned to manager {existing_manager.__name__}."
             raise ValueError(msg)
+        check_handler_signature(callback, scope, request_type)
         self._request_type_to_manager[request_type] = callback
 
     def register_request_handlers(self, owner: object) -> None:
         """Assign each `@handles` method on `owner`. An unmarked override keeps its parent's marks."""
-        marks: dict[str, tuple[type[RequestPayload], ...]] = {}
-        for klass in reversed(type(owner).__mro__):
-            for name, attr in vars(klass).items():
-                request_types = handled_request_types(attr)
-                if request_types:
-                    marks[name] = request_types
-        for name, request_types in marks.items():
-            for request_type in request_types:
-                self.assign_manager_to_request_type(request_type, getattr(owner, name))
+        # Later classes in this walk are subclasses, so an override's marks replace its parent's.
+        marked_attrs = {
+            name: attr
+            for klass in reversed(type(owner).__mro__)
+            for name, attr in vars(klass).items()
+            if handled_request_types(attr)
+        }
+        for name, attr in marked_attrs.items():
+            for request_type in handled_request_types(attr):
+                self.assign_manager_to_request_type(
+                    request_type, getattr(owner, name), scope=handled_request_scope(attr)
+                )
 
     def configure_worker_forwarding(
         self,
