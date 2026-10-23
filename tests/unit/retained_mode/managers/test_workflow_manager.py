@@ -2,6 +2,7 @@ import ast
 import asyncio
 import logging
 import re
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -188,6 +189,13 @@ def _register_unsaved_workflow(key: str, name: str) -> None:
     current_engine().workflow_registry.generate_new_workflow(registry_key=key, metadata=metadata, file_path=None)
 
 
+class _ImportCalls(NamedTuple):
+    """The mocked handlers an import went through."""
+
+    load_metadata: AsyncMock
+    register: MagicMock
+
+
 class TestWorkflowManager:
     """Test WorkflowManager functionality including parameter serialization."""
 
@@ -359,6 +367,83 @@ class TestWorkflowManager:
             assert isinstance(result, ImportWorkflowResultFailure)
             assert isinstance(result.result_details, ResultDetails)
             assert result.result_details.result_details[0].message == "Registration failed"
+
+    def _import_with_mocked_registration(self, engine: Engine, file_path: str) -> _ImportCalls:
+        workflow_manager = engine.workflow_manager
+        mock_metadata = MagicMock()
+        mock_metadata.name = "blur"
+        load_metadata = AsyncMock(
+            return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success")
+        )
+        with (
+            patch.object(workflow_manager, "on_load_workflow_metadata_request", load_metadata),
+            patch.object(engine.workflow_registry, "has_workflow_with_name", return_value=False),
+            patch.object(
+                workflow_manager,
+                "on_register_workflow_request",
+                return_value=RegisterWorkflowResultSuccess(workflow_name="blur", result_details="Success"),
+            ) as mock_register,
+            patch.object(workflow_manager, "persist_external_workflow_registration"),
+        ):
+            result = asyncio.run(
+                workflow_manager.on_import_workflow_request(ImportWorkflowRequest(file_path=file_path))
+            )
+
+        assert isinstance(result, ImportWorkflowResultSuccess)
+        return _ImportCalls(load_metadata=load_metadata, register=mock_register)
+
+    def test_import_resolves_macro_path_to_workspace_relative_path(
+        self, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A macro path registers under the same workspace-relative key the workspace scan uses."""
+        monkeypatch.setattr(engine.config_manager, "workspace_path", tmp_path)
+
+        calls = self._import_with_mocked_registration(engine, "{workspace_dir}/shots/blur.py")
+
+        expected = str(Path("shots") / "blur.py")
+        assert calls.load_metadata.call_args.args[0].file_name == expected
+        assert calls.register.call_args.args[0].file_name == expected
+
+    def test_unresolvable_macro_path_fails_naming_the_path(self, engine: Engine) -> None:
+        """A macro naming no project folder fails with the path the client sent."""
+        workflow_manager = engine.workflow_manager
+        file_path = "{no_such_directory}/blur.py"
+
+        metadata_result = asyncio.run(
+            workflow_manager.on_load_workflow_metadata_request(LoadWorkflowMetadata(file_name=file_path))
+        )
+        import_result = asyncio.run(
+            workflow_manager.on_import_workflow_request(ImportWorkflowRequest(file_path=file_path))
+        )
+
+        assert isinstance(metadata_result, LoadWorkflowMetadataResultFailure)
+        assert isinstance(import_result, ImportWorkflowResultFailure)
+        for result in (metadata_result, import_result):
+            assert isinstance(result.result_details, ResultDetails)
+            message = result.result_details.result_details[0].message
+            assert f"'{file_path}'" in message
+            assert "could not be resolved" in message
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Sends a Windows path to a POSIX engine")
+    def test_path_from_other_platform_says_so(self, engine: Engine) -> None:
+        """A path from another OS fails naming that cause, not the workspace-joined path."""
+        workflow_manager = engine.workflow_manager
+        file_path = r"\\host\share\u\blur.py"
+
+        metadata_result = asyncio.run(
+            workflow_manager.on_load_workflow_metadata_request(LoadWorkflowMetadata(file_name=file_path))
+        )
+        import_result = asyncio.run(
+            workflow_manager.on_import_workflow_request(ImportWorkflowRequest(file_path=file_path))
+        )
+
+        assert isinstance(metadata_result, LoadWorkflowMetadataResultFailure)
+        assert isinstance(import_result, ImportWorkflowResultFailure)
+        for result in (metadata_result, import_result):
+            assert isinstance(result.result_details, ResultDetails)
+            message = result.result_details.result_details[0].message
+            assert f"'{file_path}'" in message
+            assert "different operating system" in message
 
     def test_get_workflow_metadata_success(self, engine: Engine) -> None:
         """Ensure GetWorkflowMetadataRequest returns workflow.metadata directly."""

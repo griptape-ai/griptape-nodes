@@ -41,12 +41,15 @@ class PerPlatformPathBase(BaseModel):
 
     def select(self) -> str | None:
         """Return the value for the active platform, falling back to `default`."""
-        active = active_platform_key()
-        if active == "linux" and self.linux is not None:
+        return self.select_for(active_platform_key())
+
+    def select_for(self, platform_key: str) -> str | None:
+        """Return the value for `platform_key`, falling back to `default`."""
+        if platform_key == "linux" and self.linux is not None:
             return self.linux
-        if active == "darwin" and self.darwin is not None:
+        if platform_key == "darwin" and self.darwin is not None:
             return self.darwin
-        if active == "windows" and self.windows is not None:
+        if platform_key == "windows" and self.windows is not None:
             return self.windows
         return self.default
 

@@ -1107,6 +1107,17 @@ def resolve_file_path(path_str: str, base_dir: Path) -> Path:
     return resolve_path_safely(base_dir / path_str)
 
 
+def is_absolute_on_other_platform(path_str: str) -> bool:
+    r"""Return True if a path is absolute on the other OS family but not on this one.
+
+    `/Volumes/share` on Windows has no drive, and `C:\share` or `\\host\share` on macOS or
+    Linux is a relative filename. A path both families read as absolute is native here.
+    """
+    if is_windows():
+        return PurePosixPath(path_str).is_absolute() and not PureWindowsPath(path_str).is_absolute()
+    return PureWindowsPath(path_str).is_absolute() and not PurePosixPath(path_str).is_absolute()
+
+
 def resolve_workspace_path(path: Path, base_directory: Path) -> Path:
     """Resolve a path, treating relative paths as relative to a base directory.
 

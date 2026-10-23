@@ -19,6 +19,7 @@ from griptape_nodes.files.path_utils import (
     expand_path,
     expand_path_fully,
     expansion_introduced_quoting,
+    is_absolute_on_other_platform,
     is_url,
     normalize_path_for_platform,
     parse_file_uri,
@@ -646,6 +647,38 @@ class TestStripWindowsLongPathPrefix:
         monkeypatch.setattr("griptape_nodes.files.path_utils.is_windows", lambda: True)
         for original in (r"C:\ws\file.png", r"\\server\share\file.png"):
             assert strip_windows_long_path_prefix(_apply_windows_long_path_prefix(original)) == original
+
+
+class TestIsAbsoluteOnOtherPlatform:
+    """A path absolute only on the other OS family is foreign; anything else is native."""
+
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            (r"C:\share\blur.py", True),
+            (r"\\host\share\blur.py", True),
+            ("/mnt/share/blur.py", False),
+            ("//host/share/blur.py", False),
+            ("shots/blur.py", False),
+        ],
+    )
+    def test_on_posix_host(self, monkeypatch: pytest.MonkeyPatch, path: str, *, expected: bool) -> None:
+        monkeypatch.setattr("griptape_nodes.files.path_utils.is_windows", lambda: False)
+        assert is_absolute_on_other_platform(path) is expected
+
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            ("/Volumes/share/blur.py", True),
+            (r"C:\share\blur.py", False),
+            (r"\\host\share\blur.py", False),
+            ("//host/share/blur.py", False),
+            ("shots/blur.py", False),
+        ],
+    )
+    def test_on_windows_host(self, monkeypatch: pytest.MonkeyPatch, path: str, *, expected: bool) -> None:
+        monkeypatch.setattr("griptape_nodes.files.path_utils.is_windows", lambda: True)
+        assert is_absolute_on_other_platform(path) is expected
 
 
 class TestResolveFilePath:

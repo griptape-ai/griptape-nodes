@@ -7,7 +7,7 @@ import logging
 import os
 import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import anyio
@@ -45,6 +45,7 @@ from griptape_nodes.common.project_templates import (
     schema_major_or_none,
     select_project_path,
 )
+from griptape_nodes.common.project_templates.directory import PerPlatformPathBase, active_platform_key
 from griptape_nodes.common.project_templates.situation import BuiltInSituation
 from griptape_nodes.common.workflow_context_handoff import WorkflowContextSnapshot
 from griptape_nodes.files.derivation import DERIVATION_RULES, apply_derivation_rules
@@ -244,6 +245,96 @@ def _project_selection_failure(project_id: str | None) -> str:
     if project_id is None:
         return "no current project is set or its template is not loaded"
     return f"project '{project_id}' is not loaded"
+
+
+_PLATFORM_PATH_TYPES: dict[str, type[PurePath]] = {
+    "linux": PurePosixPath,
+    "darwin": PurePosixPath,
+    "windows": PureWindowsPath,
+}
+
+
+class _MacroRoot(NamedTuple):
+    """A folder that a project variable names, parsed with the path rules of one platform.
+
+    Attributes:
+        variable: The variable naming the folder, such as `outputs` or `workspace_dir`.
+        root: The folder. Its type (`Path`, `PurePosixPath`, `PureWindowsPath`) decides how
+            a path is parsed when matched against it.
+    """
+
+    variable: str
+    root: PurePath
+
+
+class _MacroRootMatch(NamedTuple):
+    """The variable whose folder contains a path, and the rest of the path below that folder."""
+
+    variable: str
+    relative_path: PurePath
+
+
+def _longest_macro_root_match(path: str | PurePath, roots: Iterable[_MacroRoot]) -> _MacroRootMatch | None:
+    """Return the most specific root containing `path`, or None.
+
+    `path` is parsed with each root's own path rules, so drives, UNC shares, separators, and
+    Windows case-insensitivity compare correctly. On a tie, the first root wins.
+    """
+    best_match: _MacroRootMatch | None = None
+    best_depth = -1
+    for macro_root in roots:
+        candidate = type(macro_root.root)(path)
+        if not candidate.is_relative_to(macro_root.root):
+            continue
+        depth = len(macro_root.root.parts)
+        if depth <= best_depth:
+            continue
+        best_match = _MacroRootMatch(variable=macro_root.variable, relative_path=candidate.relative_to(macro_root.root))
+        best_depth = depth
+    return best_match
+
+
+def _platform_path_to_macro_path(path_str: str, platform_key: str, template: ProjectTemplate) -> str | None:
+    """Map a path written on `platform_key` to macro form through the project's values for that OS."""
+    roots: list[_MacroRoot] = []
+    workspace_root = _platform_root(BUILTIN_WORKSPACE_DIR, template.workspace_dir, platform_key)
+    if workspace_root is not None:
+        roots.append(workspace_root)
+    for name, directory in template.directories.items():
+        directory_root = _platform_root(name, directory.path_macro, platform_key)
+        if directory_root is not None:
+            roots.append(directory_root)
+
+    match = _longest_macro_root_match(path_str, roots)
+    if match is None:
+        return None
+    return _macro_path_for_match(match)
+
+
+def _platform_root(variable: str, value: str | PerPlatformPathBase | None, platform_key: str) -> _MacroRoot | None:
+    """Return the folder a project value names on `platform_key`, or None if it isn't a plain absolute path.
+
+    `~`, environment variables, and macros are skipped: they describe the other machine and
+    can't be expanded here. A `$` or `%` that is only part of a folder name is skipped too,
+    which costs a match but never maps to the wrong place.
+    """
+    if isinstance(value, PerPlatformPathBase):
+        value = value.select_for(platform_key)
+    if value is None:
+        return None
+    if value.startswith("~") or any(char in value for char in "{$%"):
+        return None
+    root = _PLATFORM_PATH_TYPES[platform_key](value)
+    if not root.is_absolute():
+        return None
+    return _MacroRoot(variable=variable, root=root)
+
+
+def _macro_path_for_match(match: _MacroRootMatch) -> str:
+    """Write a match in macro form, such as `{outputs}` or `{outputs}/renders/a.png`."""
+    if str(match.relative_path) == ".":
+        return f"{{{match.variable}}}"
+    return f"{{{match.variable}}}/{match.relative_path.as_posix()}"
 
 
 def _substitutable_stored_values(stored_values: dict[str, Any]) -> dict[str, str | int]:
@@ -4679,28 +4770,29 @@ class ProjectManager(EngineScoped):
                 result_details=f"Attempted to map absolute path. Failed because {_project_selection_failure(request.project_id)}"
             )
 
+        source_platform = request.source_platform
+        if source_platform is not None and source_platform not in _PLATFORM_PATH_TYPES:
+            return AttemptMapAbsolutePathToProjectResultFailure(
+                result_details=(
+                    f"Attempted to map absolute path '{request.absolute_path}'. Failed because '{source_platform}' "
+                    f"is not a platform. Use 'linux', 'darwin', or 'windows'."
+                )
+            )
+        if source_platform is not None and source_platform != active_platform_key():
+            mapped_path = _platform_path_to_macro_path(
+                str(request.absolute_path), source_platform, project_info.template
+            )
+            return self._attempt_map_result(request, mapped_path)
+
         # Try to map the path
         try:
-            mapped_path = self._absolute_path_to_macro_path(request.absolute_path, project_info)
+            mapped_path = self._absolute_path_to_macro_path(Path(request.absolute_path), project_info)
         except (RuntimeError, NotImplementedError) as e:
             # Variable resolution failed - this is a Failure (can't complete the operation)
             return AttemptMapAbsolutePathToProjectResultFailure(
                 result_details=f"Attempted to map absolute path '{request.absolute_path}'. Failed because: {e}"
             )
-
-        # Path successfully checked
-        if mapped_path is None:
-            # Success: we successfully determined the path is outside project
-            return AttemptMapAbsolutePathToProjectResultSuccess(
-                mapped_path=None,
-                result_details=f"Attempted to map absolute path '{request.absolute_path}'. Path is outside all project directories",
-            )
-
-        # Success: path mapped to macro form
-        return AttemptMapAbsolutePathToProjectResultSuccess(
-            mapped_path=mapped_path,
-            result_details=f"Successfully mapped absolute path to '{mapped_path}'",
-        )
+        return self._attempt_map_result(request, mapped_path)
 
     def resolve_project_id(self, project_id: str | None) -> str | None:
         """Return the effective loaded-project id for a request-style project_id.
@@ -5099,6 +5191,22 @@ class ProjectManager(EngineScoped):
 
         return str(result.absolute_path.parent)
 
+    def _attempt_map_result(
+        self, request: AttemptMapAbsolutePathToProjectRequest, mapped_path: str | None
+    ) -> AttemptMapAbsolutePathToProjectResultSuccess:
+        if mapped_path is None:
+            # Success: we successfully determined the path is outside project
+            return AttemptMapAbsolutePathToProjectResultSuccess(
+                mapped_path=None,
+                result_details=f"Attempted to map absolute path '{request.absolute_path}'. Path is outside all project directories",
+            )
+
+        # Success: path mapped to macro form
+        return AttemptMapAbsolutePathToProjectResultSuccess(
+            mapped_path=mapped_path,
+            result_details=f"Successfully mapped absolute path to '{mapped_path}'",
+        )
+
     def _absolute_path_to_macro_path(self, absolute_path: Path, project_info: ProjectInfo) -> str | None:
         """Convert an absolute path to macro form using longest prefix matching.
 
@@ -5136,14 +5244,7 @@ class ProjectManager(EngineScoped):
         # pass below.
         resolver = self._build_variable_resolver(template, project_info)
 
-        # Find all matching directories (where absolute_path is inside the directory)
-        class DirectoryMatch(NamedTuple):
-            directory_name: str
-            resolved_path: Path
-            prefix_length: int
-
-        matches: list[DirectoryMatch] = []
-
+        roots: list[_MacroRoot] = []
         for directory_name in template.directories:
             try:
                 resolved_path_str = resolver.resolve_directory(directory_name)
@@ -5156,55 +5257,15 @@ class ProjectManager(EngineScoped):
             resolved_dir_path = resolve_file_path(resolved_path_str, workspace_dir)
             # Normalize for consistent cross-platform comparison
             resolved_dir_path = resolve_path_safely(resolved_dir_path)
+            roots.append(_MacroRoot(variable=directory_name, root=resolved_dir_path))
 
-            # Check if absolute_path is inside this directory
-            try:
-                # relative_to will raise ValueError if not a subpath
-                _ = absolute_path.relative_to(resolved_dir_path)
-                # Track the match with its prefix length (for longest match)
-                matches.append(
-                    DirectoryMatch(
-                        directory_name=directory_name,
-                        resolved_path=resolved_dir_path,
-                        prefix_length=len(resolved_dir_path.parts),
-                    )
-                )
-            except ValueError:
-                # Not a subpath, skip
-                continue
-
-        # If no defined directories matched, try {project_dir} as fallback
-        if not matches:
-            # Check if path is inside project_base_dir
-            try:
-                relative_path = absolute_path.relative_to(project_base_dir)
-
-                # Convert to {project_dir} macro form
-                if str(relative_path) == ".":
-                    return "{project_dir}"
-                return f"{{project_dir}}/{relative_path.as_posix()}"
-            except ValueError:
-                # Not inside project_base_dir either
-                return None
-
-        # Use longest prefix match (most specific directory)
-        best_match = matches[0]
-        for match in matches:
-            if match.prefix_length > best_match.prefix_length:
-                best_match = match
-
-        # Calculate relative path from the matched directory
-        relative_path = absolute_path.relative_to(best_match.resolved_path)
-
-        # Convert to macro form
-        if str(relative_path) == ".":
-            # File is directly in the directory root
-            # Example: /Users/james/project/outputs → {outputs}
-            return f"{{{best_match.directory_name}}}"
-
-        # File is in a subdirectory
-        # Example: /Users/james/project/outputs/renders/final.png → {outputs}/renders/final.png
-        return f"{{{best_match.directory_name}}}/{relative_path.as_posix()}"
+        # The most specific directory wins; {project_dir} is the fallback.
+        match = _longest_macro_root_match(absolute_path, roots)
+        if match is None:
+            match = _longest_macro_root_match(absolute_path, [_MacroRoot(BUILTIN_PROJECT_DIR, project_base_dir)])
+        if match is None:
+            return None
+        return _macro_path_for_match(match)
 
     # Private helper methods
 

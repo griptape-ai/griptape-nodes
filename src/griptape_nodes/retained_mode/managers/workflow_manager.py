@@ -14,9 +14,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 from griptape_nodes.files.path_utils import (
     canonicalize_for_identity,
     derive_registry_key,
+    is_absolute_on_other_platform,
+    relative_to_keeping_or_following_links,
 )
 from griptape_nodes.node_library.workflow_registry import (
     WorkflowMetadata,
@@ -42,6 +45,10 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
+)
+from griptape_nodes.retained_mode.events.project_events import (
+    GetPathForMacroRequest,
+    GetPathForMacroResultSuccess,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowRequest,
@@ -110,6 +117,10 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class WorkflowPathMacroError(Exception):
+    """Raised when a workflow path written as a project macro can't be resolved."""
 
 
 class WorkflowRegistrationResult(NamedTuple):
@@ -470,6 +481,45 @@ class WorkflowManager(EngineScoped):
             ),
         )
 
+    def _local_workflow_path(self, file_path: str) -> str:
+        """Return the path a workflow request names on this machine.
+
+        Resolves a project macro, such as `{workspace_dir}/shots/blur.py`. A resolved path inside
+        the workspace comes back workspace-relative, the form the workspace scan keys workflows
+        by, so the file isn't registered twice. Any other path is returned unchanged.
+
+        Raises:
+            WorkflowPathMacroError: The path is a macro that can't be resolved.
+        """
+        local_path = self._resolve_workflow_macro(file_path)
+        if local_path is None:
+            return file_path
+
+        relative_path = relative_to_keeping_or_following_links(local_path, self.engine.config_manager.workspace_path)
+        if relative_path is None:
+            return str(local_path)
+        return str(relative_path)
+
+    def _resolve_workflow_macro(self, file_path: str) -> Path | None:
+        """Resolve a workflow path written as a project macro, or return None if it isn't one.
+
+        Raises:
+            WorkflowPathMacroError: The macro can't be resolved.
+        """
+        try:
+            parsed_macro = ParsedMacro(file_path)
+        except MacroSyntaxError:
+            return None
+        if not parsed_macro.get_variables():
+            return None
+
+        result = self.engine.project_manager.on_get_path_for_macro_request(
+            GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+        )
+        if not isinstance(result, GetPathForMacroResultSuccess):
+            raise WorkflowPathMacroError(str(result.result_details))
+        return result.absolute_path
+
     def _repair_path_shaped_display_name(self, *, display_name: str, registry_key: str) -> str:
         """Repair a display name that an older branch/merge/reset wrote as a registry key.
 
@@ -505,8 +555,15 @@ class WorkflowManager(EngineScoped):
 
     @handles(ImportWorkflowRequest)
     async def on_import_workflow_request(self, request: ImportWorkflowRequest) -> ResultPayload:
+        # Translate once so the registry key and persisted path name the local file.
+        try:
+            file_path = self._local_workflow_path(request.file_path)
+        except WorkflowPathMacroError as e:
+            details = f"Attempted to import the workflow at '{request.file_path}'. Failed because its path could not be resolved: {e}"
+            return ImportWorkflowResultFailure(result_details=details)
+
         # First, attempt to load metadata from the file
-        load_metadata_request = LoadWorkflowMetadata(file_name=request.file_path)
+        load_metadata_request = LoadWorkflowMetadata(file_name=file_path)
         load_metadata_result = await self.on_load_workflow_metadata_request(load_metadata_request)
 
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
@@ -514,7 +571,7 @@ class WorkflowManager(EngineScoped):
 
         # Check if workflow is already registered by file path (registry key).
         # The registry key is derived from the file path, not metadata.name (the display name).
-        workflow_name = derive_registry_key(request.file_path)
+        workflow_name = derive_registry_key(file_path)
         if self.engine.workflow_registry.has_workflow_with_name(workflow_name):
             # Workflow already exists - no need to re-register
             return ImportWorkflowResultSuccess(
@@ -523,7 +580,7 @@ class WorkflowManager(EngineScoped):
             )
 
         # Now register the workflow with the extracted metadata
-        register_request = RegisterWorkflowRequest(metadata=load_metadata_result.metadata, file_name=request.file_path)
+        register_request = RegisterWorkflowRequest(metadata=load_metadata_result.metadata, file_name=file_path)
         register_result = self.on_register_workflow_request(register_request)
 
         if not isinstance(register_result, RegisterWorkflowResultSuccess):
@@ -531,7 +588,7 @@ class WorkflowManager(EngineScoped):
 
         # Persist external workflows to global config so they survive restarts and appear in all projects.
         # Workspace workflows are discovered by directory scan and don't need an explicit entry.
-        full_path = self.engine.workflow_registry.get_complete_file_path(request.file_path)
+        full_path = self.engine.workflow_registry.get_complete_file_path(file_path)
         self.persist_external_workflow_registration(full_path)
 
         return ImportWorkflowResultSuccess(
@@ -544,7 +601,12 @@ class WorkflowManager(EngineScoped):
     @handles(LoadWorkflowMetadata)
     async def on_load_workflow_metadata_request(self, request: LoadWorkflowMetadata) -> ResultPayload:
         """Load a workflow's metadata, reporting every way it can be flawed or unusable."""
-        complete_file_path = self.engine.config_manager.workspace_path.joinpath(request.file_name)
+        try:
+            file_name = self._local_workflow_path(request.file_name)
+        except WorkflowPathMacroError as e:
+            details = f"Attempted to load workflow metadata for a file at '{request.file_name}'. Failed because its path could not be resolved: {e}"
+            return LoadWorkflowMetadataResultFailure(result_details=details)
+        complete_file_path = self.engine.config_manager.workspace_path.joinpath(file_name)
         str_path = str(complete_file_path)
 
         # The editor can send LoadWorkflowMetadata before library registration finishes
@@ -561,6 +623,14 @@ class WorkflowManager(EngineScoped):
                 workflow_dependencies=[],
                 problems=[WorkflowNotFoundProblem()],
             )
+            if is_absolute_on_other_platform(file_name):
+                # Name that cause instead of the workspace-joined path, which names nothing.
+                details = (
+                    f"Attempted to load workflow metadata for a file at '{file_name}'. Failed because that path "
+                    f"comes from a different operating system, so it names no location on this one. Use a path "
+                    f"relative to the workspace, or a project macro such as '{{workspace_dir}}/shots/blur.py'."
+                )
+                return LoadWorkflowMetadataResultFailure(result_details=details)
             details = f"Attempted to load workflow metadata for a file at '{complete_file_path}. Failed because no file could be found at that path."
             return LoadWorkflowMetadataResultFailure(result_details=details)
 

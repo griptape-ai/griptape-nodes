@@ -13,20 +13,26 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 
 if TYPE_CHECKING:
-    from griptape_nodes.common.project_templates import ProjectValidationInfo
-    from griptape_nodes.common.project_templates.directory import PerPlatformPathMacro
     from griptape_nodes.common.project_templates.loader import ProjectOverlayData
-    from griptape_nodes.common.project_templates.project_path import PerPlatformProjectPath, ResolvedProjectPath
+    from griptape_nodes.common.project_templates.project_path import ResolvedProjectPath
     from griptape_nodes.retained_mode.engine import Engine
     from griptape_nodes.retained_mode.events.project_events import LoadProjectTemplateResultFailure
-    from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
 from griptape_nodes.common.macro_parser import MacroMatchFailureReason
-from griptape_nodes.common.project_templates import DEFAULT_PROJECT_TEMPLATE
+from griptape_nodes.common.project_templates import (
+    DEFAULT_PROJECT_TEMPLATE,
+    DirectoryDefinition,
+    PerPlatformPathMacro,
+    PerPlatformProjectPath,
+    ProjectValidationInfo,
+    ProjectValidationStatus,
+)
 from griptape_nodes.files.path_utils import canonicalize_for_identity, resolve_path_safely
 from griptape_nodes.retained_mode.events import converters
+from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
+    AttemptMapAbsolutePathToProjectResultFailure,
     AttemptMapAbsolutePathToProjectResultSuccess,
     AttemptMatchPathAgainstMacroRequest,
     AttemptMatchPathAgainstMacroResultFailure,
@@ -46,7 +52,12 @@ from griptape_nodes.retained_mode.events.project_events import (
     PathResolutionFailureReason,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-from griptape_nodes.retained_mode.managers.project_manager import PROJECTS_TO_REGISTER_KEY, ProjectManager
+from griptape_nodes.retained_mode.managers.project_manager import (
+    PROJECTS_TO_REGISTER_KEY,
+    SYSTEM_DEFAULTS_KEY,
+    ProjectInfo,
+    ProjectManager,
+)
 from griptape_nodes.utils.file_utils import DEFAULT_MAX_SEARCH_DEPTH
 
 
@@ -13446,3 +13457,102 @@ class TestUnsavedWorkflowDirFromSaveSituation:
         pm = self._project_manager("{no_such_directory}/{file_name_base}.{file_extension}")
 
         assert self._resolve_workflow_dir(pm) == self._expected_dir()
+
+
+class TestAttemptMapAbsolutePathFromSourcePlatform:
+    """A path written on another OS maps through the project's values for that OS."""
+
+    @pytest.fixture(autouse=True)
+    def _engine_on_linux(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "griptape_nodes.retained_mode.managers.project_manager.active_platform_key", lambda: "linux"
+        )
+
+    def _project_manager(
+        self,
+        *,
+        workspace_dir: str | PerPlatformProjectPath | None = None,
+        directories: dict[str, DirectoryDefinition] | None = None,
+    ) -> ProjectManager:
+        template = DEFAULT_PROJECT_TEMPLATE.model_copy(
+            update={"workspace_dir": workspace_dir, "directories": directories or {}}
+        )
+        project_base = Path("/projects/show")
+        pm = ProjectManager(Mock(), Mock(), Mock())
+        cast("Mock", pm._config_manager).workspace_path = Path("/mnt/share")
+        pm._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=project_base / "griptape-nodes-project.yml",
+            project_base_dir=project_base,
+            template=template,
+            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
+            parsed_situation_schemas={},
+            parsed_directory_schemas={},
+        )
+        pm._current_project_id = SYSTEM_DEFAULTS_KEY
+        return pm
+
+    def _map(self, pm: ProjectManager, path: str, source_platform: str) -> str | None:
+        result = pm.on_attempt_map_absolute_path_to_project_request(
+            AttemptMapAbsolutePathToProjectRequest(absolute_path=path, source_platform=source_platform)
+        )
+        assert isinstance(result, AttemptMapAbsolutePathToProjectResultSuccess)
+        return result.mapped_path
+
+    def test_path_under_workspace_maps_to_workspace_macro(self) -> None:
+        pm = self._project_manager(
+            workspace_dir=PerPlatformProjectPath(darwin="/Volumes/share", linux="/mnt/share"),
+        )
+
+        assert self._map(pm, "/Volumes/share/u/blur.py", "darwin") == "{workspace_dir}/u/blur.py"
+
+    def test_windows_path_matches_case_insensitively_and_most_specific_folder_wins(self) -> None:
+        pm = self._project_manager(
+            workspace_dir=PerPlatformProjectPath(windows=r"\\host\share", default="/mnt/share"),
+            directories={
+                "renders": DirectoryDefinition(
+                    name="renders",
+                    path_macro=PerPlatformPathMacro(windows=r"\\host\share\renders", default="/srv/renders"),
+                ),
+            },
+        )
+
+        assert self._map(pm, r"\\HOST\Share\renders\a.exr", "windows") == "{renders}/a.exr"
+
+    def test_plain_value_applies_to_every_platform(self) -> None:
+        pm = self._project_manager(
+            directories={"renders": DirectoryDefinition(name="renders", path_macro="/srv/renders")},
+        )
+
+        assert self._map(pm, "/srv/renders/a.exr", "darwin") == "{renders}/a.exr"
+
+    def test_values_needing_expansion_are_not_matched(self) -> None:
+        pm = self._project_manager(
+            workspace_dir=PerPlatformProjectPath(windows=r"%SHARE%\ws", default="/mnt/share"),
+            directories={
+                "renders": DirectoryDefinition(
+                    name="renders",
+                    path_macro=PerPlatformPathMacro(windows=r"{workspace_dir}\renders", default="/srv/renders"),
+                ),
+            },
+        )
+
+        assert self._map(pm, r"C:\ws\u\blur.py", "windows") is None
+
+    def test_own_platform_maps_against_this_machine(self) -> None:
+        pm = self._project_manager(
+            workspace_dir=PerPlatformProjectPath(darwin="/Volumes/share", linux="/mnt/share"),
+        )
+
+        assert self._map(pm, "/Volumes/share/u/blur.py", "linux") is None
+
+    def test_unknown_platform_fails(self) -> None:
+        pm = self._project_manager()
+
+        result = pm.on_attempt_map_absolute_path_to_project_request(
+            AttemptMapAbsolutePathToProjectRequest(absolute_path="/Volumes/share/blur.py", source_platform="macos")
+        )
+
+        assert isinstance(result, AttemptMapAbsolutePathToProjectResultFailure)
+        assert isinstance(result.result_details, ResultDetails)
+        assert "'macos' is not a platform" in result.result_details.result_details[0].message

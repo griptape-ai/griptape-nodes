@@ -695,6 +695,12 @@ class AttemptMapAbsolutePathToProjectRequest(RequestPayload):
         project_id: Which project's directories to map against. None means the
             current project. Passing a loaded-but-not-current project id supports
             hypothetical mapping ("would this path be inside project Y?").
+        source_platform: The OS the path was written on (`linux`, `darwin`, or
+            `windows`), for a path from a client on another machine. The path is
+            matched against the project's plain absolute `workspace_dir` and
+            `directories` values for that OS, and the macro resolves for this one.
+            Pass the path as a string, since a `Path` parses it with this OS's rules.
+            None, or this engine's own OS, maps against this machine's folders.
 
     Results: AttemptMapAbsolutePathToProjectResultSuccess | AttemptMapAbsolutePathToProjectResultFailure
 
@@ -710,10 +716,15 @@ class AttemptMapAbsolutePathToProjectRequest(RequestPayload):
         Path at directory root:
             Request: absolute_path = /Users/james/project/outputs
             Result: mapped_path = "{outputs}"
+
+        Path from a macOS client, sent to a Windows engine:
+            Request: absolute_path = "/Volumes/share/shots/blur.py", source_platform = "darwin"
+            Result: mapped_path = "{workspace_dir}/shots/blur.py" (workspace_dir.darwin is /Volumes/share)
     """
 
-    absolute_path: Path
+    absolute_path: str | Path
     project_id: str | None = None
+    source_platform: str | None = None
 
 
 @dataclass
