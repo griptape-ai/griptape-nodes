@@ -1,43 +1,25 @@
-"""Checks a node runs on its media inputs before a run, against a provider's documented limits.
+"""Reading a media input's properties locally, and checking them against a provider's documented limits.
 
 A request a provider is certain to reject still costs the artist an upload and a wait, and sometimes
-credits. These helpers let a node refuse it first, from what it can read locally.
+credits. A node declares the limits on its parameters with `pre_run_validators=` (see
+`griptape_nodes.exe_types.validators`), and the engine checks them at the node's turn, before it
+runs. The validators are built from the parts here, which a custom validator can use too:
 
-- **Combined checks** (`image_errors`, `video_errors`, `audio_errors`) run every image, video or
-  audio check a provider documents in one call, reading the input once. Most nodes need only these.
 - **Readers** (`local_size_bytes`, `local_image_info`, `local_video_probe`, `local_audio_probe`)
   read a media input's properties from data already on this machine. `local_video_probe` reads a
   video's container, codec, frame size, durations and frame rates in one ffprobe run, and
   `local_audio_probe` an audio input's container, codec and durations. None of them makes a network
   call or downloads a tool: the video and audio readers use ffprobe only if it is already
   installed. They return None when the value is a remote URL, can't be found or parsed, or when the
-  tool to read it is missing or too slow.
+  tool to read it is missing or too slow. Inside `input_check_readings`, which the engine opens
+  around each node's checks, each reader reads a location once and returns the same result after.
+- **`read_media`** takes the readings a set of validators needs from one value, in one call.
 - **Checks** (`check_count`, `check_size`, `check_dimensions`, `check_aspect_ratio_range`,
   `check_aspect_ratio_exact`, `check_mime_type`, `check_video_codec`, `check_audio_codec`,
-  `check_duration`, `check_frame_rate`, `check_frame_count`) compare one value with a limit and return a `NodeError`
-  ready to append to `validate_before_node_run`'s list, or None when the value is within the limit
-  or unknown.
+  `check_duration`, `check_frame_rate`, `check_frame_count`) compare one value with a limit and
+  return a `NodeError`, or None when the value is within the limit or unknown.
 
 A limit is enforced only where it can be read cheaply; anything else is left for the provider.
-
-```python
-from griptape_nodes.exe_types.input_checks import image_errors, input_subject
-
-
-def validate_before_node_run(self) -> list[Exception] | None:
-    exceptions = super().validate_before_node_run() or []
-    for position, image in enumerate(self.get_parameter_list_value("reference_images"), start=1):
-        exceptions.extend(
-            image_errors(
-                image,
-                subject=input_subject("reference images", noun="image", position=position),
-                allowed_mime_types=("image/jpeg", "image/png"),
-                maximum_bytes=MAX_BYTES,
-                docs_url=LIMITS_URL,
-            )
-        )
-    return exceptions or None
-```
 """
 
 from __future__ import annotations
@@ -51,6 +33,8 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -60,12 +44,13 @@ from static_ffmpeg import run as static_ffmpeg_run
 
 from griptape_nodes.exe_types.input_check_budget import input_check_budget, probe_deadline
 from griptape_nodes.exe_types.node_error import NodeError, NodeErrorLink
+from griptape_nodes.exe_types.validators.base import MediaInfo, MediaNeed
 from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.files.path_utils import is_url
 from griptape_nodes.utils.media_values import MediaKind, coerce_media_url_or_data_uri
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Collection, Iterator, Sequence
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -73,7 +58,6 @@ __all__ = [
     "AudioProbe",
     "ImageInfo",
     "VideoProbe",
-    "audio_errors",
     "check_aspect_ratio_exact",
     "check_aspect_ratio_range",
     "check_audio_codec",
@@ -85,14 +69,14 @@ __all__ = [
     "check_mime_type",
     "check_size",
     "check_video_codec",
-    "image_errors",
     "input_check_budget",
+    "input_check_readings",
     "input_subject",
     "local_audio_probe",
     "local_image_info",
     "local_size_bytes",
     "local_video_probe",
-    "video_errors",
+    "read_media",
 ]
 
 BYTES_PER_MB = 1024 * 1024
@@ -116,6 +100,10 @@ _QUARTER_TURN_ORIENTATIONS = frozenset({5, 6, 7, 8})
 _QUARTER_TURN_DEGREES = 90
 _HALF_TURN_DEGREES = 180
 
+# What the readers have read in the current `input_check_readings` block, by reader and location, or
+# None outside one. A reading that came back None is kept too, so an unreadable input isn't retried.
+_readings: ContextVar[dict[tuple[MediaNeed, str], Any] | None] = ContextVar("input_check_readings", default=None)
+
 
 class ImageInfo(NamedTuple):
     """An image's or video frame's pixel size, and an image's MIME type read from its header."""
@@ -138,6 +126,66 @@ def input_subject(parameter: str, *, noun: str, position: int | None = None) -> 
     return f"{noun.capitalize()} {position} in '{parameter}'"
 
 
+@contextmanager
+def input_check_readings() -> Iterator[None]:
+    """Read each media location at most once per reader inside this block.
+
+    The engine opens one around each node's pre-run checks, so the validators on a parameter, a
+    node's `NodeValidator`s and its own `validate_before_node_run` share one read of each input. What
+    was read is dropped when the block ends, so nothing carries over to the next run or another node.
+    Opened inside another one, it shares the outer block's readings.
+    """
+    if _readings.get() is not None:
+        yield
+        return
+    token = _readings.set({})
+    try:
+        yield
+    finally:
+        _readings.reset(token)
+
+
+def read_media(value: Any, needs: Collection[MediaNeed], *, kind: MediaKind) -> MediaInfo:
+    """The readings `needs` names, of one media input, taken once.
+
+    Reduces the input to one location and hands that to each reader asked for: `local_size_bytes`
+    for `SIZE`, `local_image_info` for `IMAGE`, `local_video_probe` for `VIDEO` and
+    `local_audio_probe` for `AUDIO`. A reading not asked for, or that couldn't be taken, is None.
+
+    Args:
+        value: The media input: an artifact, a path, a URL or a data URI.
+        needs: The readings to take.
+        kind: The kind of media the input's parameter holds, which says how to reduce it to a location.
+    """
+    location = coerce_media_url_or_data_uri(value, kind=kind)
+    if not location:
+        return MediaInfo()
+    size_bytes = None
+    image = None
+    video = None
+    audio = None
+    if MediaNeed.SIZE in needs:
+        size_bytes = local_size_bytes(location, kind=kind)
+    if MediaNeed.IMAGE in needs:
+        image = local_image_info(location)
+    if MediaNeed.VIDEO in needs:
+        video = local_video_probe(location)
+    if MediaNeed.AUDIO in needs:
+        audio = local_audio_probe(location)
+    return MediaInfo(size_bytes=size_bytes, image=image, video=video, audio=audio)
+
+
+def _read_once(reader: MediaNeed, location: str, read: Callable[[str], Any]) -> Any:
+    """`read(location)`, or what it returned before in the current `input_check_readings` block."""
+    readings = _readings.get()
+    if readings is None:
+        return read(location)
+    key = (reader, location)
+    if key not in readings:
+        readings[key] = read(location)
+    return readings[key]
+
+
 def local_size_bytes(value: Any, *, kind: MediaKind) -> int | None:
     """The size in bytes of a media input, or None if it can't be read locally.
 
@@ -147,6 +195,11 @@ def local_size_bytes(value: Any, *, kind: MediaKind) -> int | None:
     location = coerce_media_url_or_data_uri(value, kind=kind)
     if not location:
         return None
+    return _read_once(MediaNeed.SIZE, location, _read_size_bytes)
+
+
+def _read_size_bytes(location: str) -> int | None:
+    """`local_size_bytes` for a location, without the per-pass cache."""
     if location.startswith("data:"):
         payload = "".join(location.split(",", 1)[-1].split())
         return len(payload) * 3 // 4 - payload[-2:].count("=")
@@ -172,6 +225,11 @@ def local_image_info(value: Any) -> ImageInfo | None:
     location = coerce_media_url_or_data_uri(value, kind="image")
     if not location:
         return None
+    return _read_once(MediaNeed.IMAGE, location, _read_image_info)
+
+
+def _read_image_info(location: str) -> ImageInfo | None:
+    """`local_image_info` for a location, without the per-pass cache."""
     source = _image_source(location)
     if source is None:
         return None
@@ -302,11 +360,6 @@ class VideoProbe(NamedTuple):
         return [s for s in (self.seconds, self.container_seconds) if s is not None]
 
 
-# video_errors' default for `probe`, told apart by identity from a None the caller passes for a video
-# it couldn't read, so that video isn't probed a second time.
-_PROBE_NOT_GIVEN = VideoProbe(info=None, seconds=None)
-
-
 def local_video_probe(value: Any) -> VideoProbe | None:
     """A video input's container, codec, frame size, duration and frame rate, or None if unreadable here.
 
@@ -316,7 +369,15 @@ def local_video_probe(value: Any) -> VideoProbe | None:
     Probes only a file on this machine, with an ffprobe that is already installed; see
     `_run_ffprobe`.
     """
-    data = _run_ffprobe(value, ["-show_format", "-select_streams", "v:0", "-show_streams"], kind="video")
+    location = coerce_media_url_or_data_uri(value, kind="video")
+    if not location:
+        return None
+    return _read_once(MediaNeed.VIDEO, location, _probe_video)
+
+
+def _probe_video(location: str) -> VideoProbe | None:
+    """`local_video_probe` for a location, without the per-pass cache."""
+    data = _run_ffprobe(location, ["-show_format", "-select_streams", "v:0", "-show_streams"], kind="video")
     if data is None:
         return None
     stream_seconds = _stream_seconds(_first_stream(data))
@@ -374,7 +435,15 @@ def local_audio_probe(value: Any) -> AudioProbe | None:
     file on this machine, with an ffprobe that is already installed, under the same time limits as
     `local_video_probe`; see `_run_ffprobe`.
     """
-    data = _run_ffprobe(value, ["-show_format", "-select_streams", "a:0", "-show_streams"], kind="audio")
+    location = coerce_media_url_or_data_uri(value, kind="audio")
+    if not location:
+        return None
+    return _read_once(MediaNeed.AUDIO, location, _probe_audio)
+
+
+def _probe_audio(location: str) -> AudioProbe | None:
+    """`local_audio_probe` for a location, without the per-pass cache."""
+    data = _run_ffprobe(location, ["-show_format", "-select_streams", "a:0", "-show_streams"], kind="audio")
     if data is None:
         return None
     stream = _first_stream(data)
@@ -663,7 +732,7 @@ def check_duration(  # noqa: PLR0913
     Args:
         seconds: The input's duration. For a video, pass a `local_video_probe` result's
             `shortest_seconds` for a maximum or `longest_seconds` for a minimum, the readings
-            `video_errors` uses. None skips the check.
+            the `Duration` validator uses. None skips the check.
         subject: The input, from `input_subject`.
         minimum: The shortest input accepted, in seconds.
         maximum: The longest input accepted, in seconds.
@@ -736,7 +805,8 @@ def check_frame_count(
 
     Args:
         frames: The frame count. Pass a `local_video_probe` result's `fewest_frames` for a maximum or
-            `most_frames` for a minimum, the readings `video_errors` uses. None skips the check.
+            `most_frames` for a minimum, the readings the `FrameCount` validator uses. None skips
+            the check.
         subject: The input, from `input_subject`.
         minimum: The fewest frames accepted.
         maximum: The most frames accepted.
@@ -755,338 +825,10 @@ def check_frame_count(
     return None
 
 
-def image_errors(  # noqa: PLR0913
-    image: Any,
-    *,
-    subject: str,
-    allowed_mime_types: Sequence[str] = (),
-    maximum_bytes: int | None = None,
-    strict_maximum_bytes: bool = False,
-    min_side: int | None = None,
-    max_side: int | None = None,
-    min_megapixels: float | None = None,
-    max_megapixels: float | None = None,
-    widest: str | None = None,
-    tallest: str | None = None,
-    exact_aspect_ratios: Sequence[str] = (),
-    docs_url: str | None = None,
-) -> list[NodeError]:
-    """Every provider image limit an image input breaks, in one call.
-
-    Reads the image once and runs only the checks whose limits are given: the format when
-    `allowed_mime_types` is set, the file size with `maximum_bytes`, the sides and area with
-    `min_side`, `max_side`, `min_megapixels` or `max_megapixels`, the aspect ratio when both
-    `widest` and `tallest` are set, and the exact shape with `exact_aspect_ratios`. Like the checks
-    it runs, it skips anything it can't read locally.
-
-    Args:
-        image: The image input.
-        subject: The input, from `input_subject`.
-        allowed_mime_types: The formats the provider accepts, such as ("image/jpeg", "image/png").
-        maximum_bytes: The largest file the provider accepts.
-        strict_maximum_bytes: For a provider that writes "less than": a file of exactly
-            `maximum_bytes` is refused too.
-        min_side: The fewest pixels accepted for the width and for the height.
-        max_side: The most pixels accepted for the width and for the height.
-        min_megapixels: The fewest pixels accepted in total, in millions.
-        max_megapixels: The most pixels accepted in total, in millions.
-        widest: The widest aspect ratio accepted, as the provider writes it, such as "2.5:1".
-        tallest: The tallest aspect ratio accepted, such as "1:2.5". Pass both bounds or neither.
-        exact_aspect_ratios: For a provider that takes only certain shapes rather than a range, those
-            ratios, such as ("16:9", "9:16"). See `check_aspect_ratio_exact`.
-        docs_url: The provider's page documenting the limits.
-
-    Raises:
-        ValueError: If only one of `widest` and `tallest` is given, or one isn't a ratio such as "16:9".
-        TypeError: If `allowed_mime_types` is a single string.
-    """
-    _require_mime_type_sequence(allowed_mime_types)
-    _require_valid_aspect_ratio_bounds(widest, tallest)
-    if exact_aspect_ratios:
-        _require_valid_exact_ratios(exact_aspect_ratios)
-    # Reduce the input to one string once, and hand that to both readers.
-    location = coerce_media_url_or_data_uri(image, kind="image")
-    info = local_image_info(location)
-    errors: list[NodeError | None] = []
-    if allowed_mime_types:
-        mime_type = None
-        if info is not None:
-            mime_type = info.mime_type
-        errors.append(check_mime_type(mime_type, subject=subject, allowed=allowed_mime_types, docs_url=docs_url))
-    if maximum_bytes is not None:
-        errors.append(
-            check_size(
-                local_size_bytes(location, kind="image"),
-                maximum_bytes=maximum_bytes,
-                subject=subject,
-                strict=strict_maximum_bytes,
-                docs_url=docs_url,
-            )
-        )
-    errors.extend(
-        _frame_errors(
-            info,
-            subject=subject,
-            min_side=min_side,
-            max_side=max_side,
-            min_megapixels=min_megapixels,
-            max_megapixels=max_megapixels,
-            widest=widest,
-            tallest=tallest,
-            exact_aspect_ratios=exact_aspect_ratios,
-            docs_url=docs_url,
-        )
-    )
-    return [error for error in errors if error]
-
-
-def video_errors(  # noqa: PLR0913
-    video: Any,
-    *,
-    subject: str,
-    maximum_bytes: int | None = None,
-    strict_maximum_bytes: bool = False,
-    min_seconds: float | None = None,
-    max_seconds: float | None = None,
-    min_side: int | None = None,
-    max_side: int | None = None,
-    min_megapixels: float | None = None,
-    max_megapixels: float | None = None,
-    widest: str | None = None,
-    tallest: str | None = None,
-    exact_aspect_ratios: Sequence[str] = (),
-    min_fps: float | None = None,
-    max_fps: float | None = None,
-    min_frames: int | None = None,
-    max_frames: int | None = None,
-    allowed_mime_types: Sequence[str] = (),
-    allowed_codecs: Sequence[str] = (),
-    duration_fix: str | None = None,
-    docs_url: str | None = None,
-    probe: VideoProbe | None = _PROBE_NOT_GIVEN,
-) -> list[NodeError]:
-    """Every provider video limit a video input breaks, in one call.
-
-    Probes the video once, with `local_video_probe`, and runs only the checks whose limits are
-    given: the file size with `maximum_bytes`, the duration with `min_seconds` or `max_seconds`,
-    the frame's sides and area as stored (turned upright for a rotated clip) with `min_side`, `max_side`, `min_megapixels` or
-    `max_megapixels`, the aspect ratio when both `widest` and `tallest` are set, the exact shape with
-    `exact_aspect_ratios`, the frame rate with `min_fps` or `max_fps`, the frame count with
-    `min_frames` or `max_frames`, the container with
-    `allowed_mime_types`, and the codec with `allowed_codecs`. Like the checks it runs, it skips
-    anything it can't read locally.
-
-    Args:
-        video: The video input.
-        subject: The input, from `input_subject`.
-        maximum_bytes: The largest file the provider accepts.
-        strict_maximum_bytes: For a provider that writes "less than": a file of exactly
-            `maximum_bytes` is refused too.
-        min_seconds: The shortest clip accepted.
-        max_seconds: The longest clip accepted.
-        min_side: The fewest pixels accepted for the width and for the height.
-        max_side: The most pixels accepted for the width and for the height.
-        min_megapixels: The fewest pixels accepted in total, in millions.
-        max_megapixels: The most pixels accepted in total, in millions.
-        widest: The widest aspect ratio accepted, as the provider writes it, such as "2.5:1".
-        tallest: The tallest aspect ratio accepted, such as "1:2.5". Pass both bounds or neither.
-        exact_aspect_ratios: For a provider that takes only certain shapes rather than a range, those
-            ratios, such as ("16:9", "9:16"). See `check_aspect_ratio_exact`.
-        min_fps: The lowest frame rate accepted.
-        max_fps: The highest frame rate accepted.
-        min_frames: The fewest frames accepted. See `check_frame_count`.
-        max_frames: The most frames accepted.
-        allowed_mime_types: The containers the provider accepts, such as ("video/mp4", "video/quicktime").
-            The container is read from the file, so a MOV renamed to .mp4 is still a MOV.
-        allowed_codecs: The video codecs the provider accepts, as ffprobe names them, such as
-            ("h264", "hevc").
-        duration_fix: What the artist can do about a clip of the wrong length. Defaults to
-            `check_duration`'s.
-        docs_url: The provider's page documenting the limits.
-        probe: The video's `local_video_probe` result, when the node has already read it for a check
-            of its own, such as a total duration across several videos; None for a video it
-            couldn't read. Left out, the video is probed here.
-
-    Raises:
-        ValueError: If only one of `widest` and `tallest` is given, or one isn't a ratio such as "16:9".
-        TypeError: If `allowed_mime_types` or `allowed_codecs` is a single string.
-        ValueError: Also if `allowed_codecs` names a codec this module doesn't know.
-    """
-    _require_valid_aspect_ratio_bounds(widest, tallest)
-    if exact_aspect_ratios:
-        _require_valid_exact_ratios(exact_aspect_ratios)
-    _require_mime_type_sequence(allowed_mime_types)
-    _require_known_codecs(allowed_codecs)
-    errors: list[NodeError | None] = []
-    if maximum_bytes is not None:
-        errors.append(
-            check_size(
-                local_size_bytes(video, kind="video"),
-                maximum_bytes=maximum_bytes,
-                subject=subject,
-                strict=strict_maximum_bytes,
-                docs_url=docs_url,
-            )
-        )
-    needs_frame = (
-        min_side is not None
-        or max_side is not None
-        or min_megapixels is not None
-        or max_megapixels is not None
-        or (widest is not None and tallest is not None)
-        or bool(exact_aspect_ratios)
-    )
-    needs_rate = min_fps is not None or max_fps is not None or min_frames is not None or max_frames is not None
-    needs_encoding = bool(allowed_mime_types) or bool(allowed_codecs)
-    if min_seconds is None and max_seconds is None and not needs_frame and not needs_rate and not needs_encoding:
-        return [error for error in errors if error]
-    if probe is _PROBE_NOT_GIVEN:
-        probe = local_video_probe(video)
-    info = None
-    display_info = None
-    if probe is not None:
-        info = probe.info
-        display_info = probe.display_info
-    errors.extend(
-        _encoding_errors(
-            probe,
-            subject=subject,
-            allowed_mime_types=allowed_mime_types,
-            allowed_codecs=allowed_codecs,
-            docs_url=docs_url,
-        )
-    )
-    errors.extend(
-        _duration_errors(
-            probe,
-            subject=subject,
-            min_seconds=min_seconds,
-            max_seconds=max_seconds,
-            fix=duration_fix,
-            docs_url=docs_url,
-        )
-    )
-    errors.extend(
-        _frame_errors(
-            info,
-            subject=subject,
-            min_side=min_side,
-            max_side=max_side,
-            min_megapixels=min_megapixels,
-            max_megapixels=max_megapixels,
-            widest=widest,
-            tallest=tallest,
-            exact_aspect_ratios=exact_aspect_ratios,
-            docs_url=docs_url,
-            display_info=display_info,
-        )
-    )
-    errors.extend(
-        _rate_errors(
-            probe,
-            subject=subject,
-            min_fps=min_fps,
-            max_fps=max_fps,
-            min_frames=min_frames,
-            max_frames=max_frames,
-            docs_url=docs_url,
-        )
-    )
-    return [error for error in errors if error]
-
-
-def audio_errors(  # noqa: PLR0913
-    audio: Any,
-    *,
-    subject: str,
-    allowed_mime_types: Sequence[str] = (),
-    allowed_codecs: Sequence[str] = (),
-    maximum_bytes: int | None = None,
-    strict_maximum_bytes: bool = False,
-    min_seconds: float | None = None,
-    max_seconds: float | None = None,
-    duration_fix: str | None = None,
-    docs_url: str | None = None,
-) -> list[NodeError]:
-    """Every provider audio limit an audio input breaks, in one call.
-
-    Probes the audio once, with `local_audio_probe`, and runs only the checks whose limits are given:
-    the container with `allowed_mime_types`, the codec with `allowed_codecs`, the file size with
-    `maximum_bytes`, and the duration with `min_seconds` or `max_seconds`. Like the checks it runs,
-    it skips anything it can't read locally.
-
-    Args:
-        audio: The audio input.
-        subject: The input, from `input_subject`.
-        allowed_mime_types: The containers the provider accepts, such as ("audio/mpeg", "audio/wav").
-            The container is read from the file, so an MP3 renamed to .wav is still an MP3.
-        allowed_codecs: The audio codecs the provider accepts, as ffprobe names them, such as
-            ("mp3", "aac"). A WAV's codec is a PCM one, such as "pcm_s16le".
-        maximum_bytes: The largest file the provider accepts.
-        strict_maximum_bytes: For a provider that writes "less than": a file of exactly
-            `maximum_bytes` is refused too.
-        min_seconds: The shortest clip accepted.
-        max_seconds: The longest clip accepted.
-        duration_fix: What the artist can do about a clip of the wrong length. Defaults to trimming it
-            in an audio editor, or using a longer clip.
-        docs_url: The provider's page documenting the limits.
-
-    Raises:
-        TypeError: If `allowed_mime_types` or `allowed_codecs` is a single string.
-        ValueError: If `allowed_codecs` names a codec this module doesn't know.
-    """
-    _require_mime_type_sequence(allowed_mime_types)
-    _require_known_codecs(allowed_codecs)
-    errors: list[NodeError | None] = []
-    if maximum_bytes is not None:
-        errors.append(
-            check_size(
-                local_size_bytes(audio, kind="audio"),
-                maximum_bytes=maximum_bytes,
-                subject=subject,
-                strict=strict_maximum_bytes,
-                docs_url=docs_url,
-            )
-        )
-    needs_probe = bool(allowed_mime_types) or bool(allowed_codecs) or min_seconds is not None or max_seconds is not None
-    if not needs_probe:
-        return [error for error in errors if error]
-    probe = local_audio_probe(audio)
-    mime_type = None
-    codec = None
-    if probe is not None:
-        mime_type = probe.mime_type
-        codec = probe.codec
-    if allowed_mime_types:
-        errors.append(
-            _mime_type_error(
-                mime_type,
-                subject=subject,
-                allowed=allowed_mime_types,
-                docs_url=docs_url,
-                also_matching=_audio_readings_of(allowed_mime_types),
-            )
-        )
-    if allowed_codecs:
-        errors.append(check_audio_codec(codec, subject=subject, allowed=allowed_codecs, docs_url=docs_url))
-    errors.extend(
-        _duration_errors(
-            probe,
-            subject=subject,
-            min_seconds=min_seconds,
-            max_seconds=max_seconds,
-            fix=duration_fix,
-            docs_url=docs_url,
-            too_long_fix="Trim it in an audio editor.",
-        )
-    )
-    return [error for error in errors if error]
-
-
 def _codec_error(codec: str | None, *, subject: str, allowed: Sequence[str], docs_url: str | None) -> NodeError | None:
     """`check_video_codec` and `check_audio_codec`."""
     accepted = _require_known_codecs(allowed)
-    # An empty list is no limit, as the combined checks treat it.
+    # An empty list is no limit, as `check_mime_type` treats it.
     if codec is None or not accepted:
         return None
     if codec.strip().lower() in accepted:
@@ -1130,169 +872,6 @@ def _audio_readings_of(allowed: Sequence[str]) -> tuple[str, ...]:
     """
     readings = (_VIDEO_TO_AUDIO_CONTAINER.get(_canonical_mime_type(name)) for name in allowed)
     return tuple(reading for reading in readings if reading is not None)
-
-
-def _encoding_errors(
-    probe: VideoProbe | None,
-    *,
-    subject: str,
-    allowed_mime_types: Sequence[str],
-    allowed_codecs: Sequence[str],
-    docs_url: str | None,
-) -> list[NodeError | None]:
-    """`video_errors`' container and codec checks, for those whose limits are given."""
-    mime_type = None
-    codec = None
-    if probe is not None:
-        mime_type = probe.mime_type
-        codec = probe.codec
-    errors: list[NodeError | None] = []
-    if allowed_mime_types:
-        errors.append(check_mime_type(mime_type, subject=subject, allowed=allowed_mime_types, docs_url=docs_url))
-    if allowed_codecs:
-        errors.append(check_video_codec(codec, subject=subject, allowed=allowed_codecs, docs_url=docs_url))
-    return errors
-
-
-def _frame_errors(  # noqa: PLR0913
-    info: ImageInfo | None,
-    *,
-    subject: str,
-    min_side: int | None,
-    max_side: int | None,
-    min_megapixels: float | None,
-    max_megapixels: float | None,
-    widest: str | None,
-    tallest: str | None,
-    exact_aspect_ratios: Sequence[str],
-    docs_url: str | None,
-    display_info: ImageInfo | None = None,
-) -> list[NodeError | None]:
-    """The pixel-size and shape checks `image_errors` and `video_errors` share, for those whose limits are given."""
-    errors: list[NodeError | None] = []
-    if min_side is not None or max_side is not None or min_megapixels is not None or max_megapixels is not None:
-        errors.append(
-            check_dimensions(
-                info,
-                subject=subject,
-                min_side=min_side,
-                max_side=max_side,
-                min_megapixels=min_megapixels,
-                max_megapixels=max_megapixels,
-                docs_url=docs_url,
-            )
-        )
-    # Providers don't say whether they measure a frame's stored or displayed shape, so a shape check
-    # passes when either does, as the duration and frame-rate checks take the easier reading.
-    if widest is not None and tallest is not None:
-        errors.append(
-            _easier_shape(
-                info,
-                display_info,
-                lambda size: check_aspect_ratio_range(
-                    size, subject=subject, widest=widest, tallest=tallest, docs_url=docs_url
-                ),
-            )
-        )
-    if exact_aspect_ratios:
-        errors.append(
-            _easier_shape(
-                info,
-                display_info,
-                lambda size: check_aspect_ratio_exact(
-                    size, subject=subject, ratios=exact_aspect_ratios, docs_url=docs_url
-                ),
-            )
-        )
-    return errors
-
-
-def _easier_shape(
-    info: ImageInfo | None,
-    display_info: ImageInfo | None,
-    check: Callable[[ImageInfo | None], NodeError | None],
-) -> NodeError | None:
-    """A shape check's error for the stored frame, or None when the displayed frame passes it."""
-    error = check(info)
-    if error is None or display_info is None:
-        return error
-    if check(display_info) is None:
-        return None
-    return error
-
-
-def _duration_errors(  # noqa: PLR0913
-    probe: VideoProbe | AudioProbe | None,
-    *,
-    subject: str,
-    min_seconds: float | None,
-    max_seconds: float | None,
-    fix: str | None,
-    docs_url: str | None,
-    too_long_fix: str | None = None,
-) -> list[NodeError | None]:
-    """`video_errors`' and `audio_errors`' duration checks.
-
-    `fix` is the node's own advice for both bounds. Without it, `too_long_fix` replaces
-    `check_duration`'s default for a clip over the maximum, which suggests a video trim node.
-
-    Providers don't say whether they measure the video stream or the whole container, so each bound
-    uses the reading it's easier to meet: the shorter for a maximum, the longer for a minimum.
-    """
-    shortest = None
-    longest = None
-    if probe is not None:
-        shortest = probe.shortest_seconds
-        longest = probe.longest_seconds
-    errors: list[NodeError | None] = []
-    if max_seconds is not None:
-        maximum_fix = fix
-        if maximum_fix is None:
-            maximum_fix = too_long_fix
-        errors.append(
-            check_duration(shortest, subject=subject, maximum=max_seconds, fix=maximum_fix, docs_url=docs_url)
-        )
-    if min_seconds is not None:
-        errors.append(check_duration(longest, subject=subject, minimum=min_seconds, fix=fix, docs_url=docs_url))
-    return errors
-
-
-def _rate_errors(  # noqa: PLR0913
-    probe: VideoProbe | None,
-    *,
-    subject: str,
-    min_fps: float | None,
-    max_fps: float | None,
-    min_frames: int | None,
-    max_frames: int | None,
-    docs_url: str | None,
-) -> list[NodeError | None]:
-    """`video_errors`' frame-rate and frame-count checks.
-
-    A variable-frame-rate clip's average and declared rates differ, and providers don't say which
-    they mean, so each bound uses the reading it's easier to meet, as the duration checks do. The
-    same goes for a frame count estimated from them.
-    """
-    rates = _frame_rates(probe)
-    errors: list[NodeError | None] = []
-    if max_fps is not None:
-        errors.append(check_frame_rate(min(rates, default=None), subject=subject, maximum=max_fps, docs_url=docs_url))
-    if min_fps is not None:
-        errors.append(check_frame_rate(max(rates, default=None), subject=subject, minimum=min_fps, docs_url=docs_url))
-    if probe is None:
-        return errors
-    if max_frames is not None:
-        errors.append(check_frame_count(probe.fewest_frames, subject=subject, maximum=max_frames, docs_url=docs_url))
-    if min_frames is not None:
-        errors.append(check_frame_count(probe.most_frames, subject=subject, minimum=min_frames, docs_url=docs_url))
-    return errors
-
-
-def _frame_rates(probe: VideoProbe | None) -> list[float]:
-    """A probe's average and declared frame rates, leaving out the ones it doesn't have."""
-    if probe is None:
-        return []
-    return [rate for rate in (probe.fps, probe.nominal_fps) if rate is not None]
 
 
 def _is_allowed(mime_type: str, allowed: Sequence[str]) -> bool:
@@ -1339,19 +918,6 @@ def _require_valid_exact_ratios(ratios: Sequence[str]) -> None:
         raise ValueError(msg)
     for name in ratios:
         _parse_ratio(name)
-
-
-def _require_valid_aspect_ratio_bounds(widest: str | None, tallest: str | None) -> None:
-    """Raise when the aspect-ratio bounds can't be checked: only one is given, or one isn't a ratio.
-
-    Runs before anything is read, so a bad bound fails on every call, not only once an input can be read.
-    """
-    if (widest is None) != (tallest is None):
-        msg = "Attempted to check an aspect ratio. Failed because only one of widest and tallest was given; pass both."
-        raise ValueError(msg)
-    for bound in (widest, tallest):
-        if bound is not None:
-            _parse_ratio(bound)
 
 
 def _error(message: str, docs_url: str | None) -> NodeError:

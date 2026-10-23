@@ -1,7 +1,7 @@
 """How long one node's pre-run input checks may spend probing its video and audio inputs.
 
-The engine opens `input_check_budget` around each node's `validate_before_node_run`. It lives apart
-from `input_checks` so the resolution machine can open it without importing Pillow or static-ffmpeg.
+The engine opens `input_check_budget` around each node's pre-run checks: its declared validators and
+its `validate_before_node_run`.
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ _probe_deadline: ContextVar[float | None] = ContextVar("input_check_probe_deadli
 def input_check_budget(seconds: float = VALIDATION_PROBE_BUDGET_SECONDS) -> Iterator[None]:
     """Stop the video and audio probes inside this block once `seconds` have passed since it opened.
 
-    The engine opens one around each node's `validate_before_node_run`, so a node checking several
-    video or audio inputs probes for at most `seconds` in all. The time counts from when the block
+    The engine opens one around each node's pre-run checks, so a node checking several video or audio
+    inputs probes for at most `seconds` in all. The time counts from when the block
     opens, so it includes any other checks the node runs first. Inside it, each probe gets the smaller
     of `input_checks.FFPROBE_TIMEOUT_SECONDS` and the time left, and a probe that would start with no
     time left is skipped. Opened inside another budget, it can shorten the time left but never extend it.

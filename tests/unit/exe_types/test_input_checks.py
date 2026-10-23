@@ -7,10 +7,9 @@ from __future__ import annotations
 import base64
 import json
 import subprocess
-import sys
 from io import BytesIO
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -22,7 +21,6 @@ from griptape_nodes.exe_types.input_checks import (
     AudioProbe,
     ImageInfo,
     VideoProbe,
-    audio_errors,
     check_aspect_ratio_exact,
     check_aspect_ratio_range,
     check_audio_codec,
@@ -34,14 +32,12 @@ from griptape_nodes.exe_types.input_checks import (
     check_mime_type,
     check_size,
     check_video_codec,
-    image_errors,
     input_check_budget,
     input_subject,
     local_audio_probe,
     local_image_info,
     local_size_bytes,
     local_video_probe,
-    video_errors,
 )
 from griptape_nodes.exe_types.node_error import NodeError
 
@@ -631,353 +627,6 @@ class TestCheckAspectRatioRange:
         assert check_aspect_ratio_range(None, subject=SUBJECT, widest="3:1", tallest="1:3") is None
 
 
-class TestImageErrors:
-    LIMITS: ClassVar[dict[str, Any]] = {
-        "allowed_mime_types": ("image/jpeg", "image/png"),
-        "maximum_bytes": 10 * 1024 * 1024,
-        "min_side": 300,
-        "widest": "2.5:1",
-        "tallest": "1:2.5",
-    }
-
-    def test_judges_an_exif_rotated_photo_by_its_displayed_shape(self) -> None:
-        # Stored 4032x3024 but shown portrait, as a phone saves a portrait shot.
-        photo = _data_uri(_rotated_jpeg_bytes(4032, 3024, 6), "image/jpeg")
-        assert image_errors(photo, subject=SUBJECT, widest="1:1", tallest="9:16") == []
-
-    @pytest.mark.parametrize(("widest", "tallest"), [("3:1", None), (None, "1:3")], ids=["widest-only", "tallest-only"])
-    def test_refuses_half_an_aspect_ratio_range(self, widest: str | None, tallest: str | None) -> None:
-        with pytest.raises(ValueError, match="only one of widest and tallest"):
-            image_errors(_data_uri(_png_bytes(4000, 1000)), subject=SUBJECT, widest=widest, tallest=tallest)
-
-    def test_accepts_an_image_within_every_limit(self) -> None:
-        assert image_errors(_data_uri(_png_bytes(800, 600)), subject=SUBJECT, **self.LIMITS) == []
-
-    def test_reports_every_limit_the_image_breaks(self) -> None:
-        buffer = BytesIO()
-        Image.new("RGB", (200, 1000)).save(buffer, format="GIF")
-        messages = [
-            str(e) for e in image_errors(_data_uri(buffer.getvalue(), "image/gif"), subject=SUBJECT, **self.LIMITS)
-        ]
-        assert messages == [
-            f"{SUBJECT} is in GIF format. Convert it to JPEG or PNG.",
-            f"{SUBJECT} is 200x1000 and each side must be at least 300 pixels. Use a larger one.",
-            f"{SUBJECT} is 200x1000, which is too tall. The aspect ratio must be between 1:2.5 and 2.5:1. Crop it.",
-        ]
-
-    def test_runs_only_the_checks_whose_limits_are_given(self) -> None:
-        image = _data_uri(_png_bytes(100, 1000))
-        assert image_errors(image, subject=SUBJECT, allowed_mime_types=("image/png",)) == []
-        assert [str(e) for e in image_errors(image, subject=SUBJECT, min_side=300)] == [
-            f"{SUBJECT} is 100x1000 and each side must be at least 300 pixels. Use a larger one."
-        ]
-
-    def test_checks_the_area(self) -> None:
-        errors = image_errors(_data_uri(_png_bytes(400, 300)), subject=SUBJECT, max_megapixels=0.1)
-        assert [str(e) for e in errors] == [
-            f"{SUBJECT} is 400x300 (0.12 megapixels) and the limit is 0.1 megapixels. Resize it smaller."
-        ]
-
-    def test_checks_the_minimum_area(self) -> None:
-        errors = image_errors(_data_uri(_png_bytes(400, 300)), subject=SUBJECT, min_megapixels=0.2)
-        assert [str(e) for e in errors] == [
-            f"{SUBJECT} is 400x300 (0.1 megapixels) and the minimum is 0.2 megapixels. Use a larger one."
-        ]
-
-    def test_checks_the_size(self) -> None:
-        errors = image_errors(_data_uri(_png_bytes(800, 600)), subject=SUBJECT, maximum_bytes=10)
-        assert len(errors) == 1
-        assert "and the limit is" in str(errors[0])
-
-    def test_links_the_docs_page(self) -> None:
-        errors = image_errors(_data_uri(_png_bytes(100, 100)), subject=SUBJECT, min_side=300, docs_url=DOCS)
-        assert errors[0].links
-        assert errors[0].links[0].url == DOCS
-
-    def test_skips_a_remote_image(self) -> None:
-        assert image_errors("https://example.com/image.gif", subject=SUBJECT, **self.LIMITS) == []
-
-    def test_reduces_an_in_memory_image_to_a_string_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls: list[Any] = []
-        coerce = input_checks.coerce_media_url_or_data_uri
-
-        def counting(value: Any, *, kind: Any) -> str | None:
-            calls.append(value)
-            return coerce(value, kind=kind)
-
-        monkeypatch.setattr(input_checks, "coerce_media_url_or_data_uri", counting)
-        artifact = ImageArtifact(_png_bytes(400, 300), format="png", width=400, height=300)
-        assert image_errors(artifact, subject=SUBJECT, maximum_bytes=10, min_side=500) != []
-        assert sum(1 for value in calls if value is artifact) == 1
-
-    @pytest.mark.parametrize("image_format", ["DDS", "QOI"])
-    def test_refuses_a_format_pillow_reads_but_has_no_mime_type_for(self, image_format: str) -> None:
-        buffer = BytesIO()
-        Image.new("RGB", (64, 64)).save(buffer, format=image_format)
-        errors = image_errors(
-            _data_uri(buffer.getvalue(), "image/png"), subject=SUBJECT, allowed_mime_types=("image/jpeg", "image/png")
-        )
-        assert [str(e) for e in errors] == [f"{SUBJECT} is in {image_format} format. Convert it to JPEG or PNG."]
-
-    @pytest.mark.parametrize("bound", ["16x9", "2.5", "3:0", "0:1", "a:b", ""])
-    def test_refuses_a_bound_that_is_not_a_ratio_before_reading_anything(self, bound: str) -> None:
-        # A remote URL is never read, so a bad bound must fail on its own, not only for a local file.
-        with pytest.raises(ValueError, match="is not a ratio such as '16:9'"):
-            image_errors("https://example.com/image.png", subject=SUBJECT, widest=bound, tallest="1:2")
-
-    def test_accepts_decimal_ratios(self) -> None:
-        errors = image_errors(_data_uri(_png_bytes(400, 100)), subject=SUBJECT, widest="2.5:1", tallest="1:2.5")
-        assert [str(e) for e in errors] == [
-            f"{SUBJECT} is 400x100, which is too wide. The aspect ratio must be between 1:2.5 and 2.5:1. Crop it."
-        ]
-
-    def test_refuses_allowed_formats_given_as_one_string(self) -> None:
-        with pytest.raises(TypeError, match="pass a tuple"):
-            image_errors("https://example.com/image.png", subject=SUBJECT, allowed_mime_types="image/png")
-
-    def test_passes_a_strict_size_limit_through(self) -> None:
-        image = _data_uri(_png_bytes(40, 30))
-        size = local_size_bytes(image, kind="image")
-        assert size is not None
-        assert image_errors(image, subject=SUBJECT, maximum_bytes=size) == []
-        assert len(image_errors(image, subject=SUBJECT, maximum_bytes=size, strict_maximum_bytes=True)) == 1
-
-
-class TestVideoErrors:
-    @pytest.fixture
-    def clip(self, tmp_path: Path) -> Path:
-        path = tmp_path / "clip.mp4"
-        path.write_bytes(b"video")
-        return path
-
-    def _probe(self, monkeypatch: pytest.MonkeyPatch, info: ImageInfo | None, seconds: float | None) -> list[Any]:
-        calls: list[Any] = []
-
-        def fake_probe(value: Any) -> VideoProbe:
-            calls.append(value)
-            return VideoProbe(info=info, seconds=seconds)
-
-        monkeypatch.setattr(input_checks, "local_video_probe", fake_probe)
-        return calls
-
-    def test_accepts_a_video_within_every_limit(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._probe(monkeypatch, ImageInfo(1280, 720, None), 5.0)
-        assert (
-            video_errors(
-                str(clip),
-                subject=SUBJECT,
-                maximum_bytes=1024,
-                min_seconds=2,
-                max_seconds=30,
-                min_side=200,
-                max_side=2048,
-                widest="3:1",
-                tallest="1:3",
-            )
-            == []
-        )
-
-    def test_reports_every_limit_the_video_breaks_from_one_probe(
-        self, clip: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        calls = self._probe(monkeypatch, ImageInfo(4000, 1000, None), 40.0)
-        messages = [
-            str(e)
-            for e in video_errors(
-                str(clip),
-                subject=SUBJECT,
-                max_seconds=30,
-                max_side=2048,
-                widest="3:1",
-                tallest="1:3",
-            )
-        ]
-        assert messages == [
-            f"{SUBJECT} is 40.00 seconds long and the limit is 30. Use a Trim Video node to shorten it.",
-            f"{SUBJECT} is 4000x1000 and each side must be at most 2048 pixels. Resize it smaller.",
-            f"{SUBJECT} is 4000x1000, which is too wide. The aspect ratio must be between 1:3 and 3:1. Crop it.",
-        ]
-        assert len(calls) == 1
-
-    def test_checks_the_size_without_probing(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls = self._probe(monkeypatch, ImageInfo(1280, 720, None), 5.0)
-        errors = video_errors(str(clip), subject=SUBJECT, maximum_bytes=1)
-        assert len(errors) == 1
-        assert "and the limit is" in str(errors[0])
-        assert calls == []
-
-    def test_checks_the_area(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._probe(monkeypatch, ImageInfo(4000, 2100, None), 5.0)
-        errors = video_errors(str(clip), subject=SUBJECT, max_megapixels=8.2944)
-        assert len(errors) == 1
-        assert "megapixels" in str(errors[0])
-
-    def test_checks_the_minimum_area(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls = self._probe(monkeypatch, ImageInfo(640, 480, None), 5.0)
-        errors = video_errors(str(clip), subject=SUBJECT, min_megapixels=0.407696)
-        assert [str(e) for e in errors] == [
-            f"{SUBJECT} is 640x480 (0.3 megapixels) and the minimum is 0.407696 megapixels. Use a larger one."
-        ]
-        assert len(calls) == 1
-
-    @pytest.mark.parametrize(
-        ("average", "nominal", "min_fps", "max_fps", "expected"),
-        [
-            # A 60 fps screen recording averaging 19 fps: the minimum uses the higher, declared rate.
-            (19.1, 60.0, 24, 60, None),
-            # A clip declaring 120 fps but averaging 50: the maximum uses the lower, average rate.
-            (50.0, 120.0, 24, 60, None),
-            # Both rates under the minimum still fail, quoting the higher.
-            (15.0, 20.0, 24, None, "is 20 fps and the minimum is 24 fps."),
-        ],
-        ids=["vfr-under-min-average", "vfr-over-max-nominal", "both-under-min"],
-    )
-    def test_checks_each_frame_rate_bound_against_the_easier_rate(  # noqa: PLR0913, PLR0917
-        self,
-        clip: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        average: float,
-        nominal: float,
-        min_fps: float | None,
-        max_fps: float | None,
-        expected: str | None,
-    ) -> None:
-        monkeypatch.setattr(
-            input_checks,
-            "local_video_probe",
-            lambda _value: VideoProbe(info=None, seconds=5.0, fps=average, nominal_fps=nominal),
-        )
-        messages = [str(e) for e in video_errors(str(clip), subject=SUBJECT, min_fps=min_fps, max_fps=max_fps)]
-        if expected is None:
-            assert messages == []
-        else:
-            assert len(messages) == 1
-            assert expected in messages[0]
-
-    def test_checks_the_frame_rate(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(
-            input_checks, "local_video_probe", lambda _value: VideoProbe(info=None, seconds=5.0, fps=15.0)
-        )
-        errors = video_errors(str(clip), subject=SUBJECT, min_fps=24, max_fps=60)
-        assert [str(e) for e in errors] == [
-            f"{SUBJECT} is 15 fps and the minimum is 24 fps. Re-export it at a higher frame rate."
-        ]
-
-    @pytest.mark.parametrize(
-        ("stream", "container", "min_seconds", "max_seconds", "expected"),
-        [
-            # A 10 s video with a 31 s audio track: the maximum is checked against the video.
-            (10.0, 31.0, None, 30, None),
-            # A 2.9 s video with 3.5 s of audio: the minimum is checked against the longer reading.
-            (2.9, 3.5, 3, None, None),
-            # Both readings over the maximum still fail, quoting the shorter.
-            (31.0, 32.0, None, 30, "is 31.00 seconds long and the limit is 30."),
-            # Both readings under the minimum still fail, quoting the longer.
-            (2.0, 2.5, 3, None, "is 2.50 seconds long and the minimum is 3."),
-        ],
-        ids=["long-audio-under-max", "long-audio-over-min", "both-over-max", "both-under-min"],
-    )
-    def test_checks_each_bound_against_the_easier_duration(  # noqa: PLR0913, PLR0917
-        self,
-        clip: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        stream: float,
-        container: float,
-        min_seconds: float | None,
-        max_seconds: float | None,
-        expected: str | None,
-    ) -> None:
-        monkeypatch.setattr(
-            input_checks,
-            "local_video_probe",
-            lambda _value: VideoProbe(info=None, seconds=stream, container_seconds=container),
-        )
-        errors = video_errors(str(clip), subject=SUBJECT, min_seconds=min_seconds, max_seconds=max_seconds)
-        messages = [str(e) for e in errors]
-        if expected is None:
-            assert messages == []
-        else:
-            assert len(messages) == 1
-            assert expected in messages[0]
-
-    def test_uses_a_probe_the_caller_already_read(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls = self._probe(monkeypatch, ImageInfo(1280, 720, None), 5.0)
-        probe = VideoProbe(info=ImageInfo(4000, 1000, None), seconds=40.0)
-        errors = video_errors(str(clip), subject=SUBJECT, max_seconds=30, max_side=2048, probe=probe)
-        assert [str(e) for e in errors] == [
-            f"{SUBJECT} is 40.00 seconds long and the limit is 30. Use a Trim Video node to shorten it.",
-            f"{SUBJECT} is 4000x1000 and each side must be at most 2048 pixels. Resize it smaller.",
-        ]
-        assert calls == []
-
-    def test_does_not_probe_again_a_video_the_caller_could_not_read(
-        self, clip: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        calls = self._probe(monkeypatch, ImageInfo(4000, 1000, None), 40.0)
-        assert video_errors(str(clip), subject=SUBJECT, max_seconds=30, max_side=2048, probe=None) == []
-        assert calls == []
-
-    @pytest.mark.parametrize(("widest", "tallest"), [("3:1", None), (None, "1:3")], ids=["widest-only", "tallest-only"])
-    def test_refuses_half_an_aspect_ratio_range(
-        self, clip: Path, monkeypatch: pytest.MonkeyPatch, widest: str | None, tallest: str | None
-    ) -> None:
-        calls = self._probe(monkeypatch, ImageInfo(4000, 1000, None), 5.0)
-        with pytest.raises(ValueError, match="only one of widest and tallest"):
-            video_errors(str(clip), subject=SUBJECT, widest=widest, tallest=tallest)
-        assert calls == []
-
-    def test_uses_the_given_duration_fix(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._probe(monkeypatch, None, 1.0)
-        errors = video_errors(str(clip), subject=SUBJECT, min_seconds=3, duration_fix="Pick a longer clip.")
-        assert [str(e) for e in errors] == [f"{SUBJECT} is 1.00 seconds long and the minimum is 3. Pick a longer clip."]
-
-    def test_links_the_docs_page(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._probe(monkeypatch, ImageInfo(100, 100, None), 5.0)
-        errors = video_errors(str(clip), subject=SUBJECT, min_side=200, docs_url=DOCS)
-        assert errors[0].links
-        assert errors[0].links[0].url == DOCS
-
-    def test_skips_a_remote_video(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(
-            input_checks.subprocess, "run", lambda *_a, **_k: pytest.fail("a remote video must not be probed")
-        )
-        assert (
-            video_errors("https://example.com/clip.mp4", subject=SUBJECT, maximum_bytes=1, max_seconds=1, min_side=1)
-            == []
-        )
-
-    def test_checks_the_container_and_codec_from_one_probe(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls: list[Any] = []
-
-        def probe(_value: Any) -> VideoProbe:
-            calls.append(_value)
-            return VideoProbe(info=None, seconds=None, mime_type="video/quicktime", codec="prores")
-
-        monkeypatch.setattr(input_checks, "local_video_probe", probe)
-        errors = video_errors(
-            str(clip), subject=SUBJECT, allowed_mime_types=("video/mp4",), allowed_codecs=("h264", "hevc")
-        )
-        assert [str(e) for e in errors] == [
-            f"{SUBJECT} is in MOV format. Convert it to MP4.",
-            f"{SUBJECT} is encoded as ProRes. Re-encode it as H.264 or H.265.",
-        ]
-        assert len(calls) == 1
-
-    def test_passes_a_shape_check_when_the_displayed_frame_fits(
-        self, clip: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # 1440x1080 HDV with 4:3 pixels plays at 16:9.
-        probe = VideoProbe(info=ImageInfo(1440, 1080, None), seconds=5.0, display_info=ImageInfo(1920, 1080, None))
-        monkeypatch.setattr(input_checks, "local_video_probe", lambda _v: probe)
-        assert video_errors(str(clip), subject=SUBJECT, exact_aspect_ratios=("16:9",)) == []
-        assert video_errors(str(clip), subject=SUBJECT, widest="16:9", tallest="16:9") == []
-
-    def test_checks_pixel_limits_against_the_stored_frame(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        probe = VideoProbe(info=ImageInfo(1440, 1080, None), seconds=5.0, display_info=ImageInfo(1920, 1080, None))
-        monkeypatch.setattr(input_checks, "local_video_probe", lambda _v: probe)
-        assert video_errors(str(clip), subject=SUBJECT, max_side=1500) == []
-
-
 class TestCheckFrameCount:
     def test_refuses_too_many_frames(self) -> None:
         error = check_frame_count(9001, subject=SUBJECT, maximum=9000, docs_url=DOCS)
@@ -997,25 +646,6 @@ class TestCheckFrameCount:
         assert check_frame_count(73, subject=SUBJECT, minimum=73, maximum=181) is None
         assert check_frame_count(181, subject=SUBJECT, minimum=73, maximum=181) is None
         assert check_frame_count(None, subject=SUBJECT, minimum=73) is None
-
-    def test_video_errors_checks_frames_against_the_reading_easier_to_meet(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        clip = tmp_path / "clip.mkv"
-        clip.write_bytes(b"video")
-        # No recorded count: 3 s at 24 fps average (72 frames) or 30 fps declared (90 frames).
-        probe = VideoProbe(info=None, seconds=3.0, fps=24.0, nominal_fps=30.0)
-        monkeypatch.setattr(input_checks, "local_video_probe", lambda _v: probe)
-        assert video_errors(str(clip), subject=SUBJECT, min_frames=80, max_frames=80) == []
-        assert [str(e) for e in video_errors(str(clip), subject=SUBJECT, max_frames=60)] == [
-            f"{SUBJECT} has 72 frames and the limit is 60. Use a Trim Video node to shorten it, or lower its frame rate."
-        ]
-        assert [str(e) for e in video_errors(str(clip), subject=SUBJECT, min_frames=100)] == [
-            f"{SUBJECT} has 90 frames and the minimum is 100. Use a longer clip."
-        ]
-
-    def test_video_errors_skips_frames_for_a_video_it_cannot_read(self) -> None:
-        assert video_errors("https://example.com/clip.mp4", subject=SUBJECT, min_frames=73, max_frames=181) == []
 
 
 class TestCheckFrameRate:
@@ -1083,12 +713,6 @@ class TestCheckAspectRatioExact:
     def test_refuses_no_ratios_or_a_bad_one_before_reading_anything(self, ratios: tuple[str, ...]) -> None:
         with pytest.raises(ValueError, match="Attempted to check"):
             check_aspect_ratio_exact(None, subject=SUBJECT, ratios=ratios)
-
-    def test_image_errors_checks_exact_ratios(self) -> None:
-        errors = image_errors(_data_uri(_png_bytes(400, 300)), subject=SUBJECT, exact_aspect_ratios=self.RATIOS)
-        assert [str(e) for e in errors] == [
-            f"{SUBJECT} is 400x300, and its aspect ratio must be 16:9 or 9:16. Crop it."
-        ]
 
     @pytest.mark.parametrize("ratio", ["1:inf", "inf:1", "nan:1"])
     def test_refuses_a_ratio_that_is_not_finite(self, ratio: str) -> None:
@@ -1306,33 +930,6 @@ class TestAudio:
         monkeypatch.setattr(input_checks.subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout=answer))
         assert local_audio_probe(str(clip)) is None
 
-    def test_checks_format_codec_and_duration_from_one_probe(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls: list[Any] = []
-
-        def probe(value: Any) -> AudioProbe:
-            calls.append(value)
-            return AudioProbe(mime_type="audio/flac", codec="flac", profile=None, seconds=2.0)
-
-        monkeypatch.setattr(input_checks, "local_audio_probe", probe)
-        errors = audio_errors(
-            str(clip),
-            subject=SUBJECT,
-            allowed_mime_types=("audio/wav", "audio/mpeg"),
-            allowed_codecs=("mp3", "pcm_s16le"),
-            min_seconds=3,
-            max_seconds=30,
-        )
-        assert [str(e) for e in errors] == [
-            f"{SUBJECT} is in FLAC format. Convert it to WAV or MP3.",
-            f"{SUBJECT} is encoded as FLAC. Re-encode it as MP3 or 16-bit PCM (little-endian).",
-            f"{SUBJECT} is 2.00 seconds long and the minimum is 3. Use a longer clip.",
-        ]
-        assert len(calls) == 1
-
-    def test_does_not_probe_for_a_size_limit_alone(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: pytest.fail("no probe needed"))
-        assert audio_errors(str(clip), subject=SUBJECT, maximum_bytes=10**9) == []
-
     def test_refuses_codecs_given_as_one_string(self) -> None:
         with pytest.raises(TypeError, match="pass a tuple"):
             check_audio_codec("mp3", subject=SUBJECT, allowed="mp3")
@@ -1348,36 +945,11 @@ class TestAudio:
         assert probe is not None
         assert probe.mime_type == expected
 
-    def test_suggests_an_audio_editor_for_audio_that_is_too_long(
-        self, clip: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        probe = AudioProbe(mime_type="audio/wav", codec="pcm_s16le", profile=None, seconds=3.0)
-        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: probe)
-        assert [str(e) for e in audio_errors(str(clip), subject=SUBJECT, max_seconds=1, min_seconds=5)] == [
-            f"{SUBJECT} is 3.00 seconds long and the limit is 1. Trim it in an audio editor.",
-            f"{SUBJECT} is 3.00 seconds long and the minimum is 5. Use a longer clip.",
-        ]
-
     def test_names_pcm_byte_order(self) -> None:
         error = check_audio_codec("pcm_s16be", subject=SUBJECT, allowed=("mp3", "pcm_s16le"))
         assert str(error) == (
             f"{SUBJECT} is encoded as 16-bit PCM (big-endian). Re-encode it as MP3 or 16-bit PCM (little-endian)."
         )
-
-    def test_accepts_an_mp4_videos_audio_where_video_mp4_is_listed(
-        self, clip: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        probe = AudioProbe(mime_type="audio/mp4", codec="aac", profile="LC", seconds=3.0)
-        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: probe)
-        assert audio_errors(str(clip), subject=SUBJECT, allowed_mime_types=("audio/mpeg", "video/mp4")) == []
-
-    def test_lists_only_the_names_the_provider_wrote_when_refusing(
-        self, clip: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        probe = AudioProbe(mime_type="audio/flac", codec="flac", profile=None, seconds=3.0)
-        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: probe)
-        errors = audio_errors(str(clip), subject=SUBJECT, allowed_mime_types=("audio/mpeg", "video/mp4"))
-        assert [str(e) for e in errors] == [f"{SUBJECT} is in FLAC format. Convert it to MP3 or MP4."]
 
     def test_accepts_an_ogg_opus_file_listed_as_audio_opus(self) -> None:
         assert check_mime_type("audio/ogg", subject=SUBJECT, allowed=("audio/opus", "audio/mpeg")) is None
@@ -1393,17 +965,6 @@ class TestAudio:
     @pytest.mark.parametrize(("codec", "allowed"), [("opus", ("Opus",)), ("aac", ("AAC",)), ("vorbis", ("Vorbis",))])
     def test_matches_an_audio_codec_however_a_provider_writes_it(self, codec: str, allowed: tuple[str, ...]) -> None:
         assert check_audio_codec(codec, subject=SUBJECT, allowed=allowed) is None
-
-    @pytest.mark.parametrize(
-        ("reading", "listed"),
-        [("audio/x-matroska", "video/x-matroska"), ("audio/3gpp", "video/3gpp"), ("audio/webm", "video/webm")],
-    )
-    def test_accepts_a_videos_audio_where_its_container_is_listed(
-        self, clip: Path, monkeypatch: pytest.MonkeyPatch, reading: str, listed: str
-    ) -> None:
-        probe = AudioProbe(mime_type=reading, codec="aac", profile="LC", seconds=3.0)
-        monkeypatch.setattr(input_checks, "local_audio_probe", lambda _v: probe)
-        assert audio_errors(str(clip), subject=SUBJECT, allowed_mime_types=(listed,)) == []
 
     @pytest.mark.parametrize("brand", ["3gp4", "3gp6"])
     def test_names_3gp_audio_as_3gp(self, clip: Path, monkeypatch: pytest.MonkeyPatch, brand: str) -> None:
@@ -1469,29 +1030,9 @@ class TestCodecNames:
         with pytest.raises(ValueError, match="isn't a codec this module knows"):
             check_video_codec("h264", subject=SUBJECT, allowed=(written,))
 
-    def test_raises_on_an_unknown_name_before_any_input_is_read(self) -> None:
-        with pytest.raises(ValueError, match="isn't a codec this module knows"):
-            video_errors("https://example.com/clip.mp4", subject=SUBJECT, allowed_codecs=("H.264/AVC",))
-        with pytest.raises(ValueError, match="isn't a codec this module knows"):
-            audio_errors("https://example.com/clip.mp3", subject=SUBJECT, allowed_codecs=("MPEG Layer 3",))
-
     def test_names_a_codec_it_doesnt_list_by_ffprobes_name(self) -> None:
         error = check_video_codec("theora", subject=SUBJECT, allowed=("h264",))
         assert str(error) == f"{SUBJECT} is encoded as THEORA. Re-encode it as H.264."
-
-
-class TestInputCheckBudgetImport:
-    def test_resolution_machine_loads_no_media_libraries(self) -> None:
-        code = (
-            "import sys\n"
-            "import griptape_nodes.machines.parallel_resolution\n"
-            "loaded = [m for m in ('griptape_nodes.exe_types.input_checks',) if m in sys.modules]\n"
-            "print(loaded)\n"
-        )
-        result = subprocess.run(  # noqa: S603 (a fresh interpreter, so earlier imports do not count)
-            [sys.executable, "-c", code], capture_output=True, text=True, check=True, timeout=60
-        )
-        assert result.stdout.strip() == "[]"
 
 
 class TestCheckMimeType:

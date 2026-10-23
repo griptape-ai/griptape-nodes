@@ -1,0 +1,67 @@
+"""Tests for `MaxCount` and `ByParameter` on their own."""
+
+from __future__ import annotations
+
+import pytest
+
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.validators.base import MediaInfo
+from griptape_nodes.exe_types.validators.common import ByParameter, MaxCount
+from griptape_nodes.exe_types.validators.media import MaxFileSize, SideRange
+from tests.unit.exe_types.mocks import MockNode
+
+DOCS = "https://example.com/limits"
+
+
+class TestMaxCount:
+    def test_allows_the_maximum(self) -> None:
+        assert MaxCount(3).check([1, 2, 3], subject="images", media=MediaInfo(), docs_url=None) is None
+
+    def test_refuses_more_than_the_maximum(self) -> None:
+        error = MaxCount(2, noun="images").check(
+            [1, 2, 3], subject="reference images", media=MediaInfo(), docs_url=DOCS
+        )
+        assert str(error) == "3 images are connected to 'reference images' and the limit is 2. Remove 1."
+        assert error is not None
+        assert error.links
+        assert error.links[0].url == DOCS
+
+
+class TestByParameter:
+    PRO = (SideRange(min=300),)
+    DEFAULT = (SideRange(min=1000), MaxFileSize(1))
+
+    def _node(self, model: str | None) -> MockNode:
+        node = MockNode(name="node")
+        node.add_parameter(ParameterString(name="model"))
+        if model is not None:
+            node.set_parameter_value("model", model)
+        return node
+
+    def test_picks_the_list_for_the_current_value(self) -> None:
+        by_model = ByParameter("model", {"pro": self.PRO}, default=self.DEFAULT)
+        assert by_model.selected(self._node("pro")) == self.PRO
+
+    @pytest.mark.parametrize("model", ["other", None])
+    def test_falls_back_to_the_default(self, model: str | None) -> None:
+        by_model = ByParameter("model", {"pro": self.PRO}, default=self.DEFAULT)
+        assert by_model.selected(self._node(model)) == self.DEFAULT
+
+    def test_has_no_default_unless_given(self) -> None:
+        assert ByParameter("model", {"pro": self.PRO}).selected(self._node("other")) == ()
+
+    def test_lists_every_validator_it_can_pick(self) -> None:
+        by_model = ByParameter("model", {"pro": self.PRO}, default=self.DEFAULT)
+        assert list(by_model.candidates()) == [*self.PRO, *self.DEFAULT]
+
+    def test_checks_nothing_itself(self) -> None:
+        by_model = ByParameter("model", {"pro": self.PRO})
+        assert by_model.check("x", subject="s", media=MediaInfo(), docs_url=None) is None
+
+    def test_is_frozen_and_hashable(self) -> None:
+        first = ByParameter("model", {"pro": self.PRO}, default=self.DEFAULT)
+        second = ByParameter("model", {"pro": list(self.PRO)}, default=list(self.DEFAULT))
+        assert first == second
+        assert hash(first) == hash(second)
+        with pytest.raises(AttributeError):
+            first.parameter = "size"  # pyright: ignore[reportAttributeAccessIssue]
