@@ -114,10 +114,16 @@ def _manager_on(
     manager._active_provider_name = "griptape_cloud"
     monkeypatch.setattr(manager, "_build_runner", lambda *_a, **_k: runner)
     monkeypatch.setattr(_AGENT_MANAGER_MODULE + "._compose_prompt", _plain_prompt)
+    # Don't wait for the fake's libraries, which never finish loading.
+    monkeypatch.setattr(_AGENT_MANAGER_MODULE + "._LIBRARY_LOADING_WAIT_SECONDS", 0)
     manager._engine = SimpleNamespace(  # type: ignore[assignment]
         event_manager=SimpleNamespace(put_event=lambda _e: None),
         handle_request=lambda _r: GetEnabledMCPServersResultSuccess(servers={}, result_details="none"),
         ahandle_request=_no_attribution,
+        # Libraries still loading and no flow open, so the run's instructions carry
+        # neither the node types nor a flow.
+        library_manager=SimpleNamespace(_libraries_loading_complete=asyncio.Event()),
+        context_manager=SimpleNamespace(has_current_flow=lambda: False),
     )
     return manager
 
