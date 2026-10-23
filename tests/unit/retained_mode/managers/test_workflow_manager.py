@@ -2343,8 +2343,10 @@ class TestWorkflowManager:
         _write_workflow_naming_library(tmp_path, "needs_a_library.py", "Some Library")
         real_judge = workflow_manager._judge_workflow_file
 
-        async def judge_while_a_library_loads(request: LoadWorkflowMetadata) -> ResultPayload:
-            result = await real_judge(request)
+        async def judge_while_a_library_loads(
+            request: LoadWorkflowMetadata, *, registered_libraries: list[str] | None = None
+        ) -> ResultPayload:
+            result = await real_judge(request, registered_libraries=registered_libraries)
             workflow_manager.note_library_set_changed()
             return result
 
@@ -2568,6 +2570,43 @@ class TestWorkflowManager:
 
         assert isinstance(result, ListAllWorkflowInfoResultSuccess)
         assert result.workflow_infos["my_workflow"].status == WorkflowStatus.MISSING
+
+    @pytest.mark.asyncio
+    async def test_on_list_all_workflow_info_request_fetches_libraries_once(
+        self, engine: Engine, tmp_path: Path
+    ) -> None:
+        """One ListRegisteredLibrariesRequest serves every workflow judged in the listing.
+
+        Each entry that needs judging would otherwise issue its own library-list request, so a
+        workspace with several unjudged workflows would multiply that query by the entry count.
+        """
+        workflow_manager = engine.workflow_manager
+        engine.config_manager.workspace_path = tmp_path
+        request = ListAllWorkflowInfoRequest()
+
+        mock_workflow_a = MagicMock()
+        mock_workflow_a.file_path = "workflows/workflow_a.py"
+        mock_workflow_b = MagicMock()
+        mock_workflow_b.file_path = "workflows/workflow_b.py"
+
+        with (
+            patch.object(engine.workflow_registry, "list_workflows", return_value=["workflow_a", "workflow_b"]),
+            patch.object(
+                engine.workflow_registry,
+                "get_workflow_by_name",
+                side_effect=lambda name: mock_workflow_a if name == "workflow_a" else mock_workflow_b,
+            ),
+            patch.object(engine, "ahandle_request", wraps=engine.ahandle_request) as ahandle_request_spy,
+        ):
+            result = await workflow_manager.catalog.on_list_all_workflow_info_request(request)
+
+        assert isinstance(result, ListAllWorkflowInfoResultSuccess)
+        list_libraries_calls = [
+            call
+            for call in ahandle_request_spy.await_args_list
+            if isinstance(call.args[0], ListRegisteredLibrariesRequest)
+        ]
+        assert len(list_libraries_calls) == 1
 
     @pytest.mark.asyncio
     async def test_on_list_all_workflow_info_request_skips_unknown_registry_keys(self, engine: Engine) -> None:

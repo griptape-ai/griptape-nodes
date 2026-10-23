@@ -409,18 +409,24 @@ class WorkflowManager(EngineScoped):
     def get_workflow_info_for_attempted_load(self, workflow_file_path: str) -> WorkflowInfo:
         return self._workflow_file_path_to_info[workflow_file_path]
 
-    async def get_current_workflow_info(self, file_path: str) -> WorkflowInfo | None:
+    async def get_current_workflow_info(
+        self, file_path: str, *, registered_libraries: list[str] | None = None
+    ) -> WorkflowInfo | None:
         """The verdict for a workflow file, judged again if the library set changed since.
 
         Judging goes through `on_load_workflow_metadata_request`, which waits for any library
-        load in flight, so a verdict is never judged against a half-loaded set.
+        load in flight, so a verdict is never judged against a half-loaded set. Pass
+        `registered_libraries` when the caller is judging several files in a row, so each one
+        doesn't issue its own `ListRegisteredLibrariesRequest`.
         """
         workflow_info_key = self.build_workflow_info_key(file_path)
         cached_info = self._workflow_file_path_to_info.get(workflow_info_key)
         if cached_info is not None and cached_info.library_set_generation == self._library_set_generation:
             return cached_info
 
-        await self.on_load_workflow_metadata_request(LoadWorkflowMetadata(file_name=file_path))
+        await self.on_load_workflow_metadata_request(
+            LoadWorkflowMetadata(file_name=file_path), registered_libraries=registered_libraries
+        )
         return self._workflow_file_path_to_info.get(workflow_info_key)
 
     def build_workflow_info_key(self, file_path: str) -> str:
@@ -568,7 +574,9 @@ class WorkflowManager(EngineScoped):
         )
 
     @handles(LoadWorkflowMetadata)
-    async def on_load_workflow_metadata_request(self, request: LoadWorkflowMetadata) -> ResultPayload:
+    async def on_load_workflow_metadata_request(
+        self, request: LoadWorkflowMetadata, *, registered_libraries: list[str] | None = None
+    ) -> ResultPayload:
         # The editor can send LoadWorkflowMetadata before library registration finishes
         # (observed on Windows, engine cold start). Without this gate, the dependency
         # check would race LibraryRegistry and return LibraryNotRegisteredProblem
@@ -577,13 +585,15 @@ class WorkflowManager(EngineScoped):
         # Read before judging, so a library changing mid-judgement leaves the verdict stale
         # rather than current.
         library_set_generation = self._library_set_generation
-        result = await self._judge_workflow_file(request)
+        result = await self._judge_workflow_file(request, registered_libraries=registered_libraries)
         workflow_info = self._workflow_file_path_to_info.get(self.build_workflow_info_key(request.file_name))
         if workflow_info is not None:
             workflow_info.library_set_generation = library_set_generation
         return result
 
-    async def _judge_workflow_file(self, request: LoadWorkflowMetadata) -> ResultPayload:
+    async def _judge_workflow_file(
+        self, request: LoadWorkflowMetadata, *, registered_libraries: list[str] | None = None
+    ) -> ResultPayload:
         """Read a workflow's header and record how it fares against the loaded libraries."""
         # Let us go into the darkness.
         complete_file_path = self.engine.config_manager.workspace_path.joinpath(request.file_name)
@@ -605,7 +615,9 @@ class WorkflowManager(EngineScoped):
             return metadata_or_failure
         workflow_metadata = metadata_or_failure
 
-        return await self._evaluate_workflow_metadata(str_path, workflow_metadata, registered_libraries=None)
+        return await self._evaluate_workflow_metadata(
+            str_path, workflow_metadata, registered_libraries=registered_libraries
+        )
 
     async def _evaluate_workflow_metadata(  # noqa: C901, PLR0912, PLR0915
         self,

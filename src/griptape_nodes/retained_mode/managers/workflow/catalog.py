@@ -16,6 +16,10 @@ from griptape_nodes.node_library.workflow_registry import (
 )
 from griptape_nodes.retained_mode.engine import EngineScoped
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
+from griptape_nodes.retained_mode.events.library_events import (
+    ListRegisteredLibrariesRequest,
+    ListRegisteredLibrariesResultSuccess,
+)
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
 )
@@ -144,6 +148,17 @@ class WorkflowCatalog(EngineScoped):
             details = f"Attempted to list all workflow info. Failed to list workflows: {e}"
             return ListAllWorkflowInfoResultFailure(result_details=details)
 
+        # Fetched once for the whole listing: every re-judged workflow below would otherwise
+        # issue its own ListRegisteredLibrariesRequest, turning one library change into N queries.
+        list_libraries_result = await self.engine.ahandle_request(
+            ListRegisteredLibrariesRequest(broadcast_result=False)
+        )
+        registered_libraries = (
+            list_libraries_result.libraries
+            if isinstance(list_libraries_result, ListRegisteredLibrariesResultSuccess)
+            else []
+        )
+
         workflow_infos: dict[str, WorkflowInfoSummary] = {}
         for registry_key in registry_keys:
             try:
@@ -153,7 +168,9 @@ class WorkflowCatalog(EngineScoped):
             # Unsaved workflows are registry-only (no on-disk metadata to summarize).
             if workflow.file_path is None:
                 continue
-            wf_info = await self.engine.workflow_manager.get_current_workflow_info(workflow.file_path)
+            wf_info = await self.engine.workflow_manager.get_current_workflow_info(
+                workflow.file_path, registered_libraries=registered_libraries
+            )
             if wf_info is None:
                 continue
             workflow_infos[registry_key] = self._build_workflow_info_payload(wf_info)
