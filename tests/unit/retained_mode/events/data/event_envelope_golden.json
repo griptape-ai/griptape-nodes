@@ -2,8 +2,7 @@
   "EventRequest": {
     "request_id": "r1",
     "response_topic": "t",
-    "sender_engine_id": null,
-    "sender_session_id": null,
+    "sender": null,
     "event_type": "EventRequest",
     "request_type": "GetParameterValueRequest",
     "request": {
@@ -21,8 +20,7 @@
       {
         "request_id": "a",
         "response_topic": null,
-        "sender_engine_id": null,
-        "sender_session_id": null,
+        "sender": null,
         "event_type": "EventRequest",
         "request_type": "GetParameterValueRequest",
         "request": {

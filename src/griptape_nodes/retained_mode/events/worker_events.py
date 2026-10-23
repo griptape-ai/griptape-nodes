@@ -200,7 +200,7 @@ class StartWorkerForEngineResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 
 @dataclass
 @PayloadRegistry.register
-class RegisterSessionRequest(RequestPayload):
+class OfferSessionForWorkersRequest(RequestPayload):
     """Sent by the artist's engine to another engine before asking it to start any worker.
 
     Sent once per session for each engine the distribution settings assign a library to. That
@@ -231,7 +231,7 @@ class RegisterSessionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RegisterSessionResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class OfferSessionForWorkersResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """The engine accepted the artist's session.
 
     Args:
@@ -246,17 +246,42 @@ class RegisterSessionResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
 
 @dataclass
 @PayloadRegistry.register
-class RegisterSessionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class OfferSessionForWorkersResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """The engine refused the artist's session, and will start no workers for it."""
 
 
 @dataclass
 @PayloadRegistry.register
-class StopWorkerRequest(RequestPayload):
+class WithdrawSessionOfferRequest(RequestPayload):
+    """Sent by the artist's engine to each engine it offered its session to, once it is done with them.
+
+    Sent when the artist's engine resets its workers, as when its session ends or it shuts down. The
+    other engine forgets every session the sender offered, with their credentials, and stops the
+    workers it runs for them, as it does when the link to the sender is lost.
+    """
+
+    broadcast_result: bool = field(default=False, kw_only=True)
+
+
+@dataclass
+@PayloadRegistry.register
+class WithdrawSessionOfferResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """The engine forgot the sender's sessions."""
+
+
+@dataclass
+@PayloadRegistry.register
+class WithdrawSessionOfferResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """The engine could not forget the sender's sessions."""
+
+
+@dataclass
+@PayloadRegistry.register
+class StopWorkerForEngineRequest(RequestPayload):
     """Sent by the artist's engine to the engine it asked to start a worker, to stop that worker.
 
     Sent when the start is withdrawn after it was sent, as when the library is reset while the
-    other engine has not answered yet. That engine reports the exit with `WorkerExitedRequest`.
+    other engine has not answered yet. That engine reports the exit with `ReportWorkerExitedRequest`.
 
     Args:
         worker_engine_id: The worker to stop, as named in the `StartWorkerForEngineRequest`. Only
@@ -269,19 +294,19 @@ class StopWorkerRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class StopWorkerResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class StopWorkerForEngineResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """The engine stopped the worker, or was not running it."""
 
 
 @dataclass
 @PayloadRegistry.register
-class StopWorkerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class StopWorkerForEngineResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """The engine could not stop the worker."""
 
 
 @dataclass
 @PayloadRegistry.register
-class WorkerExitedRequest(RequestPayload):
+class ReportWorkerExitedRequest(RequestPayload):
     """Sent by an engine to the artist's engine whenever a worker it runs for that artist exits.
 
     Sent for every exit, whatever ended the worker, so the artist's engine settles a start that
@@ -303,11 +328,11 @@ class WorkerExitedRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class WorkerExitedResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class ReportWorkerExitedResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """The artist's engine recorded the exit."""
 
 
 @dataclass
 @PayloadRegistry.register
-class WorkerExitedResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class ReportWorkerExitedResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """The exit was reported by an engine other than the one running the worker."""
