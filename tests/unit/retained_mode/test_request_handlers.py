@@ -4,7 +4,7 @@ import pytest
 
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.request_handlers import handles
+from griptape_nodes.retained_mode.request_handlers import RequestScope, handled_request_scope, handles
 
 
 @dataclass(kw_only=True)
@@ -79,6 +79,26 @@ class TestHandles:
                 @handles(_PingRequest)
                 @staticmethod
                 def on_ping(request: _PingRequest) -> None:
+                    pass
+
+    def test_declares_no_scope_by_default(self) -> None:
+        assert handled_request_scope(_Base.on_ping) is None
+
+    def test_records_the_declared_scope(self) -> None:
+        class _Host:
+            @handles(_PingRequest, scope=RequestScope.HOST)
+            def on_ping(self, request: _PingRequest) -> None:
+                pass
+
+        assert handled_request_scope(_Host.on_ping) is RequestScope.HOST
+
+    def test_stacked_marks_with_different_scopes_raise(self) -> None:
+        with pytest.raises(TypeError, match="same scope"):
+
+            class _Conflicting:
+                @handles(_PingRequest, scope=RequestScope.HOST)
+                @handles(_PongRequest)
+                def on_either(self, request: RequestPayload) -> None:
                     pass
 
 
