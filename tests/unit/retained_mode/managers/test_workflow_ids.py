@@ -1910,6 +1910,23 @@ class TestFirstSaveOfALibraryWorkflowCopy:
         assert library_file.read_bytes() == library_content
         assert project_engine.workflow_registry.get(LIBRARY_ID).absolute_path == library_file
 
+    def test_the_context_reports_the_library_workflow_a_copy_came_from(
+        self, project_engine: Engine, tmp_path: Path
+    ) -> None:
+        _library_workflow(project_engine, tmp_path / "library")
+        opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))
+        assert isinstance(opened, RunWorkflowFromRegistryResultSuccess), opened.result_details
+
+        context = _run(project_engine, GetWorkflowContextRequest())
+        assert isinstance(context, GetWorkflowContextSuccess)
+        assert context.workflow_id == opened.workflow_id
+        assert context.seeded_from_workflow_id == LIBRARY_ID
+
+        _save(project_engine)
+        saved_context = _run(project_engine, GetWorkflowContextRequest())
+        assert isinstance(saved_context, GetWorkflowContextSuccess)
+        assert saved_context.seeded_from_workflow_id is None
+
     def test_a_saved_copy_is_no_longer_seeded_from_the_library(self, project_engine: Engine, tmp_path: Path) -> None:
         _library_workflow(project_engine, tmp_path / "library")
         opened = _run(project_engine, RunWorkflowFromRegistryRequest(workflow_id=LIBRARY_ID))

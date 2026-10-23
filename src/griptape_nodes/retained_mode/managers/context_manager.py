@@ -370,15 +370,18 @@ class ContextManager(EngineScoped):
         workflow_name = None
         workflow_id = None
         is_saved = None
+        seeded_from_workflow_id = None
         if self.has_current_workflow():
             workflow = self.get_current_workflow()
             workflow_name = workflow.name
             workflow_id = workflow.workflow_id
             is_saved = workflow.is_saved
+            seeded_from_workflow_id = workflow.seeded_from_workflow_id
         return GetWorkflowContextSuccess(
             workflow_name=workflow_name,
             workflow_id=workflow_id,
             is_saved=is_saved,
+            seeded_from_workflow_id=seeded_from_workflow_id,
             result_details=f"Successfully retrieved workflow context: {workflow_name or 'None'}",
         )
 

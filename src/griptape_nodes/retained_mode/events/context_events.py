@@ -97,11 +97,14 @@ class GetWorkflowContextSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
         is_saved: Whether the current workflow is backed by a file on disk. None when
                   no context is set.
         workflow_id: Permanent id of the current workflow (None if no context set).
+        seeded_from_workflow_id: Id of the library workflow the current workflow is an unsaved copy
+            of, or None.
     """
 
     workflow_name: str | None
     is_saved: bool | None = None
     workflow_id: str | None = None
+    seeded_from_workflow_id: str | None = None
 
 
 @dataclass
