@@ -70,8 +70,9 @@ SPEND_PATH = "/api/spend"
 CHECK_TIMEOUT_SECONDS = 5.0
 REPORT_TIMEOUT_SECONDS = 10.0
 REPORT_MAX_ATTEMPTS = 3
-# How long a one-off engine process waits for its queued reports before exiting: one report's full
-# retry cycle, so the report sent last still gets every attempt.
+# How long a one-off engine process waits for its queued reports before exiting, shared by all of
+# them. Sized to REPORT_MAX_ATTEMPTS request timeouts; reports still retrying when it runs out are
+# logged and lost.
 REPORT_FLUSH_TIMEOUT_SECONDS = REPORT_TIMEOUT_SECONDS * REPORT_MAX_ATTEMPTS
 
 # Cloud's length caps on the free-text descriptors. A value over its cap is left out rather than
