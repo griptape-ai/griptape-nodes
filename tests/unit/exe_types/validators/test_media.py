@@ -348,6 +348,36 @@ class TestVideoReadings:
         probe = VideoProbe(info=ImageInfo(1440, 1080, None), seconds=5.0, display_info=ImageInfo(1920, 1080, None))
         assert _messages([SideRange(max=1500)], MediaInfo(video=probe)) == []
 
+    def test_refuses_a_shape_neither_the_stored_nor_displayed_frame_fits(self) -> None:
+        # 1440x1080 at 4:3 pixels plays at 16:9; neither shape is square.
+        probe = VideoProbe(info=ImageInfo(1440, 1080, None), seconds=5.0, display_info=ImageInfo(1920, 1080, None))
+        assert _messages([ExactAspectRatios("1:1")], MediaInfo(video=probe)) == [
+            f"{SUBJECT} is 1440x1080, and its aspect ratio must be 1:1. Crop it."
+        ]
+
+    @pytest.mark.parametrize(
+        ("validator", "expected"),
+        [
+            (FrameRate(max=30), f"{SUBJECT} is 60 fps and the maximum is 30 fps. Re-export it at a lower frame rate."),
+            (
+                FrameCount(max=100),
+                (
+                    f"{SUBJECT} has 300 frames and the limit is 100. "
+                    "Use a Trim Video node to shorten it, or lower its frame rate."
+                ),
+            ),
+        ],
+    )
+    def test_reports_a_maximum_without_checking_an_unset_minimum(
+        self, validator: PreRunValidator, expected: str
+    ) -> None:
+        media = MediaInfo(video=VideoProbe(info=None, seconds=5.0, fps=60.0, frames=300))
+        assert _messages([validator], media) == [expected]
+
+    def test_passes_a_clip_within_a_maximum_with_no_minimum(self) -> None:
+        media = MediaInfo(video=VideoProbe(info=None, seconds=5.0, fps=24.0, frames=120))
+        assert _messages([FrameRate(max=30), FrameCount(max=150)], media) == []
+
     def test_skips_every_check_for_a_video_it_could_not_read(self) -> None:
         validators: list[PreRunValidator] = [
             AllowedFormats("video/mp4"),
@@ -395,11 +425,21 @@ class TestAudioReadings:
             f"{SUBJECT} is 3.00 seconds long and the minimum is 5. Use a longer clip.",
         ]
 
+    def test_uses_a_given_fix_for_audio_that_is_too_long(self) -> None:
+        media = MediaInfo(audio=AudioProbe(mime_type="audio/wav", codec="pcm_s16le", profile=None, seconds=3.0))
+        assert _messages([Duration(max=1, fix="Pick a shorter take.")], media) == [
+            f"{SUBJECT} is 3.00 seconds long and the limit is 1. Pick a shorter take."
+        ]
+
     def test_codec_validators_skip_the_other_kind(self) -> None:
         audio = MediaInfo(audio=AudioProbe(mime_type="audio/mpeg", codec="mp3", profile=None, seconds=3.0))
         video = MediaInfo(video=VideoProbe(info=None, seconds=3.0, codec="h264"))
         assert _messages([VideoCodecs("hevc")], audio) == []
         assert _messages([AudioCodecs("aac")], video) == []
+
+    def test_reports_the_audio_container_as_the_inputs_format(self) -> None:
+        media = MediaInfo(audio=AudioProbe(mime_type="audio/flac", codec="flac", profile=None, seconds=3.0))
+        assert media.mime_type == "audio/flac"
 
 
 class TestArguments:

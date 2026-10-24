@@ -4,7 +4,10 @@
 
 from __future__ import annotations
 
+import importlib
+import sys
 from dataclasses import dataclass
+from types import ModuleType
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import pytest
@@ -21,9 +24,20 @@ from griptape_nodes.exe_types.input_checks import (
 from griptape_nodes.exe_types.node_error import NodeError
 from griptape_nodes.exe_types.node_groups.subflow_node_group import SubflowNodeGroup
 from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_html import ParameterHtml
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_json import ParameterJson
+from griptape_nodes.exe_types.param_types.parameter_python import ParameterPython
+from griptape_nodes.exe_types.param_types.parameter_range import ParameterRange
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.exe_types.param_types.parameter_xml import ParameterXml
+from griptape_nodes.exe_types.param_types.parameter_yaml import ParameterYaml
 from griptape_nodes.exe_types.pre_run_validation import run_pre_run_validators
 from griptape_nodes.exe_types.validators.base import MediaInfo, MediaNeed, NodeValidator, PreRunValidator
 from griptape_nodes.exe_types.validators.common import ByParameter, MaxCount
@@ -333,6 +347,38 @@ class TestLists:
         assert row.pre_run_validators == ()
 
 
+class TestPlainListParameters:
+    """A list parameter that isn't a ParameterList holds its items in its own value."""
+
+    @staticmethod
+    def _node(*validators: PreRunValidator) -> MockNode:
+        return _node_with(
+            Parameter(
+                name="reference_images",
+                type="list[ImageUrlArtifact]",
+                display_name="reference images",
+                pre_run_validators=validators,
+            )
+        )
+
+    def test_checks_each_item_skipping_empty_rows(self, tmp_path: Path) -> None:
+        node = self._node(SideRange(min=300), MaxCount(2, noun="images"))
+        node.set_parameter_value(
+            "reference_images", [str(image_file(tmp_path, 400, 400)), None, str(image_file(tmp_path, 200, 1000))]
+        )
+        assert _messages(run_pre_run_validators(node)) == [
+            "Image 2 in 'reference images' is 200x1000 and each side must be at least 300 pixels. Use a larger one."
+        ]
+
+    @pytest.mark.parametrize("value", [None, "not a list"], ids=["unset", "not-a-list"])
+    def test_checks_a_value_that_is_not_a_list_as_empty(self, value: Any) -> None:
+        node = self._node(SideRange(min=300), _Records())
+        _Records.seen.clear()
+        node.set_parameter_value("reference_images", value)
+        assert run_pre_run_validators(node) == []
+        assert _Records.seen == []
+
+
 class TestByParameter:
     @staticmethod
     def _node() -> MockNode:
@@ -373,6 +419,17 @@ class TestByParameter:
     def test_refuses_a_nested_by_parameter(self) -> None:
         with pytest.raises(TypeError, match="holds another ByParameter"):
             ByParameter("model", {"pro": [ByParameter("size", {})]})
+
+    def test_checks_nothing_when_the_pick_lists_no_validators(self, tmp_path: Path) -> None:
+        # A model that doesn't send the input lists no limits for it, and the input isn't read.
+        node = _node_with(
+            ParameterString(name="model", default_value="fast"),
+            ParameterImage(name="last_frame", pre_run_validators=[ByParameter("model", {"pro": [SideRange(min=300)]})]),
+        )
+        node.set_parameter_value("last_frame", str(image_file(tmp_path, 10, 10)))
+        with input_check_readings():
+            assert run_pre_run_validators(node) == []
+            assert input_checks._readings.get() == {}
 
     def test_refuses_a_picked_validator_the_parameter_cannot_hold(self) -> None:
         with pytest.raises(TypeError, match="checks audio, and the parameter holds image"):
@@ -453,6 +510,47 @@ class TestParameterTypes:
         ParameterImage(name="i", pre_run_validators=[AllowedFormats("image/png"), SideRange(min=1), MaxFileSize(1)])
         ParameterVideo(name="v", pre_run_validators=[AllowedFormats("video/mp4"), Duration(max=1), FrameRate(max=1)])
         ParameterAudio(name="a", pre_run_validators=[AllowedFormats("audio/mpeg"), Duration(max=1)])
+
+    @pytest.mark.parametrize(
+        "parameter_class",
+        [
+            ParameterAudio,
+            ParameterBool,
+            ParameterButton,
+            ParameterDict,
+            ParameterFloat,
+            ParameterHtml,
+            ParameterImage,
+            ParameterInt,
+            ParameterJson,
+            ParameterPython,
+            ParameterRange,
+            ParameterString,
+            ParameterVideo,
+            ParameterXml,
+            ParameterYaml,
+        ],
+    )
+    def test_every_parameter_type_keeps_its_pre_run_validators(self, parameter_class: type[Parameter]) -> None:
+        validator = _Records()
+        parameter = parameter_class(name="p", pre_run_validators=[validator], pre_run_noun="setting")
+        assert list(parameter.pre_run_validators) == [validator]
+        assert parameter.pre_run_noun == "setting"
+
+    def test_a_3d_parameter_keeps_its_pre_run_validators(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Parameter3D imports its artifact from the standard library, which the engine's tests don't install.
+        artifact_module = ModuleType("griptape_nodes_library.three_d.three_d_artifact")
+        artifact_module.ThreeDUrlArtifact = type("ThreeDUrlArtifact", (), {})  # pyright: ignore[reportAttributeAccessIssue]
+        for name in ("griptape_nodes_library", "griptape_nodes_library.three_d"):
+            monkeypatch.setitem(sys.modules, name, ModuleType(name))
+        monkeypatch.setitem(sys.modules, artifact_module.__name__, artifact_module)
+        monkeypatch.delitem(sys.modules, "griptape_nodes.exe_types.param_types.parameter_three_d", raising=False)
+        parameter_3d = importlib.import_module("griptape_nodes.exe_types.param_types.parameter_three_d").Parameter3D
+
+        validator = _Records()
+        parameter = parameter_3d(name="model", pre_run_validators=[validator], pre_run_noun="model")
+        assert list(parameter.pre_run_validators) == [validator]
+        assert parameter.pre_run_noun == "model"
 
     def test_keeps_on_set_validators_as_they_were(self) -> None:
         def refuse_blank(_parameter: Parameter, value: Any) -> None:
