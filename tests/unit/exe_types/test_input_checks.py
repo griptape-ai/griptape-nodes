@@ -35,11 +35,13 @@ from griptape_nodes.exe_types.input_checks import (
     input_check_budget,
     input_subject,
     local_audio_probe,
+    local_image_format,
     local_image_info,
     local_size_bytes,
     local_video_probe,
 )
 from griptape_nodes.exe_types.node_error import NodeError
+from tests.unit.exe_types.validators.media_files import HEIC_PHOTO
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -193,6 +195,66 @@ class TestLocalImageInfo:
 
     def test_skips_bytes_that_are_not_an_image(self) -> None:
         assert local_image_info(_data_uri(b"not an image")) is None
+
+
+class TestLocalImageFormat:
+    def test_reads_a_format_pillow_opens(self) -> None:
+        assert local_image_format(_data_uri(_png_bytes(8, 8))) == "image/png"
+
+    def test_reads_a_heic_photo_from_its_signature(self) -> None:
+        assert local_image_info(str(HEIC_PHOTO)) is None
+        assert local_image_format(str(HEIC_PHOTO)) == "image/heif"
+        assert local_image_format(_data_uri(HEIC_PHOTO.read_bytes(), "image/heic")) == "image/heif"
+
+    @pytest.mark.parametrize(
+        ("brand", "expected"),
+        [
+            (b"heic", "image/heif"),
+            (b"heix", "image/heif"),
+            (b"hevc", "image/heif"),
+            (b"heim", "image/heif"),
+            (b"heis", "image/heif"),
+            (b"hevm", "image/heif"),
+            (b"hevs", "image/heif"),
+            (b"mif1", "image/heif"),
+            (b"msf1", "image/heif"),
+            (b"avif", "image/avif"),
+            # A video's brand names no image format; the video reader judges it.
+            (b"isom", None),
+            (b"qt  ", None),
+        ],
+    )
+    def test_reads_an_iso_media_brand_pillow_cannot_open(self, brand: bytes, expected: str | None) -> None:
+        header = b"\x00\x00\x00\x18ftyp" + brand + b"\x00" * 12
+        assert local_image_format(_data_uri(header, "image/heic")) == expected
+
+    @pytest.mark.parametrize(
+        "data",
+        [b"not an image at all", b"\x00\x00\x00\x18ftyp", b"\x00\x00\x00\x18moovheic" + b"\x00" * 12],
+        ids=["no-signature", "too-short", "not-ftyp"],
+    )
+    def test_skips_bytes_whose_signature_names_no_image(self, data: bytes) -> None:
+        assert local_image_format(_data_uri(data)) is None
+
+    def test_skips_a_data_uri_that_is_not_base64(self) -> None:
+        assert local_image_format("data:image/heic;base64,@@@@not-base64@@@@") is None
+
+    def test_skips_a_remote_url_without_fetching(self) -> None:
+        assert local_image_format("https://example.com/photo.heic") is None
+
+    def test_skips_a_value_that_names_no_location(self) -> None:
+        assert local_image_format(None) is None
+
+    def test_skips_a_file_it_cannot_open(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        path = tmp_path / "photo.heic"
+        path.write_bytes(HEIC_PHOTO.read_bytes())
+
+        def refuse(*_args: Any, **_kwargs: Any) -> None:
+            msg = "Permission denied"
+            raise PermissionError(msg)
+
+        monkeypatch.setattr(input_checks.Path, "open", refuse)
+        assert local_image_format(str(path)) is None
 
 
 class TestLocalVideoDuration:

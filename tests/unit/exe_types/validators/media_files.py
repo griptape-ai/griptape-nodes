@@ -1,4 +1,9 @@
-"""Real image, video and audio files for the validator tests, made with Pillow and ffmpeg."""
+"""Real image, video and audio files for the validator tests, made with Pillow and ffmpeg.
+
+`fixtures/photo_64x48.heic` is a real 64x48 HEIC photo (HEVC-coded, brand "heic"), 490 bytes, made
+with macOS's `sips -s format heic` from a solid-colour PNG, since Pillow can't write HEIC without a
+plugin the engine doesn't install.
+"""
 
 from __future__ import annotations
 
@@ -6,12 +11,11 @@ import base64
 import shutil
 import subprocess
 from io import BytesIO
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from PIL import Image
 
-if TYPE_CHECKING:
-    from pathlib import Path
+HEIC_PHOTO = Path(__file__).parent / "fixtures" / "photo_64x48.heic"
 
 FFMPEG = shutil.which("ffmpeg")
 FFPROBE = shutil.which("ffprobe")

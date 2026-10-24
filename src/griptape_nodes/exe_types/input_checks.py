@@ -5,8 +5,8 @@ credits. A node declares the limits on its parameters with `pre_run_validators=`
 `griptape_nodes.exe_types.validators`), and the engine checks them at the node's turn, before it
 runs. The validators are built from the parts here, which a custom validator can use too:
 
-- **Readers** (`local_size_bytes`, `local_image_info`, `local_video_probe`, `local_audio_probe`)
-  read a media input's properties from data already on this machine. `local_video_probe` reads a
+- **Readers** (`local_size_bytes`, `local_image_info`, `local_image_format`, `local_video_probe`,
+  `local_audio_probe`) read a media input's properties from data already on this machine. `local_video_probe` reads a
   video's container, codec, frame size, durations and frame rates in one ffprobe run, and
   `local_audio_probe` an audio input's container, codec and durations. None of them makes a network
   call or downloads a tool: the video and audio readers use ffprobe only if it is already
@@ -73,6 +73,7 @@ __all__ = [
     "input_check_readings",
     "input_subject",
     "local_audio_probe",
+    "local_image_format",
     "local_image_info",
     "local_size_bytes",
     "local_video_probe",
@@ -92,6 +93,13 @@ FRAME_RATE_TOLERANCE = 0.01
 # milliseconds; one that takes longer than this is abandoned and the checks that need it (container,
 # codec, frame size, duration, frame rate) are skipped.
 FFPROBE_TIMEOUT_SECONDS = 2
+
+# An ISO media file (MP4, MOV, HEIC, AVIF) opens with an `ftyp` box: a 4-byte size, "ftyp", then
+# the 4-byte major brand.
+_ISO_FTYP_TYPE = b"ftyp"
+_ISO_FTYP_HEADER_BYTES = 12
+# Enough base64 for a data URI's first `_ISO_FTYP_HEADER_BYTES` bytes.
+_ISO_FTYP_HEADER_BASE64_CHARS = 16
 
 # EXIF Orientation tag (0x0112) values that display an image rotated a quarter turn.
 _EXIF_ORIENTATION_TAG = 0x0112
@@ -151,6 +159,8 @@ def read_media(value: Any, needs: Collection[MediaNeed], *, kind: MediaKind) -> 
     Reduces the input to one location and hands that to each reader asked for: `local_size_bytes`
     for `SIZE`, `local_image_info` for `IMAGE`, `local_video_probe` for `VIDEO` and
     `local_audio_probe` for `AUDIO`. A reading not asked for, or that couldn't be taken, is None.
+    An image Pillow can't open, such as a HEIC photo, still has its format read from its file
+    signature where that names one, so a format check can judge it while the size checks skip.
 
     Args:
         value: The media input: an artifact, a path, a URL or a data URI.
@@ -162,17 +172,20 @@ def read_media(value: Any, needs: Collection[MediaNeed], *, kind: MediaKind) -> 
         return MediaInfo()
     size_bytes = None
     image = None
+    image_format = None
     video = None
     audio = None
     if MediaNeed.SIZE in needs:
         size_bytes = local_size_bytes(location, kind=kind)
     if MediaNeed.IMAGE in needs:
         image = local_image_info(location)
+        if image is None:
+            image_format = _signature_image_format(location)
     if MediaNeed.VIDEO in needs:
         video = local_video_probe(location)
     if MediaNeed.AUDIO in needs:
         audio = local_audio_probe(location)
-    return MediaInfo(size_bytes=size_bytes, image=image, video=video, audio=audio)
+    return MediaInfo(size_bytes=size_bytes, image=image, image_format=image_format, video=video, audio=audio)
 
 
 def _read_once(reader: MediaNeed, location: str, read: Callable[[str], Any]) -> Any:
@@ -217,8 +230,9 @@ def local_image_info(value: Any) -> ImageInfo | None:
 
     Reads only the image header (Pillow reads a WebP or AVIF file in full, without decoding it), and
     reports the size as displayed, so a phone photo stored landscape with an EXIF rotation reads as
-    portrait. Returns None for a remote URL, for a format Pillow can't open (a RAW camera file, say), and for an
-    image over Pillow's decompression-bomb limit (about 179 megapixels), which Pillow refuses to open
+    portrait. Returns None for a remote URL, for a format Pillow can't open (a RAW camera file or a
+    HEIC photo, say; `local_image_format` still reads a HEIC's format), and for an image over
+    Pillow's decompression-bomb limit (about 179 megapixels), which Pillow refuses to open
     without decoding anything. The checks that use it then skip, rather than reject a valid image or
     override a process-wide Pillow setting.
     """
@@ -226,6 +240,60 @@ def local_image_info(value: Any) -> ImageInfo | None:
     if not location:
         return None
     return _read_once(MediaNeed.IMAGE, location, _read_image_info)
+
+
+def local_image_format(value: Any) -> str | None:
+    """The MIME type of an image input, read from the file rather than its name, or None if unknown.
+
+    Pillow's reading (see `local_image_info`), or for an image Pillow can't open, the format its
+    file signature names. That reads HEIC and HEIF photos, which Pillow can't open without a plugin,
+    as "image/heif", so a format check accepts them where a provider lists either name and refuses
+    them, named as HEIC, where it doesn't. Returns None for a remote URL and for a file whose
+    signature names no image format.
+    """
+    location = coerce_media_url_or_data_uri(value, kind="image")
+    if not location:
+        return None
+    info = local_image_info(location)
+    if info is not None:
+        return info.mime_type
+    return _signature_image_format(location)
+
+
+def _signature_image_format(location: str) -> str | None:
+    """The image format an ISO media file's major brand names, such as "image/heif" for a HEIC photo.
+
+    Reads only the file's first 12 bytes, and None unless they hold an `ftyp` box whose brand names
+    a still image; an MP4 or MOV is a video, for the video reader to judge.
+    """
+    header = _file_header(location, _ISO_FTYP_HEADER_BYTES)
+    if header is None or len(header) < _ISO_FTYP_HEADER_BYTES or header[4:8] != _ISO_FTYP_TYPE:
+        return None
+    brand = header[8:12].decode("ascii", errors="replace")
+    mime_type = _iso_media_mime_type(brand)
+    if not mime_type.startswith("image/"):
+        return None
+    return mime_type
+
+
+def _file_header(location: str, size: int) -> bytes | None:
+    """The first `size` bytes of a data URI's payload or a file on this machine, or None."""
+    if location.startswith("data:"):
+        payload = "".join(location.split(",", 1)[-1].split())
+        try:
+            return base64.b64decode(payload[:_ISO_FTYP_HEADER_BASE64_CHARS], validate=True)[:size]
+        except (binascii.Error, ValueError) as e:
+            logger.debug("Could not read an image's signature for a pre-run input check, skipping it: %s", e)
+            return None
+    path = _local_path(location)
+    if path is None:
+        return None
+    try:
+        with path.open("rb") as file:
+            return file.read(size)
+    except OSError as e:
+        logger.debug("Could not read an image's signature for a pre-run input check, skipping it: %s", e)
+        return None
 
 
 def _read_image_info(location: str) -> ImageInfo | None:
@@ -1484,7 +1552,7 @@ _WEBM_AUDIO_CODECS = frozenset({"opus", "vorbis"})
 _ISO_BRAND_MIME_TYPES = {
     "": "video/quicktime",
     "qt": "video/quicktime",
-    **dict.fromkeys(("heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1"), "image/heif"),
+    **dict.fromkeys(("heic", "heix", "heim", "heis", "hevc", "hevx", "hevm", "hevs", "mif1", "msf1"), "image/heif"),
     **dict.fromkeys(("avif", "avis"), "image/avif"),
 }
 

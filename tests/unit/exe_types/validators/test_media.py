@@ -27,6 +27,7 @@ from griptape_nodes.exe_types.validators.media import (
 )
 from tests.unit.exe_types.validators.media_files import (
     HAS_FFMPEG,
+    HEIC_PHOTO,
     audio_file,
     data_uri,
     image_file,
@@ -165,6 +166,41 @@ class TestOnRealImages:
         media = _image(artifact)
         assert media.image == ImageInfo(400, 300, "image/png")
         assert sum(1 for value in calls if value is artifact) == 1
+
+
+class TestOnARealHeicPhoto:
+    """A HEIC photo, which Pillow can't open without a plugin the engine doesn't install."""
+
+    LIMITS = (
+        SideRange(min=300, max=6000),
+        PixelArea(min_megapixels=1),
+        AspectRatioRange("1:3", "3:1"),
+        ExactAspectRatios("16:9"),
+    )
+
+    @pytest.mark.parametrize("listed", [("image/heic",), ("image/heif",), ("image/heic", "image/heif")])
+    def test_accepts_it_where_either_heif_name_is_listed(self, listed: tuple[str, ...]) -> None:
+        for value in (str(HEIC_PHOTO), data_uri(HEIC_PHOTO.read_bytes(), "image/heic")):
+            assert _messages([AllowedFormats("image/jpeg", *listed)], _image(value)) == []
+
+    def test_refuses_it_by_its_real_format_where_heif_is_not_listed(self, tmp_path: Path) -> None:
+        # Named .jpg, it is still a HEIC.
+        renamed = tmp_path / "photo.jpg"
+        renamed.write_bytes(HEIC_PHOTO.read_bytes())
+        assert _messages([AllowedFormats("image/jpeg", "image/png")], _image(str(renamed))) == [
+            f"{SUBJECT} is in HEIC format. Convert it to JPEG or PNG."
+        ]
+
+    def test_skips_the_size_and_shape_checks_it_cannot_read(self) -> None:
+        media = _image(str(HEIC_PHOTO))
+        assert media.image is None
+        assert media.image_format == "image/heif"
+        assert _messages(list(self.LIMITS), media) == []
+
+    def test_still_checks_its_file_size(self) -> None:
+        media = _image(str(HEIC_PHOTO))
+        assert media.size_bytes == HEIC_PHOTO.stat().st_size
+        assert len(_messages([MaxFileSize(100)], media)) == 1
 
 
 @needs_ffmpeg

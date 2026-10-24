@@ -407,8 +407,9 @@ built, and a ratio that isn't one or a codec name the checks don't know raises a
 the validator is.
 
 Formats are read from the file, not its name: a MOV renamed to `.mp4` is still refused as a MOV,
-and an MP3 renamed to `.wav` as an MP3. HEIC and HEIF photos can't be read, so their checks are
-skipped and the provider judges them. Codecs are given as ffprobe names them, such as `"h264"`,
+and an MP3 renamed to `.wav` as an MP3. A HEIC or HEIF photo's format is read from its file
+signature, and a provider listing either `image/heic` or `image/heif` accepts both; its pixel size
+can't be read, so its size and shape checks are skipped and the provider judges them. Codecs are given as ffprobe names them, such as `"h264"`,
 `"hevc"`, `"mp3"` or `"pcm_s16le"`. The names the messages show (`"H.264"`, `"AC-3"`) and `"AVC"`
 work too, so translate the provider's wording into these names in your limits table.
 
@@ -471,8 +472,8 @@ class ReferenceToVideo(SuccessFailureNode):
 **Your own validator.** Subclass `PreRunValidator`, set `needs` to the readings it uses
 (`MediaNeed.SIZE`, `IMAGE`, `VIDEO` or `AUDIO`), and return a `NodeError` from `check`, or None. The
 engine reads the input once for all the validators on a parameter and hands each the same
-`MediaInfo`. The readers (`local_size_bytes`, `local_image_info`, `local_video_probe`,
-`local_audio_probe`) and single checks (`check_size`, `check_dimensions`, `check_duration` and the
+`MediaInfo`. The readers (`local_size_bytes`, `local_image_info`, `local_image_format`,
+`local_video_probe`, `local_audio_probe`) and single checks (`check_size`, `check_dimensions`, `check_duration` and the
 rest) in `griptape_nodes.exe_types.input_checks` are there to build it from, and a reader called
 during the node's checks returns what was already read.
 

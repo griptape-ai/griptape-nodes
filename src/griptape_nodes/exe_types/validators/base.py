@@ -58,10 +58,13 @@ class MediaInfo:
 
     Each part is None when it wasn't asked for, or couldn't be read locally (a remote URL, a format
     nothing here opens, ffprobe missing or out of time). A validator skips a reading that is None.
+    `image_format` is an image's format read from its file signature when `image` couldn't be read,
+    such as "image/heif" for a HEIC photo Pillow can't open, so a format check still judges it.
     """
 
     size_bytes: int | None = None
     image: ImageInfo | None = None
+    image_format: str | None = None
     video: VideoProbe | None = None
     audio: AudioProbe | None = None
 
@@ -86,6 +89,8 @@ class MediaInfo:
         """The format read from the file: the image's, the video's container or the audio's container."""
         if self.image is not None:
             return self.image.mime_type
+        if self.image_format is not None:
+            return self.image_format
         if self.video is not None:
             return self.video.mime_type
         if self.audio is not None:
