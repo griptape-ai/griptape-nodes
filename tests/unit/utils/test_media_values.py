@@ -340,6 +340,35 @@ class TestCoerceImageDictPath:
     def test_plain_string_macro_path_passes_through(self) -> None:
         assert coerce_media_url_or_data_uri("{inputs}/foo.png", kind="image") == "{inputs}/foo.png"
 
+    def test_object_whose_dict_names_nothing_falls_back_to_its_value(self) -> None:
+        class Fake:
+            value = "{inputs}/fallback.png"
+
+            def to_dict(self) -> dict:
+                return {"type": "ImageUrlArtifact", "value": ""}
+
+        assert coerce_media_url_or_data_uri(Fake(), kind="image") == "{inputs}/fallback.png"
+
+    def test_object_whose_value_property_raises_returns_none_safely(self) -> None:
+        class Fake:
+            @property
+            def value(self) -> str:
+                msg = "the artifact has no value loaded"
+                raise RuntimeError(msg)
+
+        assert coerce_media_url_or_data_uri(Fake(), kind="image") is None
+
+    def test_object_whose_base64_property_raises_returns_none_safely(self) -> None:
+        class Fake:
+            value = None
+
+            @property
+            def base64(self) -> str:
+                msg = "the artifact's bytes can't be encoded"
+                raise ValueError(msg)
+
+        assert coerce_media_url_or_data_uri(Fake(), kind="image") is None
+
 
 class TestCoerceAudioDictPath:
     """The dict path also handles ``AudioArtifact`` shapes."""

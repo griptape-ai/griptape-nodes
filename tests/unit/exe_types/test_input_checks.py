@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import subprocess
+import sys
 from io import BytesIO
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -39,8 +41,10 @@ from griptape_nodes.exe_types.input_checks import (
     local_image_info,
     local_size_bytes,
     local_video_probe,
+    read_media,
 )
 from griptape_nodes.exe_types.node_error import NodeError
+from griptape_nodes.exe_types.validators.base import MediaInfo, MediaNeed
 from tests.unit.exe_types.validators.media_files import HEIC_PHOTO
 
 if TYPE_CHECKING:
@@ -123,6 +127,12 @@ class TestLocalSizeBytes:
     def test_skips_a_missing_file(self, tmp_path: Path) -> None:
         assert local_size_bytes(str(tmp_path / "missing.png"), kind="image") is None
 
+    def test_skips_a_file_it_cannot_stat(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        path = tmp_path / "image.png"
+        path.write_bytes(b"x" * 10)
+        monkeypatch.setattr(input_checks, "_local_path", lambda _location: tmp_path / "deleted-since.png")
+        assert local_size_bytes(str(path), kind="image") is None
+
     def test_skips_an_empty_value(self) -> None:
         assert local_size_bytes(None, kind="image") is None
 
@@ -196,6 +206,36 @@ class TestLocalImageInfo:
     def test_skips_bytes_that_are_not_an_image(self) -> None:
         assert local_image_info(_data_uri(b"not an image")) is None
 
+    def test_keeps_the_stored_size_when_exif_cannot_be_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        image = _data_uri(_rotated_jpeg_bytes(400, 300, 6), "image/jpeg")
+
+        def broken_exif(_image: Any) -> None:
+            msg = "EXIF IFD runs past the end of the file"
+            raise SyntaxError(msg)
+
+        monkeypatch.setattr(input_checks.Image.Image, "getexif", broken_exif)
+        assert local_image_info(image) == ImageInfo(400, 300, "image/jpeg")
+
+    def test_skips_a_data_uri_whose_payload_is_not_base64(self) -> None:
+        # A single base64 character is a truncated quantum, which can't be decoded.
+        assert local_image_info("data:image/png;base64,A") is None
+
+
+class TestReadersWithoutALocation:
+    """A value that names no location, such as an empty artifact, reads as nothing."""
+
+    def test_read_media_reads_nothing(self) -> None:
+        assert read_media("   ", {MediaNeed.SIZE, MediaNeed.IMAGE}, kind="image") == MediaInfo()
+
+    @pytest.mark.parametrize(
+        "reader",
+        [local_image_info, local_video_probe, local_audio_probe, lambda value: local_size_bytes(value, kind="image")],
+        ids=["image", "video", "audio", "size"],
+    )
+    def test_each_reader_reads_nothing(self, reader: Any) -> None:
+        assert reader(None) is None
+        assert reader("") is None
+
 
 class TestLocalImageFormat:
     def test_reads_a_format_pillow_opens(self) -> None:
@@ -245,16 +285,17 @@ class TestLocalImageFormat:
     def test_skips_a_value_that_names_no_location(self) -> None:
         assert local_image_format(None) is None
 
-    def test_skips_a_file_it_cannot_open(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no unreadable-file permission bits")
+    def test_skips_a_file_it_cannot_open(self, tmp_path: Path) -> None:
         path = tmp_path / "photo.heic"
         path.write_bytes(HEIC_PHOTO.read_bytes())
-
-        def refuse(*_args: Any, **_kwargs: Any) -> None:
-            msg = "Permission denied"
-            raise PermissionError(msg)
-
-        monkeypatch.setattr(input_checks.Path, "open", refuse)
-        assert local_image_format(str(path)) is None
+        path.chmod(0)
+        try:
+            if os.access(path, os.R_OK):
+                pytest.skip("running as a user who can read any file")
+            assert local_image_format(str(path)) is None
+        finally:
+            path.chmod(0o600)
 
 
 class TestLocalVideoDuration:
@@ -374,6 +415,27 @@ class TestLocalVideoDuration:
         assert _probed_seconds(value) is None
         assert ffprobe_runs == []
 
+    @pytest.mark.parametrize("stdout", ["not json", "[1, 2]", ""], ids=["not-json", "not-an-object", "empty"])
+    def test_skips_when_ffprobe_prints_no_json_object(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch, stdout: str
+    ) -> None:
+        monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: "/usr/bin/ffprobe")
+        monkeypatch.setattr(input_checks.subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout=stdout))
+        assert _probed_seconds(str(clip)) is None
+
+    def test_skips_a_probe_that_times_out(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        def slow_run(cmd: list[str], **kwargs: Any) -> None:
+            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+        monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: "/usr/bin/ffprobe")
+        monkeypatch.setattr(input_checks.subprocess, "run", slow_run)
+        assert _probed_seconds(str(clip)) is None
+
+    def test_skips_a_path_it_cannot_resolve(self, ffprobe_runs: list[dict[str, Any]]) -> None:
+        # A macro path naming a variable the project doesn't define resolves to nothing.
+        assert _probed_seconds("{no_such_variable}/clip.mp4") is None
+        assert ffprobe_runs == []
+
 
 class TestLocalVideoProbe:
     @pytest.fixture
@@ -381,6 +443,37 @@ class TestLocalVideoProbe:
         path = tmp_path / "clip.mp4"
         path.write_bytes(b"video")
         return path
+
+    @pytest.mark.parametrize(
+        ("stream", "expected_fps"),
+        [
+            ({"avg_frame_rate": "0/0", "r_frame_rate": "25/1"}, 25.0),
+            ({"avg_frame_rate": "0/0", "r_frame_rate": "0/0", "nb_frames": "60", "duration": "2.0"}, 30.0),
+            ({"avg_frame_rate": "0/0", "r_frame_rate": "0/0", "nb_frames": "0", "duration": "2.0"}, None),
+            ({"avg_frame_rate": "24", "r_frame_rate": "x/1"}, None),
+            ({"avg_frame_rate": "24/0", "r_frame_rate": "-24/1"}, None),
+        ],
+        ids=["declared", "frames-over-duration", "no-frames", "malformed", "zero-or-negative"],
+    )
+    def test_falls_back_through_each_frame_rate_reading(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch, stream: dict[str, Any], expected_fps: float | None
+    ) -> None:
+        self._answer(monkeypatch, {"format": {}, "streams": [{"width": 640, "height": 480, **stream}]})
+        probe = local_video_probe(str(clip))
+        assert probe is not None
+        assert probe.fps == expected_fps
+
+    def test_reads_no_frame_rate_without_a_video_stream(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._answer(monkeypatch, {"format": {"duration": "3.0"}, "streams": []})
+        probe = local_video_probe(str(clip))
+        assert probe is not None
+        assert (probe.info, probe.fps, probe.nominal_fps, probe.container_seconds) == (None, None, None, 3.0)
+
+    def test_ignores_a_duration_that_is_not_a_number(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._answer(monkeypatch, {"format": {"duration": ["3.0"]}, "streams": [{"duration": "N/A"}]})
+        probe = local_video_probe(str(clip))
+        assert probe is not None
+        assert (probe.seconds, probe.container_seconds) == (None, None)
 
     def _answer(self, monkeypatch: pytest.MonkeyPatch, output: dict[str, Any]) -> list[list[str]]:
         runs: list[list[str]] = []
@@ -513,6 +606,12 @@ class TestLocalVideoInfo:
         self._answer(monkeypatch, {"width": 0, "height": 0})
         assert _probed_frame(str(clip)) is None
 
+    def test_keeps_the_stored_size_when_the_rotation_is_not_a_number(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._answer(monkeypatch, {"width": 1920, "height": 1080, "tags": {"rotate": "sideways"}})
+        assert _probed_frame(str(clip)) == ImageInfo(1920, 1080, None)
+
     @pytest.mark.parametrize(
         "stream",
         [
@@ -567,6 +666,23 @@ class TestInstalledFfprobe:
         monkeypatch.setattr(input_checks.shutil, "which", lambda _name: "/opt/bin/ffprobe")
         assert input_checks._installed_ffprobe() == "/opt/bin/ffprobe"
 
+    def test_falls_back_to_path_when_static_ffmpeg_has_no_directory(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def no_dir() -> str:
+            msg = "Read-only file system"
+            raise OSError(msg)
+
+        monkeypatch.setattr(input_checks.static_ffmpeg_run, "get_platform_dir", no_dir)
+        monkeypatch.setattr(input_checks.shutil, "which", lambda _name: "/opt/bin/ffprobe")
+        assert input_checks._installed_ffprobe() == "/opt/bin/ffprobe"
+
+    def test_falls_back_to_path_when_a_finished_install_lacks_ffprobe(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(input_checks.static_ffmpeg_run, "get_platform_dir", lambda: str(tmp_path))
+        (tmp_path / "installed.crumb").write_text("installed")
+        monkeypatch.setattr(input_checks.shutil, "which", lambda _name: "/opt/bin/ffprobe")
+        assert input_checks._installed_ffprobe() == "/opt/bin/ffprobe"
+
 
 class TestCheckCount:
     def test_allows_the_maximum(self) -> None:
@@ -595,6 +711,10 @@ class TestCheckSize:
 
     def test_allows_just_under_the_maximum_when_strict(self) -> None:
         assert check_size(30 * 1024 * 1024 - 1, maximum_bytes=30 * 1024 * 1024, subject=SUBJECT, strict=True) is None
+
+    def test_reports_a_larger_file_under_a_strict_limit(self) -> None:
+        error = check_size(31 * 1024 * 1024, maximum_bytes=30 * 1024 * 1024, subject=SUBJECT, strict=True)
+        assert str(error) == f"{SUBJECT} is 31.0 MB and it must be under 30 MB. Use a smaller file."
 
     def test_skips_an_unknown_size(self) -> None:
         assert check_size(None, maximum_bytes=1, subject=SUBJECT) is None
@@ -846,6 +966,28 @@ class TestVideoEncoding:
         assert input_checks._video_mime_type(data) == "video/webm"
 
     @pytest.mark.parametrize(
+        "header",
+        [
+            b"\x1a\x45\xdf\xa3\x42\x82",  # the DocType ID ends the header
+            b"\x1a\x45\xdf\xa3\x42\x82\x04webm",  # a multi-byte size
+            b"\x1a\x45\xdf\xa3\x42\x82\x88web",  # a size past the header's end
+        ],
+        ids=["no-size", "long-size", "truncated"],
+    )
+    def test_reads_no_doctype_from_a_header_it_cannot_parse(self, header: bytes) -> None:
+        assert input_checks._matroska_doctype(header) is None
+
+    def test_leaves_the_doctype_unread_when_the_file_is_gone(self, tmp_path: Path) -> None:
+        data: dict[str, Any] = {"format": {"format_name": "matroska,webm"}, "streams": [{"codec_name": "vp9"}]}
+        input_checks._record_matroska_doctype(data, tmp_path / "deleted-since.mkv")
+        assert input_checks._DOCTYPE_KEY not in data["format"]
+        assert input_checks._video_mime_type(data) == "video/webm"
+
+    def test_reads_a_3g2_brand_as_3gpp2(self) -> None:
+        data = {"format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2", "tags": {"major_brand": "3g2a"}}}
+        assert input_checks._video_mime_type(data) == "video/3gpp2"
+
+    @pytest.mark.parametrize(
         ("codec", "allowed"),
         [
             ("prores", ("ProRes",)),
@@ -905,7 +1047,7 @@ class TestVideoEncoding:
         error = check_mime_type("image/png", subject=SUBJECT, allowed=("video/mp4",))
         assert str(error) == f"{SUBJECT} is in PNG format. Convert it to MP4."
 
-    @pytest.mark.parametrize("tag", ["N/A", "", "1:2", "bad", "-00:00:01.0"])
+    @pytest.mark.parametrize("tag", ["N/A", "", "1:2", "bad", "-00:00:01.0", "00:00:inf", "00:00:nan"])
     def test_ignores_a_duration_tag_that_isnt_a_clock_time(self, tag: str) -> None:
         assert input_checks._stream_seconds({"tags": {"DURATION": tag}}) is None
 
@@ -923,6 +1065,11 @@ class TestVideoEncoding:
     def test_has_no_displayed_shape_for_square_or_unknown_pixels(self, sar: str | None) -> None:
         data = {"streams": [{"width": 1920, "height": 1080, "sample_aspect_ratio": sar}]}
         assert input_checks._display_frame_size(data) is None
+
+    def test_scales_the_upright_height_of_a_rotated_anamorphic_frame(self) -> None:
+        # Turned upright, 1440x1080 is 1080x1440, and its 4:3 pixels stretch the 1440 side.
+        data = {"streams": [{"width": 1440, "height": 1080, "sample_aspect_ratio": "4:3", "tags": {"rotate": "90"}}]}
+        assert input_checks._display_frame_size(data) == ImageInfo(1080, 1920, None)
 
 
 class TestAudio:
@@ -991,6 +1138,37 @@ class TestAudio:
         answer = json.dumps({"streams": [], "format": {"format_name": "mp4"}})
         monkeypatch.setattr(input_checks.subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout=answer))
         assert local_audio_probe(str(clip)) is None
+
+    @pytest.mark.parametrize("format_info", [None, {}, {"format_name": 3}], ids=["no-format", "no-name", "not-text"])
+    def test_reads_no_container_when_ffprobe_names_none(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch, format_info: Any
+    ) -> None:
+        monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: "/usr/bin/ffprobe")
+        output: dict[str, Any] = {"streams": [{"codec_name": "mp3", "duration": "3.0"}]}
+        if format_info is not None:
+            output["format"] = format_info
+        answer = json.dumps(output)
+        monkeypatch.setattr(input_checks.subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout=answer))
+        probe = local_audio_probe(str(clip))
+        assert probe is not None
+        assert (probe.mime_type, probe.codec, probe.seconds) == (None, "mp3", 3.0)
+
+    def test_skips_audio_when_ffprobe_is_not_installed(self, clip: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(input_checks, "_installed_ffprobe", lambda: None)
+        assert local_audio_probe(str(clip)) is None
+
+    @pytest.mark.parametrize(("brand", "expected"), [("3gp5", "audio/3gpp"), ("3g2a", "audio/3gpp2")])
+    def test_reads_3gpp_audio_by_its_brand(
+        self, clip: Path, monkeypatch: pytest.MonkeyPatch, brand: str, expected: str
+    ) -> None:
+        self._answer(
+            monkeypatch,
+            {"codec_name": "aac", "duration": "3.0"},
+            {"format_name": "mov,mp4,m4a,3gp,3g2,mj2", "tags": {"major_brand": brand}},
+        )
+        probe = local_audio_probe(str(clip))
+        assert probe is not None
+        assert probe.mime_type == expected
 
     def test_refuses_codecs_given_as_one_string(self) -> None:
         with pytest.raises(TypeError, match="pass a tuple"):
@@ -1239,6 +1417,15 @@ class TestCheckDuration:
     def test_reports_a_duration_under_a_long_minimum_as_under_it(self) -> None:
         error = check_duration(2.046665, subject="The video in 'Video'", minimum=2.0466666666)
         assert str(error).startswith("The video in 'Video' is 2.04666 seconds long and the minimum is 2.04667.")
+
+    def test_rounds_a_long_minimum_up_so_a_clip_under_it_reads_as_under_it(self) -> None:
+        # Six significant figures would show 1234.56, under the minimum; it is shown rounded up.
+        error = check_duration(1234.5, subject="The video in 'Video'", minimum=1234.5649)
+        assert str(error).startswith("The video in 'Video' is 1234.50 seconds long and the minimum is 1234.57.")
+
+    def test_prints_a_duration_in_full_when_no_rounding_reads_as_past_the_limit(self) -> None:
+        error = check_duration(1.000000000001, subject="The video in 'Video'", maximum=1.0000000000001)
+        assert str(error).startswith("The video in 'Video' is 1.000000000001 seconds long and the limit is 1.")
 
     def test_uses_the_given_fix(self) -> None:
         error = check_duration(20, subject="The video in 'Video'", maximum=10, fix="Pick a shorter clip.")
