@@ -1,12 +1,13 @@
 """ParameterYaml component for YAML inputs with enhanced UI options."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from io import StringIO
 from typing import Any
 
 from ruamel.yaml import YAML
 
 from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
+from griptape_nodes.exe_types.validators.base import PreRunValidator
 
 
 class ParameterYaml(Parameter):
@@ -64,6 +65,8 @@ class ParameterYaml(Parameter):
         element_type: str | None = None,
         parent_container_name: str | None = None,
         badge: BadgeData | None = None,
+        pre_run_validators: Sequence[PreRunValidator] | None = None,
+        pre_run_noun: str | None = None,
     ) -> None:
         if ui_options is None:
             ui_options = {}
@@ -122,6 +125,8 @@ class ParameterYaml(Parameter):
             element_type=element_type,
             parent_container_name=parent_container_name,
             badge=badge,
+            pre_run_validators=pre_run_validators,
+            pre_run_noun=pre_run_noun,
         )
 
     def _convert_to_yaml(self, value: Any) -> str:

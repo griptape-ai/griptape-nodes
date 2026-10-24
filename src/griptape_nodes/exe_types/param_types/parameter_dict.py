@@ -1,9 +1,10 @@
 """ParameterDict component for dictionary inputs with enhanced UI options."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
+from griptape_nodes.exe_types.validators.base import PreRunValidator
 from griptape_nodes.utils.dict_utils import to_dict
 
 
@@ -56,6 +57,8 @@ class ParameterDict(Parameter):
         element_type: str | None = None,
         parent_container_name: str | None = None,
         badge: BadgeData | None = None,
+        pre_run_validators: Sequence[PreRunValidator] | None = None,
+        pre_run_noun: str | None = None,
     ) -> None:
         """Initialize a dictionary parameter with enhanced UI options.
 
@@ -91,6 +94,8 @@ class ParameterDict(Parameter):
             element_type: Element type
             parent_container_name: Name of parent container
             badge: Optional BadgeData for initial badge (title, message, variant, and whether to show a clear button).
+            pre_run_validators: Limits the engine checks the value against before the node runs
+            pre_run_noun: What the input is called in a pre-run message, when its type does not say
         """
         # Build ui_options dictionary from the provided UI-specific parameters
         if ui_options is None:
@@ -143,6 +148,8 @@ class ParameterDict(Parameter):
             element_type=element_type,
             parent_container_name=parent_container_name,
             badge=badge,
+            pre_run_validators=pre_run_validators,
+            pre_run_noun=pre_run_noun,
         )
 
     def _convert_to_dict(self, value: Any) -> dict:
